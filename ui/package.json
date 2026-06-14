@@ -6,6 +6,7 @@
     "@playwright/test": "^1.52.0"
   },
   "scripts": {
-    "test:screenshot": "playwright test"
+    "test:e2e": "playwright test --project=e2e",
+    "test:screenshots": "SCREENSHOTS=true playwright test --project=screenshots --project=screenshots-mobile"
   }
 }

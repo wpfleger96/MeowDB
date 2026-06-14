@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 export const DATA_DIR = '/tmp/meowdb-screenshot-data';
 
 export default defineConfig({
-  testMatch: 'screenshot.spec.ts',
+  testMatch: 'views.spec.ts',
   globalSetup: './global-setup.ts',
   use: {
     baseURL: 'http://127.0.0.1:8001',
@@ -20,14 +20,21 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'desktop',
+      name: 'e2e',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
       },
     },
     {
-      name: 'mobile',
+      name: 'screenshots',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+      },
+    },
+    {
+      name: 'screenshots-mobile',
       use: {
         ...devices['Pixel 5'],
         viewport: { width: 390, height: 844 },

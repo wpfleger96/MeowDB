@@ -4,12 +4,16 @@ import path from 'path';
 import { test, Page, TestInfo } from '@playwright/test';
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
+const SCREENSHOTS_ENABLED = process.env.SCREENSHOTS === 'true';
 
 test.beforeAll(() => {
-  fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  if (SCREENSHOTS_ENABLED) {
+    fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  }
 });
 
 async function screenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  if (!SCREENSHOTS_ENABLED) return;
   const project = testInfo.project.name;
   await page.screenshot({
     path: path.join(SCREENSHOTS_DIR, `${project}-${name}`),
@@ -22,7 +26,7 @@ async function waitForApp(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
 }
 
-test.describe('MeowDB screenshots', () => {
+test.describe('MeowDB views', () => {
   test('play view', async ({ page }, testInfo) => {
     await page.goto('/');
     await waitForApp(page);

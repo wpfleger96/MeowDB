@@ -78,5 +78,20 @@ jobs:
       - name: Install dependencies
         run: just sync
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+        working-directory: ui
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+        working-directory: ui
+
       - name: Run end-to-end tests
-        run: just test-e2e
+        run: just e2e

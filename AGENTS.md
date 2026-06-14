@@ -8,12 +8,13 @@ just                   # Type-check + lint + format (no tests)
 just test              # Unit + integration tests (excludes e2e)
 just test-unit         # Unit tests only
 just test-integration  # Integration tests only
-just test-e2e          # E2e tests (needs local .m4a files)
+just e2e               # Playwright E2E tests (views render correctly, local.just)
 just lint              # Auto-fix lint issues
 just format            # Auto-fix formatting
 just serve             # Start server on :8000 (local.just)
 just dev               # Start server with --reload (local.just)
-just screenshots       # Run Playwright screenshot tests (local.just)
+just screenshots       # Capture screenshots for PR review (local.just)
+just screenshots-post <pr> # Post screenshots to a PR comment (local.just)
 ```
 
 ## Project Structure
@@ -39,7 +40,7 @@ tests/
   integration/test_api.py # FastAPI TestClient endpoint tests
   integration/test_cli.py # Click CliRunner tests
   e2e/test_ingest.py      # Real .m4a file processing (local only)
-ui/                       # Playwright screenshot tests (Node/TypeScript)
+ui/                       # Playwright E2E & screenshot tests (Node/TypeScript)
 ```
 
 ## Key Patterns
@@ -76,7 +77,8 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 - E2e tests skip without local audio files
 - Integration tests need `_make_silent_wav_bytes()` for real file fixtures
 - `commit_job` tests must create real WAV+MP3 staging files (shutil.move happens inside)
-- Screenshot tests: `just screenshots` (requires `npm ci` in `ui/` first)
+- E2E tests: `just test-e2e` runs Playwright specs verifying views render (desktop only, no screenshots)
+- Screenshots: `just screenshots` captures desktop + mobile PNGs locally (requires `npm ci` in `ui/` first)
 
 ## Common Gotchas
 
@@ -95,5 +97,5 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 | Change DB schema | `db.py` (CREATE TABLE in __init__), `tests/unit/test_db.py` |
 | Modify audio pipeline | `processor.py`, `models.py`, `tests/unit/test_processor.py` |
 | Frontend changes | `static/js/views/*.js`, `static/index.html`, `static/css/views.css` |
-| Add screenshot test | `ui/screenshot.spec.ts`, `ui/seed.py` (if new data needed) |
+| Add E2E view test | `ui/views.spec.ts`, `ui/seed.py` (if new data needed) |
 | Config/paths | `config.py` (single source), patch all import sites in tests |
