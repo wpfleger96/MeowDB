@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from meowdb.db import MeowDB
@@ -345,16 +347,36 @@ def test_update_segment_status(tmp_db: MeowDB) -> None:
     assert job2["segments"][0]["status"] == "accepted"
 
 
+def _create_staging_files(tmp_path: Path, count: int) -> list[dict]:
+    staging = tmp_path / "staging"
+    staging.mkdir(parents=True, exist_ok=True)
+    segs = []
+    for i in range(count):
+        wav = staging / f"seg_{i}.wav"
+        mp3 = staging / f"seg_{i}.mp3"
+        wav.write_bytes(b"RIFF" + b"\x00" * 100)
+        mp3.write_bytes(b"\xff\xfb" + b"\x00" * 100)
+        segs.append(_segment(i, wav_path=str(wav)))
+    return segs
+
+
 @pytest.mark.unit
-def test_commit_job_creates_meow_records(tmp_db: MeowDB) -> None:
+def test_commit_job_creates_meow_records(tmp_db: MeowDB, tmp_path: Path) -> None:
+    segs = _create_staging_files(tmp_path, 2)
+    segs[0]["duration_ms"] = 900
+    segs[1]["duration_ms"] = 700
     job_id = tmp_db.create_job("recording.m4a")
-    tmp_db.add_segments(job_id, [_segment(0, duration_ms=900), _segment(1, duration_ms=700)])
+    tmp_db.add_segments(job_id, segs)
     tmp_db.update_job_status(job_id, "ready")
     job = tmp_db.get_job(job_id)
     assert job is not None
     seg_ids = [s["id"] for s in job["segments"]]
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
 
-    new_ids = tmp_db.commit_job(job_id, accepted_ids=seg_ids[:1], rejected_ids=seg_ids[1:])
+    new_ids = tmp_db.commit_job(
+        job_id, accepted_ids=seg_ids[:1], rejected_ids=seg_ids[1:], wav_dir=wav_dir, mp3_dir=mp3_dir
+    )
     assert len(new_ids) == 1
 
     meow = tmp_db.get_by_id(new_ids[0])
@@ -363,42 +385,57 @@ def test_commit_job_creates_meow_records(tmp_db: MeowDB) -> None:
 
 
 @pytest.mark.unit
-def test_commit_job_all_accepted(tmp_db: MeowDB) -> None:
+def test_commit_job_all_accepted(tmp_db: MeowDB, tmp_path: Path) -> None:
+    segs = _create_staging_files(tmp_path, 3)
     job_id = tmp_db.create_job("recording.m4a")
-    tmp_db.add_segments(job_id, [_segment(0), _segment(1), _segment(2)])
+    tmp_db.add_segments(job_id, segs)
     tmp_db.update_job_status(job_id, "ready")
     job = tmp_db.get_job(job_id)
     assert job is not None
     seg_ids = [s["id"] for s in job["segments"]]
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
 
-    new_ids = tmp_db.commit_job(job_id, accepted_ids=seg_ids, rejected_ids=[])
+    new_ids = tmp_db.commit_job(
+        job_id, accepted_ids=seg_ids, rejected_ids=[], wav_dir=wav_dir, mp3_dir=mp3_dir
+    )
     assert len(new_ids) == 3
     assert tmp_db.get_all() != []
 
 
 @pytest.mark.unit
-def test_commit_job_all_rejected(tmp_db: MeowDB) -> None:
+def test_commit_job_all_rejected(tmp_db: MeowDB, tmp_path: Path) -> None:
+    segs = _create_staging_files(tmp_path, 1)
     job_id = tmp_db.create_job("recording.m4a")
-    tmp_db.add_segments(job_id, [_segment(0)])
+    tmp_db.add_segments(job_id, segs)
     tmp_db.update_job_status(job_id, "ready")
     job = tmp_db.get_job(job_id)
     assert job is not None
     seg_ids = [s["id"] for s in job["segments"]]
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
 
-    new_ids = tmp_db.commit_job(job_id, accepted_ids=[], rejected_ids=seg_ids)
+    new_ids = tmp_db.commit_job(
+        job_id, accepted_ids=[], rejected_ids=seg_ids, wav_dir=wav_dir, mp3_dir=mp3_dir
+    )
     assert new_ids == []
     assert tmp_db.get_all() == []
 
 
 @pytest.mark.unit
-def test_commit_job_marks_job_committed(tmp_db: MeowDB) -> None:
+def test_commit_job_marks_job_committed(tmp_db: MeowDB, tmp_path: Path) -> None:
+    segs = _create_staging_files(tmp_path, 1)
     job_id = tmp_db.create_job("recording.m4a")
-    tmp_db.add_segments(job_id, [_segment(0)])
+    tmp_db.add_segments(job_id, segs)
     tmp_db.update_job_status(job_id, "ready")
     job = tmp_db.get_job(job_id)
     assert job is not None
     seg_ids = [s["id"] for s in job["segments"]]
-    tmp_db.commit_job(job_id, accepted_ids=seg_ids, rejected_ids=[])
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
+    tmp_db.commit_job(
+        job_id, accepted_ids=seg_ids, rejected_ids=[], wav_dir=wav_dir, mp3_dir=mp3_dir
+    )
 
     committed_job = tmp_db.get_job(job_id)
     assert committed_job is not None

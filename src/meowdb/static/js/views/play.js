@@ -88,14 +88,13 @@ function playView() {
 
       if (this.isPlaying && progress === 0) {
         // Start animated waveform that tracks playback
-        const audio = audioPlayer._audio;
         this._cancelWaveform = animateWaveform(
           canvas,
           meow.waveform_data,
           getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b6b',
           () => {
-            if (!audio || audio.duration === 0) return 0;
-            return audio.currentTime / audio.duration;
+            if (audioPlayer.duration === 0) return 0;
+            return audioPlayer.currentTime / audioPlayer.duration;
           }
         );
       } else {

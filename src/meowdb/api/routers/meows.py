@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from meowdb.api.models import MeowListResponse, MeowResponse, UpdateLabelsRequest
+from meowdb.api.streaming import safe_path
+from meowdb.config import MP3_DIR, WAV_DIR
 
 router = APIRouter()
 
@@ -45,11 +47,13 @@ async def list_meows(
     offset: int = 0,
 ) -> MeowListResponse:
     db = request.app.state.db
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
     label_filter = label[0] if label else None
     rows = db.get_all(sort=sort, label_filter=label_filter, limit=limit, offset=offset)
-    all_rows = db.get_all(sort=sort, label_filter=label_filter, limit=10000, offset=0)
+    total = db.get_count(label_filter=label_filter)
     items = [_meow_to_response(m) for m in rows]
-    return MeowListResponse(items=items, total=len(all_rows), limit=limit, offset=offset)
+    return MeowListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.patch("/meows/{meow_id}", response_model=MeowResponse)
@@ -63,7 +67,8 @@ async def update_meow_labels(
     if not updated:
         raise HTTPException(status_code=404, detail="Meow not found")
     meow = db.get_by_id(meow_id)
-    assert meow is not None
+    if meow is None:
+        raise HTTPException(status_code=500, detail="Meow disappeared after update")
     return _meow_to_response(meow)
 
 
@@ -74,12 +79,18 @@ async def delete_meow(meow_id: str, request: Request) -> Response:
     if meow is None:
         raise HTTPException(status_code=404, detail="Meow not found")
 
-    wav_path = meow.get("wav_path", "")
-    mp3_path = meow.get("mp3_path", "")
-    if wav_path:
-        Path(wav_path).unlink(missing_ok=True)
-    if mp3_path:
-        Path(mp3_path).unlink(missing_ok=True)
+    wav_path_str = meow.get("wav_path", "")
+    mp3_path_str = meow.get("mp3_path", "")
+    if wav_path_str:
+        try:
+            Path(safe_path(Path(wav_path_str), WAV_DIR)).unlink(missing_ok=True)
+        except ValueError:
+            pass
+    if mp3_path_str:
+        try:
+            Path(safe_path(Path(mp3_path_str), MP3_DIR)).unlink(missing_ok=True)
+        except ValueError:
+            pass
 
     db.delete(meow_id)
     return Response(status_code=204)
@@ -88,5 +99,8 @@ async def delete_meow(meow_id: str, request: Request) -> Response:
 @router.post("/meows/{meow_id}/play", status_code=204)
 async def play_meow(meow_id: str, request: Request) -> Response:
     db = request.app.state.db
+    meow = db.get_by_id(meow_id)
+    if meow is None:
+        raise HTTPException(status_code=404, detail="Meow not found")
     db.increment_play_count(meow_id)
     return Response(status_code=204)

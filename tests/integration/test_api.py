@@ -58,6 +58,9 @@ def client(tmp_dirs):
         patch("meowdb.api.routers.ingest.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.ingest.DB_PATH", tmp_dirs["db"]),
+        patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -90,6 +93,9 @@ def seeded_client(tmp_dirs):
         patch("meowdb.api.routers.ingest.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.ingest.MP3_DIR", mp3_dir),
         patch("meowdb.api.routers.ingest.DB_PATH", tmp_dirs["db"]),
+        patch("meowdb.api.routers.audio.MP3_DIR", mp3_dir),
+        patch("meowdb.api.routers.meows.WAV_DIR", wav_dir),
+        patch("meowdb.api.routers.meows.MP3_DIR", mp3_dir),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -201,6 +207,12 @@ def test_play_meow(seeded_client):
 
 
 @pytest.mark.integration
+def test_play_meow_not_found(client):
+    response = client.post("/api/meows/nonexistent-id/play")
+    assert response.status_code == 404
+
+
+@pytest.mark.integration
 def test_get_stats_empty(client):
     resp = client.get("/api/stats")
     assert resp.status_code == 200
@@ -290,6 +302,9 @@ def test_ingest_flow_post_and_poll(tmp_dirs):
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.ingest.DB_PATH", tmp_dirs["db"]),
         patch("meowdb.api.routers.ingest._run_processor"),
+        patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -333,6 +348,9 @@ def test_ingest_commit(tmp_dirs):
         patch("meowdb.api.routers.ingest.MP3_DIR", mp3_dir),
         patch("meowdb.api.routers.ingest.DB_PATH", tmp_dirs["db"]),
         patch("meowdb.api.routers.ingest._run_processor"),
+        patch("meowdb.api.routers.audio.MP3_DIR", mp3_dir),
+        patch("meowdb.api.routers.meows.WAV_DIR", wav_dir),
+        patch("meowdb.api.routers.meows.MP3_DIR", mp3_dir),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -343,7 +361,9 @@ def test_ingest_commit(tmp_dirs):
             job_staging = staging_dir / job_id
             job_staging.mkdir(parents=True)
             seg_wav = job_staging / "seg_000.wav"
+            seg_mp3 = job_staging / "seg_000.mp3"
             seg_wav.write_bytes(_make_silent_wav_bytes())
+            seg_mp3.write_bytes(b"\xff\xfb" + b"\x00" * 100)
 
             db.add_segments(
                 job_id,

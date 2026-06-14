@@ -7,19 +7,14 @@ from pathlib import Path
 import click
 
 from meowdb.cli.helpers import build_context
+from meowdb.cli.options import db_path_option
 from meowdb.display import print_error, print_success
 
 
 @click.command()
 @click.argument("id")
 @click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompt.")
-@click.option(
-    "--db-path",
-    type=click.Path(dir_okay=False),
-    default=None,
-    hidden=True,
-    help="Override database path (for testing).",
-)
+@db_path_option
 def delete(id: str, yes: bool, db_path: str | None) -> None:
     """Delete a meow from the library."""
     ctx = build_context(Path(db_path) if db_path else None)

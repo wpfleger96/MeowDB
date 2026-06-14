@@ -101,6 +101,16 @@ class AudioPlayer {
   get currentUrl() {
     return this._currentUrl;
   }
+
+  /** @returns {number} */
+  get currentTime() {
+    return this._audio ? this._audio.currentTime : 0;
+  }
+
+  /** @returns {number} */
+  get duration() {
+    return this._audio ? this._audio.duration || 0 : 0;
+  }
 }
 
 /* ============================================================

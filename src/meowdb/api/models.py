@@ -52,12 +52,20 @@ class CommitResponse(BaseModel):
     rejected_count: int
 
 
+class MeowSummary(BaseModel):
+    id: str
+    duration_ms: int
+    labels: list[str]
+    play_count: int
+    created_at: str
+
+
 class StatsResponse(BaseModel):
     total_meows: int
     total_duration_ms: int
     avg_duration_ms: float
-    most_played: list[dict]  # type: ignore[type-arg]
-    recent: list[dict]  # type: ignore[type-arg]
+    most_played: list[MeowSummary]
+    recent: list[MeowSummary]
     label_counts: dict[str, int]
 
 

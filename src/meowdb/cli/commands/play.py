@@ -7,19 +7,14 @@ from pathlib import Path
 import click
 
 from meowdb.cli.helpers import build_context, format_duration, play_audio
+from meowdb.cli.options import db_path_option
 from meowdb.display import console, print_error
 
 
 @click.command()
 @click.argument("id", required=False)
 @click.option("--random", "use_random", is_flag=True, default=False, help="Play a random meow.")
-@click.option(
-    "--db-path",
-    type=click.Path(dir_okay=False),
-    default=None,
-    hidden=True,
-    help="Override database path (for testing).",
-)
+@db_path_option
 def play(id: str | None, use_random: bool, db_path: str | None) -> None:
     """Play a meow by ID, or a random one."""
     ctx = build_context(Path(db_path) if db_path else None)

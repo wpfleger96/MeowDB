@@ -4,7 +4,6 @@ import time
 import uuid
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import noisereduce
 import numpy as np
@@ -14,9 +13,6 @@ from pydub.silence import detect_leading_silence
 from scipy.signal import butter, sosfilt
 
 from meowdb.models import MeowSegment, ProcessingResult, ProcessorConfig
-
-if TYPE_CHECKING:
-    pass
 
 
 class MeowProcessor:
@@ -326,12 +322,11 @@ class MeowProcessor:
         hop = max(1, sr // 100)
         num_frames = max(1, len(samples) // hop)
 
-        envelope: list[float] = []
-        for i in range(num_frames):
-            chunk = samples[i * hop : (i + 1) * hop]
-            envelope.append(float(np.max(np.abs(chunk))))
-
-        max_val = max(envelope) if envelope else 1.0
+        n = num_frames * hop
+        trimmed = np.abs(samples[:n]).reshape(num_frames, hop)
+        envelope_arr = trimmed.max(axis=1)
+        max_val = float(envelope_arr.max()) if len(envelope_arr) > 0 else 1.0
         if max_val == 0.0:
-            return [0.0] * len(envelope)
-        return [v / max_val for v in envelope]
+            return [0.0] * num_frames
+        result: list[float] = (envelope_arr / max_val).tolist()
+        return result

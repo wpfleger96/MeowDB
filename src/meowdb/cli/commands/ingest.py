@@ -8,7 +8,8 @@ import click
 
 from meowdb.cli.context import Context
 from meowdb.cli.helpers import build_context, format_duration, play_audio
-from meowdb.config import STAGING_DIR
+from meowdb.cli.options import db_path_option
+from meowdb.config import MP3_DIR, STAGING_DIR, WAV_DIR
 from meowdb.display import console, print_error, print_hint, print_info, print_success
 from meowdb.models import ProcessingResult
 
@@ -37,13 +38,7 @@ _SINGLE_MEOW_THRESHOLD_MS = 8000
     default=False,
     help="Show what would be extracted without writing anything.",
 )
-@click.option(
-    "--db-path",
-    type=click.Path(dir_okay=False),
-    default=None,
-    hidden=True,
-    help="Override database path (for testing).",
-)
+@db_path_option
 def ingest(
     path: str,
     segment: bool | None,
@@ -115,7 +110,9 @@ def _ingest_file(
     ctx.db.update_job_status(job_id, "ready")
 
     job = ctx.db.get_job(job_id)
-    assert job is not None
+    if job is None:
+        print_error("Job disappeared unexpectedly")
+        sys.exit(1)
     segments = job["segments"]
 
     if review:
@@ -124,21 +121,24 @@ def _ingest_file(
         accepted_ids = [s["id"] for s in segments]
         rejected_ids = []
 
-    new_ids = ctx.db.commit_job(job_id, accepted_ids, rejected_ids)
+    new_ids = ctx.db.commit_job(job_id, accepted_ids, rejected_ids, WAV_DIR, MP3_DIR)
     ctx.db.delete_job(job_id)
 
     _print_summary(path, result, len(new_ids), len(rejected_ids))
 
 
-def _run_processor(path: Path, segment: bool | None, ctx: Context) -> ProcessingResult:
-    # Auto-detect: load duration to decide between single vs multi-segment
+def _detect_mode(path: Path, segment: bool | None) -> tuple[bool, int]:
     from pydub import AudioSegment as PydubSegment
 
     audio = PydubSegment.from_file(str(path))
     duration_ms = len(audio)
     del audio
-
     use_single = segment is False or (segment is None and duration_ms < _SINGLE_MEOW_THRESHOLD_MS)
+    return use_single, duration_ms
+
+
+def _run_processor(path: Path, segment: bool | None, ctx: Context) -> ProcessingResult:
+    use_single, _ = _detect_mode(path, segment)
 
     if use_single:
         seg = ctx.processor.process_single(path, staging_dir=STAGING_DIR)
@@ -153,14 +153,7 @@ def _run_processor(path: Path, segment: bool | None, ctx: Context) -> Processing
 
 
 def _dry_run_file(path: Path, segment: bool | None, ctx: Context) -> None:
-
-    from pydub import AudioSegment as PydubSegment
-
-    audio = PydubSegment.from_file(str(path))
-    duration_ms = len(audio)
-    del audio
-
-    use_single = segment is False or (segment is None and duration_ms < _SINGLE_MEOW_THRESHOLD_MS)
+    use_single, duration_ms = _detect_mode(path, segment)
 
     mode = "single meow" if use_single else "multi-segment"
     console.print(
@@ -217,14 +210,10 @@ def _review_loop(
 
 def _print_summary(
     path: Path,
-    result: object,
+    result: ProcessingResult,
     accepted_count: int,
     rejected_count: int,
 ) -> None:
-    from meowdb.models import ProcessingResult
-
-    assert isinstance(result, ProcessingResult)
-
     console.print()
     print_success(
         f"{path.name}: {accepted_count} meow(s) added"

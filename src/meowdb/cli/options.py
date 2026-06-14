@@ -4,7 +4,8 @@ import click
 
 db_path_option = click.option(
     "--db-path",
-    type=click.Path(dir_okay=False, path_type=str),
+    type=click.Path(dir_okay=False),
     default=None,
-    help="Override the default database file location.",
+    hidden=True,
+    help="Override database path (for testing).",
 )

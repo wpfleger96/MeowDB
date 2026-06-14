@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +10,11 @@ import pytest
 from pydub import AudioSegment
 
 from meowdb.processor import MeowProcessor
+
+_ffmpeg_available = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="ffmpeg not installed",
+)
 
 
 def _make_sine_wav(
@@ -216,6 +223,7 @@ class TestWaveform:
 
 
 @pytest.mark.unit
+@_ffmpeg_available
 class TestProcessSingle:
     def test_process_single_returns_valid_segment(self, tmp_path: Path):
         audio = _make_sine_wav(800, 1000, amplitude=0.4)
@@ -248,6 +256,7 @@ class TestProcessSingle:
 
 
 @pytest.mark.unit
+@_ffmpeg_available
 class TestProcessFile:
     def test_detects_cat_meow_segment(self, tmp_path: Path):
         """A cat-frequency segment surrounded by silence should be found."""

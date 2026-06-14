@@ -270,22 +270,8 @@ function libraryView() {
        Formatting helpers
     ────────────────────────────────────────────────────── */
 
-    formatDuration(ms) {
-      if (!ms) return '0s';
-      const s = Math.round(ms / 1000);
-      if (s < 60) return `${s}s`;
-      return `${Math.floor(s / 60)}m ${s % 60}s`;
-    },
-
-    formatDate(iso) {
-      if (!iso) return '';
-      const d = new Date(iso);
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    },
-
-    formatId(id) {
-      if (!id) return '';
-      return id.slice(0, 8);
-    },
+    formatDuration(ms) { return MeowUtils.formatDuration(ms); },
+    formatDate(iso) { return MeowUtils.formatDate(iso); },
+    formatId(id) { return MeowUtils.formatId(id); },
   };
 }

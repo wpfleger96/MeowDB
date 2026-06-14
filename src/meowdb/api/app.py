@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,9 +11,6 @@ from fastapi.staticfiles import StaticFiles
 
 from meowdb.api.routers import audio, ingest, meows, stats
 from meowdb.config import DATA_DIR, DB_PATH, MP3_DIR, STAGING_DIR, WAV_DIR
-
-if TYPE_CHECKING:
-    pass
 
 _STATIC_DIR = Path(__file__).parent.parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
@@ -37,7 +33,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
         allow_methods=["*"],
         allow_headers=["*"],
     )

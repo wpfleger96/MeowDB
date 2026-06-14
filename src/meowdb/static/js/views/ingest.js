@@ -185,13 +185,7 @@ function ingestView() {
         if (canvas && seg.waveform) {
           drawWaveform(canvas, seg.waveform, '#ff6b6b', 1);
         }
-        this._autoPlaySegment(seg);
       });
-    },
-
-    async _autoPlaySegment(seg) {
-      // Do not auto-play — iOS requires explicit user gesture per play.
-      // The play button on the card serves as the gesture.
     },
 
     async playCurrentSegment() {
@@ -354,10 +348,6 @@ function ingestView() {
        Formatting helpers
     ────────────────────────────────────────────────────── */
 
-    formatDuration(ms) {
-      if (!ms) return '0s';
-      const s = (ms / 1000).toFixed(1);
-      return `${s}s`;
-    },
+    formatDuration(ms) { return MeowUtils.formatDuration(ms); },
   };
 }

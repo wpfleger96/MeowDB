@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 
 from meowdb.cli.helpers import build_context, format_duration
+from meowdb.cli.options import db_path_option
 from meowdb.display import console, print_info
 
 _SORT_CHOICES = click.Choice(["newest", "oldest", "most-played", "duration"])
@@ -42,13 +43,7 @@ _SORT_MAP = {
     show_default=True,
     help="Sort order.",
 )
-@click.option(
-    "--db-path",
-    type=click.Path(dir_okay=False),
-    default=None,
-    hidden=True,
-    help="Override database path (for testing).",
-)
+@db_path_option
 def list_meows(output_format: str, limit: int, sort: str, db_path: str | None) -> None:
     """List meows in the library."""
     ctx = build_context(Path(db_path) if db_path else None)

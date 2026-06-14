@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import uuid
 
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 _CREATE_MEOWS = """
 CREATE TABLE IF NOT EXISTS meows (
@@ -54,6 +51,15 @@ CREATE TABLE IF NOT EXISTS ingest_segments (
 """
 
 
+_SORT_MAP = {
+    "newest": "created_at DESC, rowid DESC",
+    "oldest": "created_at ASC, rowid ASC",
+    "most_played": "play_count DESC, rowid DESC",
+    "duration_asc": "duration_ms ASC, rowid ASC",
+    "duration_desc": "duration_ms DESC, rowid DESC",
+}
+
+
 class MeowDB:
     def __init__(self, db_path: Path) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -63,6 +69,12 @@ class MeowDB:
         self._conn.execute(_CREATE_MEOWS)
         self._conn.execute(_CREATE_INGEST_JOBS)
         self._conn.execute(_CREATE_INGEST_SEGMENTS)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_meows_created_at ON meows(created_at DESC)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_meows_play_count ON meows(play_count DESC)"
+        )
         self._conn.commit()
 
     def close(self) -> None:
@@ -125,14 +137,10 @@ class MeowDB:
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:  # type: ignore[type-arg]
+        if sort not in _SORT_MAP:
+            raise ValueError(f"Invalid sort: {sort!r}")
         # rowid tiebreaker gives stable ordering when timestamps are identical (same-second inserts)
-        order = {
-            "newest": "created_at DESC, rowid DESC",
-            "oldest": "created_at ASC, rowid ASC",
-            "most_played": "play_count DESC, rowid DESC",
-            "duration_asc": "duration_ms ASC, rowid ASC",
-            "duration_desc": "duration_ms DESC, rowid DESC",
-        }.get(sort, "created_at DESC, rowid DESC")
+        order = _SORT_MAP[sort]
 
         if label_filter:
             rows = self._conn.execute(
@@ -168,6 +176,23 @@ class MeowDB:
         self._conn.execute(
             "UPDATE meows SET play_count = play_count + 1, last_played = datetime('now') WHERE id = ?",
             (meow_id,),
+        )
+        self._conn.commit()
+
+    def get_count(self, label_filter: str | None = None) -> int:
+        if label_filter:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM meows WHERE labels LIKE ?",
+                (f'%"{label_filter}"%',),
+            ).fetchone()
+        else:
+            row = self._conn.execute("SELECT COUNT(*) FROM meows").fetchone()
+        return int(row[0])
+
+    def update_meow_paths(self, meow_id: str, wav_path: str, mp3_path: str) -> None:
+        self._conn.execute(
+            "UPDATE meows SET wav_path = ?, mp3_path = ? WHERE id = ?",
+            (wav_path, mp3_path, meow_id),
         )
         self._conn.commit()
 
@@ -235,44 +260,69 @@ class MeowDB:
         )
         self._conn.commit()
 
+    def get_segment(self, segment_id: str, job_id: str) -> dict | None:  # type: ignore[type-arg]
+        row = self._conn.execute(
+            "SELECT * FROM ingest_segments WHERE id = ? AND job_id = ?",
+            (segment_id, job_id),
+        ).fetchone()
+        return self._row_to_dict(row) if row else None
+
     def commit_job(
         self,
         job_id: str,
         accepted_ids: list[str],
         rejected_ids: list[str],
+        wav_dir: Path,
+        mp3_dir: Path,
     ) -> list[str]:
         new_meow_ids: list[str] = []
 
-        for seg_id in accepted_ids:
-            seg_row = self._conn.execute(
-                "SELECT * FROM ingest_segments WHERE id = ?", (seg_id,)
-            ).fetchone()
-            if seg_row is None:
-                continue
-            seg = self._row_to_dict(seg_row)
-            meow_id = str(uuid.uuid4())
-            self._conn.execute(
-                """
-                INSERT INTO meows
-                    (id, timestamp, duration_ms, labels, wav_path, mp3_path,
-                     waveform_data, peak_dbfs, cat_energy_ratio)
-                VALUES
-                    (:id, datetime('now'), :duration_ms, '[]', :wav_path, '',
-                     :waveform_data, :peak_dbfs, :cat_energy_ratio)
-                """,
-                {
-                    "id": meow_id,
-                    "duration_ms": seg["duration_ms"],
-                    "wav_path": seg["wav_path"],
-                    "waveform_data": json.dumps(seg.get("waveform_data", [])),
-                    "peak_dbfs": seg.get("peak_dbfs"),
-                    "cat_energy_ratio": seg.get("cat_energy_ratio"),
-                },
-            )
-            self._conn.execute(
-                "UPDATE ingest_segments SET status = 'accepted' WHERE id = ?", (seg_id,)
-            )
-            new_meow_ids.append(meow_id)
+        if accepted_ids:
+            wav_dir.mkdir(parents=True, exist_ok=True)
+            mp3_dir.mkdir(parents=True, exist_ok=True)
+
+            placeholders = ",".join("?" * len(accepted_ids))
+            seg_rows = self._conn.execute(
+                f"SELECT * FROM ingest_segments WHERE id IN ({placeholders})",
+                accepted_ids,
+            ).fetchall()
+            seg_by_id = {row["id"]: self._row_to_dict(row) for row in seg_rows}
+
+            for seg_id in accepted_ids:
+                seg = seg_by_id.get(seg_id)
+                if seg is None:
+                    continue
+
+                src_wav = Path(seg["wav_path"])
+                dst_wav = wav_dir / src_wav.name
+                dst_mp3 = mp3_dir / src_wav.with_suffix(".mp3").name
+                shutil.move(str(src_wav), dst_wav)
+                shutil.move(str(src_wav.with_suffix(".mp3")), dst_mp3)
+
+                meow_id = str(uuid.uuid4())
+                self._conn.execute(
+                    """
+                    INSERT INTO meows
+                        (id, timestamp, duration_ms, labels, wav_path, mp3_path,
+                         waveform_data, peak_dbfs, cat_energy_ratio)
+                    VALUES
+                        (:id, datetime('now'), :duration_ms, '[]', :wav_path, :mp3_path,
+                         :waveform_data, :peak_dbfs, :cat_energy_ratio)
+                    """,
+                    {
+                        "id": meow_id,
+                        "duration_ms": seg["duration_ms"],
+                        "wav_path": str(dst_wav),
+                        "mp3_path": str(dst_mp3),
+                        "waveform_data": json.dumps(seg.get("waveform_data", [])),
+                        "peak_dbfs": seg.get("peak_dbfs"),
+                        "cat_energy_ratio": seg.get("cat_energy_ratio"),
+                    },
+                )
+                self._conn.execute(
+                    "UPDATE ingest_segments SET status = 'accepted' WHERE id = ?", (seg_id,)
+                )
+                new_meow_ids.append(meow_id)
 
         for seg_id in rejected_ids:
             self._conn.execute(
@@ -294,6 +344,14 @@ class MeowDB:
     # -------------------------------------------------------------------------
     # Stats
     # -------------------------------------------------------------------------
+
+    def _count_labels(self) -> dict[str, int]:
+        rows = self._conn.execute("SELECT labels FROM meows").fetchall()
+        counts: dict[str, int] = {}
+        for row in rows:
+            for label in json.loads(row["labels"]):
+                counts[label] = counts.get(label, 0) + 1
+        return counts
 
     def get_stats(self) -> dict:  # type: ignore[type-arg]
         agg = self._conn.execute(
@@ -320,25 +378,15 @@ class MeowDB:
             ).fetchall()
         ]
 
-        label_rows = self._conn.execute("SELECT labels FROM meows").fetchall()
-        label_counts: dict[str, int] = {}
-        for row in label_rows:
-            for label in json.loads(row["labels"]):
-                label_counts[label] = label_counts.get(label, 0) + 1
-
         return {
             "total_meows": agg["total_meows"],
             "total_duration_ms": agg["total_duration_ms"],
             "avg_duration_ms": agg["avg_duration_ms"],
             "most_played": most_played,
             "recent": recent,
-            "label_counts": label_counts,
+            "label_counts": self._count_labels(),
         }
 
     def get_labels(self) -> list[dict]:  # type: ignore[type-arg]
-        label_rows = self._conn.execute("SELECT labels FROM meows").fetchall()
-        counts: dict[str, int] = {}
-        for row in label_rows:
-            for label in json.loads(row["labels"]):
-                counts[label] = counts.get(label, 0) + 1
+        counts = self._count_labels()
         return [{"label": lbl, "count": cnt} for lbl, cnt in sorted(counts.items())]
