@@ -69,4 +69,11 @@ rebuild: clean-build build
 ci: sync type-check lint-check format-check test
     @echo "CI checks passed"
 
+# Run with auth enabled for local testing (password: test)
+dev-auth:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    HASH=$(uv run python -c "import bcrypt; print(bcrypt.hashpw(b'test', bcrypt.gensalt()).decode())")
+    MEOWDB_PASSWORD_HASH="$HASH" MEOWDB_SESSION_SECRET="dev-secret" uv run meowdb serve
+
 import? 'local.just'

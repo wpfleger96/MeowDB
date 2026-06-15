@@ -238,6 +238,7 @@
 
           <div class="modal-header">
             <input
+              x-show="!$root.authRequired || $root.authenticated"
               type="text"
               class="modal-title-input"
               :placeholder="'Meow ' + formatId(detailMeow?.id || '')"
@@ -246,6 +247,11 @@
               @keydown.enter="saveTitle(); $event.target.blur()"
               aria-label="Meow title"
             >
+            <span
+              x-show="$root.authRequired && !$root.authenticated"
+              class="modal-title-input"
+              x-text="detailTitle || ('Meow ' + formatId(detailMeow?.id || ''))"
+            ></span>
             <button class="btn-icon" @click="closeDetail()" aria-label="Close">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M18 6 6 18M6 6l12 12"/>
@@ -304,11 +310,11 @@
                 <template x-for="label in (detailMeow?.labels || [])" :key="label">
                   <div class="chip">
                     <span x-text="label"></span>
-                    <button class="chip-remove" @click="removeLabel(label)" aria-label="Remove label">×</button>
+                    <button class="chip-remove" x-show="!$root.authRequired || $root.authenticated" @click="removeLabel(label)" aria-label="Remove label">×</button>
                   </div>
                 </template>
               </div>
-              <div class="label-add-form">
+              <div class="label-add-form" x-show="!$root.authRequired || $root.authenticated">
                 <input
                   type="text"
                   class="label-add-input"
@@ -325,10 +331,10 @@
               </div>
             </div>
 
-            <div class="divider"></div>
+            <div class="divider" x-show="!$root.authRequired || $root.authenticated"></div>
 
             <!-- Delete -->
-            <button class="btn btn-danger btn-full" @click="confirmDelete()">
+            <button class="btn btn-danger btn-full" x-show="!$root.authRequired || $root.authenticated" @click="confirmDelete()">
               Delete meow
             </button>
           </div>
@@ -446,6 +452,11 @@
         <div class="clip-container" x-show="phase === 'clipping'">
           <div class="clip-waveform-wrap">
             <div id="clip-waveform-container"></div>
+          </div>
+          <div class="clip-timecode" x-show="duration > 0">
+            <span class="clip-timecode-current" x-text="formatTimecode(currentTime)"></span>
+            <span class="clip-timecode-sep">/</span>
+            <span x-text="formatTimecode(duration)"></span>
           </div>
           <p class="text-sm text-muted text-center">Click and drag on the waveform to mark meow regions</p>
           <div class="clip-transport">
@@ -617,7 +628,7 @@
       </div>
 
       <!-- Auth controls -->
-      <div class="nav-auth" x-cloak>
+      <div class="nav-auth" x-show="authRequired" x-cloak>
         <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
         <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
       </div>
@@ -654,6 +665,7 @@
 
       <!-- Upload tab -->
       <button
+        x-show="canWrite"
         :class="navClass('ingest')"
         @click="goTo('/upload')"
         aria-label="Upload"

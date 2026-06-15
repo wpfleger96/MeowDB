@@ -63,10 +63,23 @@ function app() {
   return {
     currentView: pathToView(location.pathname),
     authenticated: false,
+    authRequired: false,
     showLoginModal: false,
     loginPassword: '',
     loginError: '',
     loginLoading: false,
+
+    get canWrite() {
+      return !this.authRequired || this.authenticated;
+    },
+
+    requireAuth() {
+      if (!this.canWrite) {
+        this.showLoginModal = true;
+        return false;
+      }
+      return true;
+    },
 
     async init() {
       // Handle browser back/forward
@@ -88,8 +101,13 @@ function app() {
       try {
         const s = await getAuthStatus();
         this.authenticated = s.authenticated;
+        this.authRequired = s.auth_required;
       } catch (_) {
         // auth status check is best-effort; if it fails, assume unauthenticated
+      }
+
+      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
+        navigateTo('/');
       }
     },
 
@@ -128,6 +146,9 @@ function app() {
       } catch (_) {}
       this.authenticated = false;
       this.loginError = '';
+      if (this.authRequired) {
+        navigateTo('/');
+      }
     },
   };
 }

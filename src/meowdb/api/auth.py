@@ -7,8 +7,9 @@ import bcrypt
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
-from meowdb.config import AUTH_DISABLED, HOST, PASSWORD_HASH
+from meowdb.config import IS_LOCALHOST, PASSWORD_HASH
 
 _logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ _CLEANUP_THRESHOLD = 1000
 
 
 def _client_ip(request: Request) -> str:
-    if HOST not in ("127.0.0.1", "localhost"):
+    if not IS_LOCALHOST:
         cf_ip = request.headers.get("cf-connecting-ip")
         if cf_ip:
             return cf_ip
@@ -60,7 +61,7 @@ def _cleanup_stale_entries() -> None:
 
 
 async def require_auth(request: Request) -> None:
-    if AUTH_DISABLED and HOST in ("127.0.0.1", "localhost"):
+    if not PASSWORD_HASH and IS_LOCALHOST:
         return
     if not request.session.get("authenticated"):
         raise HTTPException(
@@ -81,7 +82,9 @@ async def login(body: LoginRequest, request: Request) -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Authentication not configured")
 
     try:
-        valid = bcrypt.checkpw(body.password.encode(), PASSWORD_HASH.encode())
+        valid = await run_in_threadpool(
+            bcrypt.checkpw, body.password.encode(), PASSWORD_HASH.encode()
+        )
     except ValueError:
         valid = False
 
@@ -104,4 +107,7 @@ async def logout(request: Request) -> dict[str, str]:
 
 @router.get("/status")
 async def auth_status(request: Request) -> dict[str, bool]:
-    return {"authenticated": bool(request.session.get("authenticated", False))}
+    return {
+        "authenticated": bool(request.session.get("authenticated", False)),
+        "auth_required": bool(PASSWORD_HASH) or not IS_LOCALHOST,
+    }

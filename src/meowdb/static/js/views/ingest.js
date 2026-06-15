@@ -26,6 +26,8 @@ function ingestView() {
     regionCount: 0,
     zoomLevel: 0,
     _minPxPerSec: 0,
+    duration: 0,
+    currentTime: 0,
 
     /* ──────────────────────────────────────────────────────
        Lifecycle
@@ -73,10 +75,7 @@ function ingestView() {
 
     async _uploadFile(file) {
       if (this._resetting) return;
-      if (!this.$root.authenticated) {
-        this.$root.showLoginModal = true;
-        return;
-      }
+      if (this.$root.authRequired && !this.$root.authenticated) { this.$root.showLoginModal = true; return; }
       this.phase = 'uploading';
       this.statusMessage = 'Uploading…';
       try {
@@ -96,10 +95,7 @@ function ingestView() {
     ────────────────────────────────────────────────────── */
 
     async startRecording() {
-      if (!this.$root.authenticated) {
-        this.$root.showLoginModal = true;
-        return;
-      }
+      if (this.$root.authRequired && !this.$root.authenticated) { this.$root.showLoginModal = true; return; }
       try {
         this.isRecording = true;
         this.recordSeconds = 0;
@@ -136,6 +132,7 @@ function ingestView() {
       if (this._wavesurferLoaded) return;
       await this._loadScript('/static/vendor/wavesurfer.min.js');
       await this._loadScript('/static/vendor/wavesurfer-regions.min.js');
+      await this._loadScript('/static/vendor/wavesurfer-timeline.min.js');
       this._wavesurferLoaded = true;
     },
 
@@ -167,15 +164,25 @@ function ingestView() {
         interact: true,
         scrollParent: true,
         url: sourceAudioUrl(this.jobId),
-        plugins: [this._regionsPlugin],
+        plugins: [
+          this._regionsPlugin,
+          WaveSurfer.Timeline.create({
+            height: 20,
+            style: { color: 'var(--text-secondary)', fontSize: '10px' },
+          }),
+        ],
       });
 
       this._wavesurfer.on('ready', () => {
         const duration = this._wavesurfer.getDuration();
+        this.duration = duration;
+        this.currentTime = 0;
         if (duration > 0) {
           this._minPxPerSec = container.clientWidth / duration;
         }
       });
+
+      this._wavesurfer.on('timeupdate', (t) => { this.currentTime = t; });
 
       this._regionsPlugin.enableDragSelection({ color: 'rgba(255, 107, 107, 0.25)' });
 
@@ -224,7 +231,15 @@ function ingestView() {
         try { this._wavesurfer.destroy(); } catch {}
         this._wavesurfer = null;
         this._regionsPlugin = null;
+        this.duration = 0;
+        this.currentTime = 0;
       }
+    },
+
+    formatTimecode(s) {
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60).toString().padStart(2, '0');
+      return `${m}:${sec}`;
     },
 
     togglePlayPause() {
@@ -232,10 +247,7 @@ function ingestView() {
     },
 
     async autoDetect() {
-      if (!this.$root.authenticated) {
-        this.$root.showLoginModal = true;
-        return;
-      }
+      if (this.$root.authRequired && !this.$root.authenticated) { this.$root.showLoginModal = true; return; }
       this.isAutoDetecting = true;
       try {
         const result = await detectRegions(this.jobId);
@@ -261,10 +273,7 @@ function ingestView() {
     },
 
     async saveClips() {
-      if (!this.$root.authenticated) {
-        this.$root.showLoginModal = true;
-        return;
-      }
+      if (this.$root.authRequired && !this.$root.authenticated) { this.$root.showLoginModal = true; return; }
       const regions = this._regionsPlugin.getRegions();
       if (regions.length === 0) {
         showToast('Draw at least one region first', 'info');

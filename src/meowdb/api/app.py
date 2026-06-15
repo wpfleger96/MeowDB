@@ -15,10 +15,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from meowdb.api import auth
 from meowdb.api.routers import audio, ingest, meows, stats
 from meowdb.config import (
+    _DEFAULT_SESSION_SECRET,
     CORS_ORIGINS,
     DATA_DIR,
     DB_PATH,
-    HOST,
+    IS_LOCALHOST,
     MP3_DIR,
     SESSION_SECRET,
     STAGING_DIR,
@@ -41,8 +42,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             "MEOWDB_CORS_ORIGINS resolved to empty list — all cross-origin requests will be blocked"
         )
 
-    _DEFAULT_SECRET = "local-dev-secret-not-for-production"
-    if SESSION_SECRET == _DEFAULT_SECRET and HOST not in ("127.0.0.1", "localhost"):
+    if SESSION_SECRET == _DEFAULT_SESSION_SECRET and not IS_LOCALHOST:
         _logger.warning(
             "MEOWDB_SESSION_SECRET is using the default value — session cookies are forgeable"
         )
@@ -69,7 +69,7 @@ def create_app() -> FastAPI:
         SessionMiddleware,
         secret_key=SESSION_SECRET,
         max_age=14 * 24 * 3600,
-        https_only=HOST not in ("127.0.0.1", "localhost"),
+        https_only=not IS_LOCALHOST,
         same_site="lax",
     )
 

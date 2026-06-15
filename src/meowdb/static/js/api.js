@@ -26,7 +26,7 @@ async function apiFetch(path, opts = {}) {
 
   const body = await res.json().catch(() => ({ detail: res.statusText }));
 
-  if (res.status === 401) {
+  if (res.status === 401 && !path.startsWith('/auth/')) {
     window.dispatchEvent(new CustomEvent('auth-expired'));
   }
 
@@ -226,7 +226,7 @@ async function getLabels() {
    ============================================================ */
 
 /**
- * @returns {Promise<{ authenticated: boolean }>}
+ * @returns {Promise<{ authenticated: boolean, auth_required: boolean }>}
  */
 async function getAuthStatus() {
   return apiFetch('/auth/status');

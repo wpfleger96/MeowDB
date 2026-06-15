@@ -66,9 +66,9 @@ def client(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
-        patch("meowdb.api.auth.AUTH_DISABLED", True),
-        patch("meowdb.api.auth.HOST", "127.0.0.1"),
+        patch("meowdb.api.app.IS_LOCALHOST", True),
+        patch("meowdb.api.auth.PASSWORD_HASH", ""),
+        patch("meowdb.api.auth.IS_LOCALHOST", True),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -104,9 +104,9 @@ def seeded_client(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.meows.MP3_DIR", mp3_dir),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
-        patch("meowdb.api.auth.AUTH_DISABLED", True),
-        patch("meowdb.api.auth.HOST", "127.0.0.1"),
+        patch("meowdb.api.app.IS_LOCALHOST", True),
+        patch("meowdb.api.auth.PASSWORD_HASH", ""),
+        patch("meowdb.api.auth.IS_LOCALHOST", True),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -315,9 +315,9 @@ def test_ingest_flow_post_and_poll(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
-        patch("meowdb.api.auth.AUTH_DISABLED", True),
-        patch("meowdb.api.auth.HOST", "127.0.0.1"),
+        patch("meowdb.api.app.IS_LOCALHOST", True),
+        patch("meowdb.api.auth.PASSWORD_HASH", ""),
+        patch("meowdb.api.auth.IS_LOCALHOST", True),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -363,9 +363,9 @@ def test_ingest_commit(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.meows.MP3_DIR", mp3_dir),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
-        patch("meowdb.api.auth.AUTH_DISABLED", True),
-        patch("meowdb.api.auth.HOST", "127.0.0.1"),
+        patch("meowdb.api.app.IS_LOCALHOST", True),
+        patch("meowdb.api.auth.PASSWORD_HASH", ""),
+        patch("meowdb.api.auth.IS_LOCALHOST", True),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -542,10 +542,9 @@ def auth_client(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
-        patch("meowdb.api.auth.HOST", "0.0.0.0"),
+        patch("meowdb.api.app.IS_LOCALHOST", True),
+        patch("meowdb.api.auth.IS_LOCALHOST", False),
         patch("meowdb.api.auth.PASSWORD_HASH", _TEST_HASH),
-        patch("meowdb.api.auth.AUTH_DISABLED", False),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -558,7 +557,7 @@ def auth_client(tmp_dirs):
 def test_auth_status_unauthenticated(auth_client):
     resp = auth_client.get("/api/auth/status")
     assert resp.status_code == 200
-    assert resp.json() == {"authenticated": False}
+    assert resp.json() == {"authenticated": False, "auth_required": True}
 
 
 @pytest.mark.integration
@@ -587,9 +586,8 @@ def test_login_no_password_configured(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
+        patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
-        patch("meowdb.api.auth.AUTH_DISABLED", False),
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -606,7 +604,7 @@ def test_login_success_and_auth_status(auth_client):
     assert resp.json() == {"status": "ok"}
 
     status_resp = auth_client.get("/api/auth/status")
-    assert status_resp.json() == {"authenticated": True}
+    assert status_resp.json() == {"authenticated": True, "auth_required": True}
 
 
 @pytest.mark.integration
@@ -672,7 +670,7 @@ def test_ingest_requires_auth(auth_client):
 
 @pytest.mark.integration
 def test_auth_bypass_requires_localhost(tmp_dirs):
-    """AUTH_DISABLED=True with a public HOST still enforces auth."""
+    """Empty PASSWORD_HASH with a public HOST still enforces auth."""
     with (
         patch("meowdb.api.app.DB_PATH", tmp_dirs["db"]),
         patch("meowdb.api.app.DATA_DIR", tmp_dirs["data"]),
@@ -688,9 +686,9 @@ def test_auth_bypass_requires_localhost(tmp_dirs):
         patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
-        patch("meowdb.api.app.HOST", "127.0.0.1"),
-        patch("meowdb.api.auth.AUTH_DISABLED", True),
-        patch("meowdb.api.auth.HOST", "0.0.0.0"),  # public host, bypass should NOT trigger
+        patch("meowdb.api.app.IS_LOCALHOST", True),
+        patch("meowdb.api.auth.PASSWORD_HASH", ""),
+        patch("meowdb.api.auth.IS_LOCALHOST", False),  # public host, bypass should NOT trigger
         warnings.catch_warnings(),
     ):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -727,3 +725,16 @@ def test_brute_force_lockout_expires(auth_client):
         assert resp.status_code == 401
 
     auth_module._failed_attempts.clear()
+
+
+@pytest.mark.integration
+def test_auth_status_no_password_localhost(client):
+    resp = client.get("/api/auth/status")
+    assert resp.status_code == 200
+    assert resp.json() == {"authenticated": False, "auth_required": False}
+
+
+@pytest.mark.integration
+def test_no_password_localhost_allows_writes(client):
+    resp = client.delete("/api/meows/nonexistent-id")
+    assert resp.status_code == 404  # not 401 — write endpoint accessible without auth

@@ -24,5 +24,6 @@ CORS_ORIGINS: list[str] = [
 ]
 
 PASSWORD_HASH: str = os.environ.get("MEOWDB_PASSWORD_HASH", "")
-SESSION_SECRET: str = os.environ.get("MEOWDB_SESSION_SECRET", "local-dev-secret-not-for-production")
-AUTH_DISABLED: bool = os.environ.get("MEOWDB_AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+_DEFAULT_SESSION_SECRET = "local-dev-secret-not-for-production"
+SESSION_SECRET: str = os.environ.get("MEOWDB_SESSION_SECRET", _DEFAULT_SESSION_SECRET)
+IS_LOCALHOST: bool = HOST in ("127.0.0.1", "localhost")

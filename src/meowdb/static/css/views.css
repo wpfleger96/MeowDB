@@ -690,6 +690,25 @@
   justify-content: center;
 }
 
+.clip-timecode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.clip-timecode-current {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.clip-timecode-sep {
+  color: var(--text-muted);
+}
+
 .clip-actions {
   margin-top: auto;
 }
