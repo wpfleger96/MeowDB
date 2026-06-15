@@ -488,3 +488,18 @@ def test_clip_negative_region_rejected(client):
         json={"regions": [{"start_ms": -100, "end_ms": 500}]},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.integration
+def test_health_returns_ok(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
+@pytest.mark.integration
+def test_health_returns_503_when_db_unreachable(client):
+    with patch("meowdb.db.MeowDB.ping", return_value=False):
+        resp = client.get("/health")
+    assert resp.status_code == 503
+    assert resp.json() == {"status": "error"}

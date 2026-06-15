@@ -88,6 +88,13 @@ class MeowDB:
     def close(self) -> None:
         self._conn.close()
 
+    def ping(self) -> bool:
+        try:
+            self._conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
+
     def _row_to_dict(self, row: sqlite3.Row) -> dict:  # type: ignore[type-arg]
         d = dict(row)
         for field in ("labels", "waveform_data"):

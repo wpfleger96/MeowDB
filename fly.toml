@@ -1,0 +1,27 @@
+app = "meowdb"
+primary_region = "sea"
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[mounts]
+  source = "meowdb_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[checks]]
+  type = "http"
+  port = 8000
+  path = "/health"
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "15s"

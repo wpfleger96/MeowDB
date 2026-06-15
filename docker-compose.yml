@@ -1,0 +1,10 @@
+services:
+  meowdb:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - meowdb-data:/data
+
+volumes:
+  meowdb-data:
