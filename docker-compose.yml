@@ -1,0 +1,28 @@
+services:
+  meowdb:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - meowdb-data:/data
+    environment:
+      - MEOWDB_CORS_ORIGINS=https://meowdb.app,http://localhost:8000,http://127.0.0.1:8000
+    networks:
+      - tunnel
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - tunnel
+    depends_on:
+      meowdb:
+        condition: service_healthy
+
+networks:
+  tunnel:
+
+volumes:
+  meowdb-data:

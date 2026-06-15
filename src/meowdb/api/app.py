@@ -6,11 +6,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from meowdb.api.routers import audio, ingest, meows, stats
-from meowdb.config import DATA_DIR, DB_PATH, MP3_DIR, STAGING_DIR, WAV_DIR
+from meowdb.config import CORS_ORIGINS, DATA_DIR, DB_PATH, MP3_DIR, STAGING_DIR, WAV_DIR
 
 _STATIC_DIR = Path(__file__).parent.parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
@@ -33,7 +33,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+        allow_origins=CORS_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -44,6 +44,12 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router, prefix="/api")
     app.include_router(audio.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
+
+    @app.get("/health", include_in_schema=False)
+    async def health(request: Request) -> dict[str, str]:
+        if request.app.state.db.ping():
+            return {"status": "ok"}
+        return JSONResponse({"status": "error"}, status_code=503)  # type: ignore[return-value]
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_catch_all(full_path: str, request: Request) -> FileResponse:
