@@ -327,6 +327,7 @@ class TestAdaptiveThreshold:
 
         # Fixed threshold (-40dBFS) must miss the meow (meow RMS ~ -47dBFS < -40)
         from meowdb.models import ProcessorConfig, SegmentationConfig
+
         fixed_proc = MeowProcessor(
             config=ProcessorConfig(segmentation=SegmentationConfig(adaptive_threshold=False))
         )
@@ -356,6 +357,7 @@ class TestAdaptiveThreshold:
     def test_disabled_adaptive_uses_fixed_threshold(self):
         """With adaptive_threshold=False, the fixed silence_threshold_dbfs is returned."""
         from meowdb.models import ProcessorConfig, SegmentationConfig
+
         config = ProcessorConfig(segmentation=SegmentationConfig(adaptive_threshold=False))
         processor = MeowProcessor(config=config)
         frame_dbfs = np.linspace(-80, -20, 1000)

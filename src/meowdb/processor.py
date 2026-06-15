@@ -304,7 +304,11 @@ class MeowProcessor:
             # Test 2: peak windowed ratio (rescues short meows diluted by surrounding noise)
             peak_ratio = 0.0
             hop = max(1, win_samples // 2)
-            n_wins = max(1, (len(cat_slice) - win_samples) // hop + 1) if len(cat_slice) >= win_samples else 1
+            n_wins = (
+                max(1, (len(cat_slice) - win_samples) // hop + 1)
+                if len(cat_slice) >= win_samples
+                else 1
+            )
             for wi in range(n_wins):
                 ws = wi * hop
                 we = min(ws + win_samples, len(cat_slice))
