@@ -456,3 +456,35 @@ def test_clip_empty_regions_rejected(client):
         json={"regions": []},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.integration
+def test_clip_inverted_region_rejected(client):
+    wav_bytes = _make_silent_wav_bytes()
+    resp = client.post(
+        "/api/ingest",
+        files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+    )
+    job_id = resp.json()["job_id"]
+
+    resp = client.post(
+        f"/api/ingest/{job_id}/clip",
+        json={"regions": [{"start_ms": 500, "end_ms": 100}]},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.integration
+def test_clip_negative_region_rejected(client):
+    wav_bytes = _make_silent_wav_bytes()
+    resp = client.post(
+        "/api/ingest",
+        files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+    )
+    job_id = resp.json()["job_id"]
+
+    resp = client.post(
+        f"/api/ingest/{job_id}/clip",
+        json={"regions": [{"start_ms": -100, "end_ms": 500}]},
+    )
+    assert resp.status_code == 422

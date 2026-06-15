@@ -267,6 +267,12 @@ class MeowDB:
         ).fetchone()
         return self._row_to_dict(row) if row else None
 
+    def get_segment_ids(self, job_id: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT id FROM ingest_segments WHERE job_id = ?", (job_id,)
+        ).fetchall()
+        return [row["id"] for row in rows]
+
     def commit_job(
         self,
         job_id: str,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class MeowResponse(BaseModel):
@@ -77,6 +77,14 @@ class LabelResponse(BaseModel):
 class ClipRegion(BaseModel):
     start_ms: int
     end_ms: int
+
+    @model_validator(mode="after")
+    def _validate_range(self) -> ClipRegion:
+        if self.start_ms < 0:
+            raise ValueError("start_ms must be non-negative")
+        if self.end_ms <= self.start_ms:
+            raise ValueError("end_ms must be greater than start_ms")
+        return self
 
 
 class ClipRequest(BaseModel):

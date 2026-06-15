@@ -52,10 +52,10 @@ test.describe('MeowDB views', () => {
   });
 
   test('ingest waveform clipping', async ({ page }, testInfo) => {
-    if (!SCREENSHOTS_ENABLED) return;
+    test.skip(!SCREENSHOTS_ENABLED, 'screenshots disabled');
 
     const audioFile = path.resolve(__dirname, '..', 'Meow 1.m4a');
-    if (!fs.existsSync(audioFile)) return;
+    test.skip(!fs.existsSync(audioFile), 'audio fixture not available');
 
     await page.goto('/upload', GOTO_OPTS);
     await page.waitForSelector('.upload-zone', { state: 'visible' });

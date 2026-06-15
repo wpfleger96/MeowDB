@@ -15,6 +15,9 @@ function ingestView() {
     recordSeconds: 0,
     _recordInterval: null,
 
+    // Reset-in-progress guard (prevents in-flight uploads from writing phase/jobId)
+    _resetting: false,
+
     // WaveSurfer state
     _wavesurfer: null,
     _regionsPlugin: null,
@@ -28,8 +31,8 @@ function ingestView() {
 
     init() {
       try {
-        micRecorder._onTick = (s) => { this.recordSeconds = s; };
-        micRecorder._onStop = (blob) => { this._uploadBlob(blob); };
+        micRecorder.onTick = (s) => { this.recordSeconds = s; };
+        micRecorder.onStop = (blob) => { this._uploadBlob(blob); };
       } catch (e) {
         console.error('ingestView init error:', e);
       }
@@ -67,6 +70,7 @@ function ingestView() {
     },
 
     async _uploadFile(file) {
+      if (this._resetting) return;
       this.phase = 'uploading';
       this.statusMessage = 'Uploading…';
       try {
@@ -212,6 +216,7 @@ function ingestView() {
         start_ms: Math.round(r.start * 1000),
         end_ms: Math.round(r.end * 1000),
       }));
+      regionData.sort((a, b) => a.start_ms - b.start_ms);
 
       this.phase = 'processing';
       this.statusMessage = 'Processing ' + regions.length + ' clip' + (regions.length !== 1 ? 's' : '') + '…';
@@ -228,12 +233,15 @@ function ingestView() {
     },
 
     reset() {
+      this._resetting = true;
+      if (this.isRecording) this.stopRecording();
       this._destroyWaveSurfer();
       this.regionCount = 0;
       audioPlayer.stop();
       this.phase = 'idle';
       this.jobId = null;
       this.statusMessage = '';
+      this._resetting = false;
     },
 
     /* ──────────────────────────────────────────────────────
