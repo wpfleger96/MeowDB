@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from meowdb.api.models import MeowListResponse, MeowResponse, UpdateLabelsRequest
+from meowdb.api.models import MeowListResponse, MeowResponse, UpdateMeowRequest
 from meowdb.api.streaming import safe_path
 from meowdb.config import MP3_DIR, WAV_DIR
 
@@ -14,8 +14,8 @@ router = APIRouter()
 def _meow_to_response(meow: dict) -> MeowResponse:  # type: ignore[type-arg]
     mp3_path = meow.get("mp3_path", "")
     wav_path = meow.get("wav_path", "")
-    mp3_url = f"/audio/{meow['id']}" if mp3_path else None
-    wav_url = f"/static/wav/{meow['id']}" if wav_path else None
+    mp3_url = f"/api/audio/{meow['id']}" if mp3_path else None
+    wav_url = f"/api/audio/{meow['id']}/wav" if wav_path else None
     return MeowResponse(
         id=meow["id"],
         timestamp=meow.get("timestamp") or "",
@@ -25,6 +25,9 @@ def _meow_to_response(meow: dict) -> MeowResponse:  # type: ignore[type-arg]
         created_at=meow.get("created_at") or "",
         wav_url=wav_url,
         mp3_url=mp3_url,
+        waveform_data=meow.get("waveform_data") or [],
+        recorded_at=meow.get("recorded_at"),
+        title=meow.get("title"),
     )
 
 
@@ -57,18 +60,26 @@ async def list_meows(
 
 
 @router.patch("/meows/{meow_id}", response_model=MeowResponse)
-async def update_meow_labels(
+async def update_meow(
     meow_id: str,
-    body: UpdateLabelsRequest,
+    body: UpdateMeowRequest,
     request: Request,
 ) -> MeowResponse:
     db = request.app.state.db
-    updated = db.update_labels(meow_id, body.labels)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Meow not found")
+    if body.labels is not None:
+        if not db.update_labels(meow_id, body.labels):
+            raise HTTPException(status_code=404, detail="Meow not found")
+    update_fields = {}
+    if body.title is not None:
+        update_fields["title"] = body.title
+    if body.recorded_at is not None:
+        update_fields["recorded_at"] = body.recorded_at
+    if update_fields:
+        if not db.update_meow(meow_id, update_fields):
+            raise HTTPException(status_code=404, detail="Meow not found")
     meow = db.get_by_id(meow_id)
     if meow is None:
-        raise HTTPException(status_code=500, detail="Meow disappeared after update")
+        raise HTTPException(status_code=404, detail="Meow not found")
     return _meow_to_response(meow)
 
 

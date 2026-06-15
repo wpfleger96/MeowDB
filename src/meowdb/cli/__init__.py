@@ -18,6 +18,7 @@ def _register_commands() -> None:
     from meowdb.cli.commands.play import play
     from meowdb.cli.commands.serve import serve
     from meowdb.cli.commands.stats import stats
+    from meowdb.cli.groups.db import db
 
     main.add_command(delete)
     main.add_command(ingest)
@@ -25,6 +26,7 @@ def _register_commands() -> None:
     main.add_command(play)
     main.add_command(serve)
     main.add_command(stats)
+    main.add_command(db)
 
 
 _register_commands()

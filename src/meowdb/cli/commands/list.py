@@ -69,7 +69,7 @@ def _print_table(meows: list[dict]) -> None:  # type: ignore[type-arg]
     table = Table(show_header=True, header_style="bold", box=None)
     table.add_column("ID", style="dim", width=10)
     table.add_column("Duration", justify="right")
-    table.add_column("Added", style="dim")
+    table.add_column("Date Added", style="dim")
     table.add_column("Plays", justify="right")
     table.add_column("Labels")
 

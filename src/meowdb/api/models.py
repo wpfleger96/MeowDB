@@ -12,6 +12,9 @@ class MeowResponse(BaseModel):
     created_at: str
     wav_url: str | None = None
     mp3_url: str | None = None
+    waveform_data: list[float] = []
+    recorded_at: str | None = None
+    title: str | None = None
 
 
 class MeowListResponse(BaseModel):
@@ -23,6 +26,12 @@ class MeowListResponse(BaseModel):
 
 class UpdateLabelsRequest(BaseModel):
     labels: list[str]
+
+
+class UpdateMeowRequest(BaseModel):
+    labels: list[str] | None = None
+    title: str | None = None
+    recorded_at: str | None = None
 
 
 class IngestSegmentResponse(BaseModel):

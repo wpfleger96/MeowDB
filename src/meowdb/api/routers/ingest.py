@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
@@ -253,6 +255,11 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
         raise HTTPException(status_code=400, detail="At least one region is required")
 
     source_path = _resolve_source(job_id)
+    try:
+        mtime = os.path.getmtime(str(source_path))
+        recorded_at: str | None = datetime.fromtimestamp(mtime).isoformat()
+    except OSError:
+        recorded_at = None
     staging_dir = STAGING_DIR / job_id
 
     regions = [(r.start_ms, r.end_ms) for r in body.regions]
@@ -273,6 +280,6 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     ]
     db.add_segments(job_id, seg_dicts)
     segment_ids = db.get_segment_ids(job_id)
-    meow_ids = db.commit_job(job_id, segment_ids, [], WAV_DIR, MP3_DIR)
+    meow_ids = db.commit_job(job_id, segment_ids, [], WAV_DIR, MP3_DIR, recorded_at=recorded_at)
     shutil.rmtree(staging_dir, ignore_errors=True)
     return CommitResponse(meow_ids=meow_ids, rejected_count=0)

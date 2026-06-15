@@ -75,7 +75,7 @@ function playView() {
 
       try {
         // play() must be called synchronously after user gesture
-        await audioPlayer.play(meow.mp3_url);
+        await audioPlayer.playWithFallback(meow.mp3_url, meow.wav_url);
       } catch {
         this.isPlaying = false;
         this._stopWaveform();

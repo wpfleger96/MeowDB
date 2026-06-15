@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS meows (
     waveform_data TEXT NOT NULL DEFAULT '[]',
     peak_dbfs REAL,
     cat_energy_ratio REAL,
-    ai_analysis TEXT
+    ai_analysis TEXT,
+    recorded_at TEXT,
+    title TEXT
 )
 """
 
@@ -75,6 +77,12 @@ class MeowDB:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_meows_play_count ON meows(play_count DESC)"
         )
+        self._conn.commit()
+        for col, typedef in [("recorded_at", "TEXT"), ("title", "TEXT")]:
+            try:
+                self._conn.execute(f"ALTER TABLE meows ADD COLUMN {col} {typedef}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         self._conn.commit()
 
     def close(self) -> None:
@@ -158,6 +166,20 @@ class MeowDB:
     def get_by_id(self, meow_id: str) -> dict | None:  # type: ignore[type-arg]
         row = self._conn.execute("SELECT * FROM meows WHERE id = ?", (meow_id,)).fetchone()
         return self._row_to_dict(row) if row else None
+
+    def update_meow(self, meow_id: str, updates: dict) -> bool:  # type: ignore[type-arg]
+        allowed = {"title", "recorded_at"}
+        fields = {k: v for k, v in updates.items() if k in allowed}
+        if not fields:
+            return True
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [meow_id]
+        cursor = self._conn.execute(
+            f"UPDATE meows SET {set_clause} WHERE id = ?",
+            values,
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
 
     def update_labels(self, meow_id: str, labels: list[str]) -> bool:
         cursor = self._conn.execute(
@@ -280,6 +302,7 @@ class MeowDB:
         rejected_ids: list[str],
         wav_dir: Path,
         mp3_dir: Path,
+        recorded_at: str | None = None,
     ) -> list[str]:
         new_meow_ids: list[str] = []
 
@@ -310,10 +333,10 @@ class MeowDB:
                     """
                     INSERT INTO meows
                         (id, timestamp, duration_ms, labels, wav_path, mp3_path,
-                         waveform_data, peak_dbfs, cat_energy_ratio)
+                         waveform_data, peak_dbfs, cat_energy_ratio, recorded_at)
                     VALUES
                         (:id, datetime('now'), :duration_ms, '[]', :wav_path, :mp3_path,
-                         :waveform_data, :peak_dbfs, :cat_energy_ratio)
+                         :waveform_data, :peak_dbfs, :cat_energy_ratio, :recorded_at)
                     """,
                     {
                         "id": meow_id,
@@ -323,6 +346,7 @@ class MeowDB:
                         "waveform_data": json.dumps(seg.get("waveform_data", [])),
                         "peak_dbfs": seg.get("peak_dbfs"),
                         "cat_energy_ratio": seg.get("cat_energy_ratio"),
+                        "recorded_at": recorded_at,
                     },
                 )
                 self._conn.execute(

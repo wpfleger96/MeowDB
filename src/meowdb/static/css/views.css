@@ -679,7 +679,8 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   min-height: 128px;
 }
 
@@ -691,4 +692,31 @@
 
 .clip-actions {
   margin-top: auto;
+}
+
+.region-delete-btn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  z-index: 10;
+  opacity: 0.75;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.region-delete-btn:hover {
+  opacity: 1;
+  background: #e53e3e;
 }

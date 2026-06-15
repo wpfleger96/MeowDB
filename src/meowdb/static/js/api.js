@@ -74,6 +74,19 @@ async function updateLabels(id, labels) {
 
 /**
  * @param {string} id
+ * @param {{ labels?: string[], title?: string|null, recorded_at?: string|null }} fields
+ * @returns {Promise<object>}
+ */
+async function updateMeow(id, fields) {
+  return apiFetch(`/meows/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+}
+
+/**
+ * @param {string} id
  * @returns {Promise<null>}
  */
 async function deleteMeow(id) {

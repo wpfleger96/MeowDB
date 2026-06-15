@@ -24,6 +24,8 @@ function ingestView() {
     _wavesurferLoaded: false,
     isAutoDetecting: false,
     regionCount: 0,
+    zoomLevel: 0,
+    _minPxPerSec: 0,
 
     /* ──────────────────────────────────────────────────────
        Lifecycle
@@ -155,18 +157,58 @@ function ingestView() {
         height: 120,
         normalize: true,
         interact: true,
+        scrollParent: true,
         url: sourceAudioUrl(this.jobId),
         plugins: [this._regionsPlugin],
       });
 
+      this._wavesurfer.on('ready', () => {
+        const duration = this._wavesurfer.getDuration();
+        if (duration > 0) {
+          this._minPxPerSec = container.clientWidth / duration;
+        }
+      });
+
       this._regionsPlugin.enableDragSelection({ color: 'rgba(255, 107, 107, 0.25)' });
 
-      this._regionsPlugin.on('region-created', () => {
+      this._regionsPlugin.on('region-created', (region) => {
         this.regionCount = this._regionsPlugin.getRegions().length;
+        this._addDeleteButton(region);
       });
       this._regionsPlugin.on('region-removed', () => {
         this.regionCount = this._regionsPlugin.getRegions().length;
       });
+    },
+
+    _addDeleteButton(region) {
+      const btn = document.createElement('button');
+      btn.className = 'region-delete-btn';
+      btn.innerHTML = '&times;';
+      btn.setAttribute('aria-label', 'Delete region');
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        region.remove();
+      });
+      region.element.appendChild(btn);
+    },
+
+    zoomIn() {
+      if (!this._wavesurfer || this.zoomLevel >= 10) return;
+      this.zoomLevel += 1;
+      this._applyZoom();
+    },
+
+    zoomOut() {
+      if (!this._wavesurfer || this.zoomLevel <= 0) return;
+      this.zoomLevel -= 1;
+      this._applyZoom();
+    },
+
+    _applyZoom() {
+      if (!this._wavesurfer || this._minPxPerSec === 0) return;
+      const pxPerSec = this._minPxPerSec * Math.pow(2, this.zoomLevel);
+      this._wavesurfer.zoom(pxPerSec);
     },
 
     _destroyWaveSurfer() {
@@ -237,6 +279,8 @@ function ingestView() {
       if (this.isRecording) this.stopRecording();
       this._destroyWaveSurfer();
       this.regionCount = 0;
+      this.zoomLevel = 0;
+      this._minPxPerSec = 0;
       audioPlayer.stop();
       this.phase = 'idle';
       this.jobId = null;

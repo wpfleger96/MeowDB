@@ -13,9 +13,9 @@ from meowdb.display import print_error, print_success
 
 @click.command()
 @click.argument("id")
-@click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompt.")
+@click.option("--force", is_flag=True, default=False, help="Skip confirmation prompt.")
 @db_path_option
-def delete(id: str, yes: bool, db_path: str | None) -> None:
+def delete(id: str, force: bool, db_path: str | None) -> None:
     """Delete a meow from the library."""
     ctx = build_context(Path(db_path) if db_path else None)
 
@@ -25,7 +25,7 @@ def delete(id: str, yes: bool, db_path: str | None) -> None:
         ctx.db.close()
         sys.exit(1)
 
-    if not yes:
+    if not force:
         confirmed = click.confirm(f"Delete meow {id[:8]}?", default=False)
         if not confirmed:
             ctx.db.close()

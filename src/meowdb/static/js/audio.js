@@ -81,6 +81,31 @@ class AudioPlayer {
   }
 
   /**
+   * Play audio from a primary URL, falling back to a secondary URL on error.
+   * Suppresses the onError callback during the primary attempt so a failed
+   * primary does not surface an error before the fallback is tried.
+   *
+   * @param {string} url
+   * @param {string|null} [fallbackUrl]
+   * @returns {Promise<void>}
+   */
+  async playWithFallback(url, fallbackUrl = null) {
+    if (!fallbackUrl) {
+      return this.play(url);
+    }
+    const savedOnError = this._onError;
+    this._onError = null;
+    try {
+      await this.play(url);
+    } catch {
+      this._onError = savedOnError;
+      await this.play(fallbackUrl);
+      return;
+    }
+    this._onError = savedOnError;
+  }
+
+  /**
    * Stop any current playback.
    */
   stop() {

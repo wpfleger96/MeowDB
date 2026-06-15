@@ -21,6 +21,7 @@ function libraryView() {
     detailMeow: null,
     showDeleteConfirm: false,
     labelInput: '',
+    detailTitle: '',
     _wavesurfer: null,
     _wavesurferLoaded: false,
 
@@ -119,7 +120,7 @@ function libraryView() {
       };
 
       try {
-        await audioPlayer.play(meow.mp3_url);
+        await audioPlayer.playWithFallback(meow.mp3_url, meow.wav_url);
       } catch {
         this.playingId = null;
       }
@@ -133,6 +134,7 @@ function libraryView() {
       audioPlayer.stop();
       this.playingId = null;
       this.detailMeow = { ...meow, labels: [...(meow.labels || [])] };
+      this.detailTitle = meow.title || '';
       this.showDetail = true;
       this.showDeleteConfirm = false;
       this.labelInput = '';
@@ -239,6 +241,18 @@ function libraryView() {
         await this._loadLabels();
       } catch (err) {
         showToast(err.message || 'Failed to save labels', 'error');
+      }
+    },
+
+    async saveTitle() {
+      if (!this.detailMeow) return;
+      try {
+        const updated = await updateMeow(this.detailMeow.id, { title: this.detailTitle || null });
+        this.detailMeow = { ...updated, labels: updated.labels || [] };
+        const idx = this.meows.findIndex((m) => m.id === this.detailMeow.id);
+        if (idx !== -1) this.meows[idx] = { ...this.meows[idx], title: updated.title };
+      } catch (err) {
+        showToast(err.message || 'Failed to save title', 'error');
       }
     },
 
