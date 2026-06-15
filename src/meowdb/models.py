@@ -24,7 +24,7 @@ class SegmentationConfig(BaseModel):
     adaptive_percentile: float = 30.0
     adaptive_offset_db: float = 10.0
     adaptive_floor_dbfs: float = -45.0
-    adaptive_ceiling_dbfs: float = -35.0
+    adaptive_ceiling_dbfs: float = -40.0
     min_peak_ratio: float = 3.5
     peak_ratio_window_ms: int = 50
     use_spectral_classifier: bool = True

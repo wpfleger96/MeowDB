@@ -267,19 +267,33 @@ class MeowProcessor:
         if len(samples) < 256:
             return 0.0
         seg = self.config.segmentation
-        n_fft = min(2048, len(samples))
-        windowed = samples[:n_fft] * np.hanning(n_fft)
-        spectrum = np.abs(np.fft.rfft(windowed)) ** 2
+        n_fft = 2048
         freq_bins = np.fft.rfftfreq(n_fft, 1.0 / sr)
         mask = (freq_bins >= seg.cat_band_low_hz) & (freq_bins <= seg.cat_band_high_hz)
-        band = np.maximum(spectrum[mask], 1e-20)
-        if len(band) == 0:
+        if not np.any(mask):
             return 0.0
-        geo_mean = float(np.exp(np.mean(np.log(band))))
-        arith_mean = float(np.mean(band))
-        if arith_mean < 1e-20:
-            return 0.0
-        return float(np.clip(geo_mean / arith_mean, 0.0, 1.0))
+        window = np.hanning(n_fft)
+        flatnesses: list[float] = []
+        for start in range(0, len(samples) - n_fft + 1, n_fft):
+            spectrum = np.abs(np.fft.rfft(samples[start : start + n_fft] * window)) ** 2
+            band = np.maximum(spectrum[mask], 1e-20)
+            arith_mean = float(np.mean(band))
+            if arith_mean < 1e-20:
+                continue
+            geo_mean = float(np.exp(np.mean(np.log(band))))
+            flatnesses.append(float(np.clip(geo_mean / arith_mean, 0.0, 1.0)))
+        if not flatnesses:
+            # segment shorter than one full window — analyze whatever we have
+            n = len(samples)
+            windowed = samples * np.hanning(n)
+            spectrum = np.abs(np.fft.rfft(windowed, n=n_fft)) ** 2
+            band = np.maximum(spectrum[mask], 1e-20)
+            arith_mean = float(np.mean(band))
+            if arith_mean < 1e-20:
+                return 0.0
+            geo_mean = float(np.exp(np.mean(np.log(band))))
+            return float(np.clip(geo_mean / arith_mean, 0.0, 1.0))
+        return float(np.mean(flatnesses))
 
     def _classify_segments(
         self,

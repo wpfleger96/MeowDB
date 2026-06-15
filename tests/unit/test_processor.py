@@ -114,7 +114,7 @@ class TestSegmentDetection:
         assert len(candidates) >= 1
 
     def test_segment_duration_filter_rejects_too_short(self):
-        """A 50ms tone is below min_segment_ms=200 and must be rejected."""
+        """A 50ms tone is below min_segment_ms=80 and must be rejected."""
         processor = MeowProcessor()
         audio = _make_sine_wav(800, 50, amplitude=0.6)
         samples = processor._audio_to_numpy(audio)
@@ -123,7 +123,7 @@ class TestSegmentDetection:
         assert len(candidates) == 0
 
     def test_segment_duration_filter_rejects_too_long(self):
-        """A 10-second tone exceeds max_segment_ms=4000 and must be rejected."""
+        """A 10-second tone exceeds max_segment_ms=5000 and must be rejected."""
         processor = MeowProcessor()
         # Use lower amplitude so convolve-based RMS produces one merged run
         audio = _make_sine_wav(800, 10000, amplitude=0.4)
@@ -390,6 +390,25 @@ class TestSpectralClassifier:
         short = np.zeros(100, dtype=np.float32)
         flatness = processor._spectral_flatness(short, 44100)
         assert flatness == 0.0
+
+    def test_tonal_onset_then_noise_not_fooled(self):
+        """Flatness is averaged over the full segment, not just the first window.
+
+        A tonal first 46ms followed by broadband noise must score high flatness
+        overall, not low flatness from the onset alone.
+        """
+        processor = MeowProcessor()
+        sr = 44100
+        rng = np.random.default_rng(0)
+        # 46ms tonal onset (one 2048-sample window)
+        t_tone = np.arange(2048) / sr
+        tone = (0.5 * np.sin(2 * np.pi * 800 * t_tone)).astype(np.float32)
+        # ~500ms of broadband noise (many more windows)
+        noise = (rng.standard_normal(sr // 2) * 0.3).astype(np.float32)
+        combined = np.concatenate([tone, noise])
+        flatness = processor._spectral_flatness(combined, sr)
+        # Overall flatness should be high (noise dominated) not low (tone dominated)
+        assert flatness > 0.3
 
 
 @pytest.mark.unit
