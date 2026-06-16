@@ -679,8 +679,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   min-height: 128px;
 }
 
@@ -738,4 +737,82 @@
 .region-delete-btn:hover {
   opacity: 1;
   background: #e53e3e;
+}
+
+/* ── Clip list ── */
+
+.clip-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.clip-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.clip-list-item:last-child {
+  border-bottom: none;
+}
+
+.clip-list-number {
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 28px;
+}
+
+.clip-list-range {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.clip-list-play,
+.clip-list-delete {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.clip-list-delete:hover {
+  color: var(--red);
+}
+
+/* ── Cat bio ── */
+
+.cat-bio {
+  max-width: 360px;
+  text-align: center;
+  padding: 0 var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ── Photo upload ── */
+
+.photo-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.photo-upload-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+/* Stronger text shadow when a cat photo is showing on the MEOW button */
+.meow-btn.has-photo .meow-btn-label,
+.meow-btn.has-photo .meow-btn-sub {
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.75), 0 0 4px rgba(0, 0, 0, 0.5);
 }

@@ -52,6 +52,14 @@ CREATE TABLE IF NOT EXISTS ingest_segments (
 )
 """
 
+_CREATE_CAT_PHOTOS = """
+CREATE TABLE IF NOT EXISTS cat_photos (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_default BOOLEAN NOT NULL DEFAULT 0
+)
+"""
 
 _SORT_MAP = {
     "newest": "created_at DESC, rowid DESC",
@@ -71,6 +79,7 @@ class MeowDB:
         self._conn.execute(_CREATE_MEOWS)
         self._conn.execute(_CREATE_INGEST_JOBS)
         self._conn.execute(_CREATE_INGEST_SEGMENTS)
+        self._conn.execute(_CREATE_CAT_PHOTOS)
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_meows_created_at ON meows(created_at DESC)"
         )
@@ -427,3 +436,36 @@ class MeowDB:
     def get_labels(self) -> list[dict]:  # type: ignore[type-arg]
         counts = self._count_labels()
         return [{"label": lbl, "count": cnt} for lbl, cnt in sorted(counts.items())]
+
+    # -------------------------------------------------------------------------
+    # Cat photos
+    # -------------------------------------------------------------------------
+
+    def add_photo(
+        self, filename: str, photo_id: str | None = None, is_default: bool = False
+    ) -> str:
+        if photo_id is None:
+            photo_id = str(uuid.uuid4())
+        self._conn.execute(
+            "INSERT INTO cat_photos (id, filename, is_default) VALUES (?, ?, ?)",
+            (photo_id, filename, is_default),
+        )
+        self._conn.commit()
+        return photo_id
+
+    def get_photos(self) -> list[dict]:  # type: ignore[type-arg]
+        rows = self._conn.execute("SELECT * FROM cat_photos ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def get_random_photo(self) -> dict | None:  # type: ignore[type-arg]
+        row = self._conn.execute("SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def get_photo(self, photo_id: str) -> dict | None:  # type: ignore[type-arg]
+        row = self._conn.execute("SELECT * FROM cat_photos WHERE id = ?", (photo_id,)).fetchone()
+        return dict(row) if row else None
+
+    def delete_photo(self, photo_id: str) -> bool:
+        cursor = self._conn.execute("DELETE FROM cat_photos WHERE id = ?", (photo_id,))
+        self._conn.commit()
+        return cursor.rowcount > 0

@@ -24,6 +24,7 @@ function ingestView() {
     _wavesurferLoaded: false,
     isAutoDetecting: false,
     regionCount: 0,
+    clips: [],
     zoomLevel: 0,
     _minPxPerSec: 0,
     duration: 0,
@@ -189,9 +190,18 @@ function ingestView() {
       this._regionsPlugin.on('region-created', (region) => {
         this.regionCount = this._regionsPlugin.getRegions().length;
         this._addDeleteButton(region);
+        this.clips.push({ id: region.id, start: region.start, end: region.end, region });
       });
-      this._regionsPlugin.on('region-removed', () => {
+      this._regionsPlugin.on('region-removed', (region) => {
         this.regionCount = this._regionsPlugin.getRegions().length;
+        this.clips = this.clips.filter(c => c.id !== region.id);
+      });
+      this._regionsPlugin.on('region-updated', (region) => {
+        const clip = this.clips.find(c => c.id === region.id);
+        if (clip) {
+          clip.start = region.start;
+          clip.end = region.end;
+        }
       });
     },
 
@@ -200,6 +210,11 @@ function ingestView() {
       btn.className = 'region-delete-btn';
       btn.innerHTML = '&times;';
       btn.setAttribute('aria-label', 'Delete region');
+      btn.style.pointerEvents = 'auto';
+      btn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      });
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -251,6 +266,7 @@ function ingestView() {
       this.isAutoDetecting = true;
       try {
         const result = await detectRegions(this.jobId);
+        this.clips = [];
         this._regionsPlugin.clearRegions();
         for (const r of result.regions) {
           this._regionsPlugin.addRegion({
@@ -270,6 +286,14 @@ function ingestView() {
       } finally {
         this.isAutoDetecting = false;
       }
+    },
+
+    playClip(clip) {
+      if (this._wavesurfer) this._wavesurfer.play(clip.start, clip.end);
+    },
+
+    removeClip(clip) {
+      if (clip.region) clip.region.remove();
     },
 
     async saveClips() {
@@ -304,6 +328,7 @@ function ingestView() {
       if (this.isRecording) this.stopRecording();
       this._destroyWaveSurfer();
       this.regionCount = 0;
+      this.clips = [];
       this.zoomLevel = 0;
       this._minPxPerSec = 0;
       audioPlayer.stop();
@@ -311,6 +336,22 @@ function ingestView() {
       this.jobId = null;
       this.statusMessage = '';
       this._resetting = false;
+    },
+
+    async onPhotoChange(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      event.target.value = '';
+      if (this.$root.authRequired && !this.$root.authenticated) {
+        this.$root.showLoginModal = true;
+        return;
+      }
+      try {
+        await uploadPhoto(file);
+        showToast('Photo uploaded!', 'success');
+      } catch (err) {
+        showToast(err.message || 'Photo upload failed', 'error');
+      }
     },
 
     /* ──────────────────────────────────────────────────────

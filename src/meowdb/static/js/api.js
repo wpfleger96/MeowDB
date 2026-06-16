@@ -250,3 +250,39 @@ async function login(password) {
 async function logout() {
   return apiFetch('/auth/logout', { method: 'POST' });
 }
+
+/* ============================================================
+   Photos
+   ============================================================ */
+
+/**
+ * @returns {Promise<{ items: object[] }>}
+ */
+async function getPhotos() {
+  return apiFetch('/photos');
+}
+
+/**
+ * @returns {Promise<object>} PhotoResponse with image_url
+ */
+async function getRandomPhoto() {
+  return apiFetch('/photos/random');
+}
+
+/**
+ * @param {File} file
+ * @returns {Promise<object>} PhotoResponse
+ */
+async function uploadPhoto(file) {
+  const form = new FormData();
+  form.append('file', file, file.name || 'photo.jpg');
+  return apiFetch('/photos', { method: 'POST', body: form });
+}
+
+/**
+ * @param {string} id
+ * @returns {Promise<null>}
+ */
+async function deletePhoto(id) {
+  return apiFetch(`/photos/${id}`, { method: 'DELETE' });
+}

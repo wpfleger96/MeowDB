@@ -8,6 +8,7 @@ function playView() {
     isPlaying: false,
     isLoading: false,
     currentMeow: null,
+    currentPhoto: null,
     _cancelWaveform: null,
 
     async init() {
@@ -50,6 +51,7 @@ function playView() {
       }
 
       this.currentMeow = meow;
+      getRandomPhoto().then(photo => { this.currentPhoto = photo; }).catch(() => {});
       this.isLoading = false;
       this.isPlaying = true;
 

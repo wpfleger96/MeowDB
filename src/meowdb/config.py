@@ -12,6 +12,7 @@ WAV_DIR: Path = _data_dir / "audio" / "wav"
 MP3_DIR: Path = _data_dir / "audio" / "mp3"
 STAGING_DIR: Path = _data_dir / "staging"
 ORIGINALS_DIR: Path = _data_dir / "originals"
+PHOTOS_DIR: Path = _data_dir / "photos"
 
 HOST: str = os.environ.get("MEOWDB_HOST", "127.0.0.1")
 PORT: int = int(os.environ.get("MEOWDB_PORT", "8000"))

@@ -107,3 +107,15 @@ class DetectRegion(BaseModel):
 
 class DetectResponse(BaseModel):
     regions: list[DetectRegion]
+
+
+class PhotoResponse(BaseModel):
+    id: str
+    filename: str
+    created_at: str
+    image_url: str
+    is_default: bool = False
+
+
+class PhotoListResponse(BaseModel):
+    items: list[PhotoResponse]

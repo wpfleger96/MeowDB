@@ -71,7 +71,8 @@
             <!-- Giant MEOW button -->
             <button
               class="meow-btn"
-              :class="{ playing: isPlaying }"
+              :class="{ playing: isPlaying, 'has-photo': currentPhoto }"
+              :style="currentPhoto ? 'background-image: url(' + currentPhoto.image_url + '); background-size: cover; background-position: center;' : ''"
               @click="onMeowPress()"
               :disabled="isLoading"
               aria-label="Play a random meow"
@@ -95,6 +96,11 @@
               <strong x-text="meowCount"></strong>
               <span x-text="meowCount === 1 ? ' meow' : ' meows'"></span>
               in library
+            </p>
+
+            <!-- Squishy bio -->
+            <p class="cat-bio" x-show="meowCount > 0">
+              Squishy is a very vocal cat. This is her personal meow archive.
             </p>
           </div>
         </template>
@@ -441,6 +447,27 @@
           </div>
         </div>
 
+        <!-- Cat photo upload -->
+        <div class="photo-upload-section" x-show="phase === 'idle'" style="padding: 0 var(--sp-4);">
+          <div class="divider"></div>
+          <div class="photo-upload-row">
+            <button
+              class="btn btn-secondary"
+              @click="$refs.photoInput.click()"
+              x-show="!$root.authRequired || $root.authenticated"
+            >Upload cat photo</button>
+            <span class="text-sm text-muted">Add photos of Squishy for the MEOW button</span>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            x-ref="photoInput"
+            @change="onPhotoChange($event)"
+            style="display:none"
+            aria-hidden="true"
+          >
+        </div>
+
         <!-- ── uploading / processing ── -->
         <div class="upload-progress" x-show="phase === 'uploading' || phase === 'processing'">
           <div class="spinner spinner-lg"></div>
@@ -492,6 +519,22 @@
               :disabled="regionCount === 0"
               x-text="regionCount === 0 ? 'Draw regions to save' : 'Save ' + regionCount + (regionCount === 1 ? ' clip' : ' clips')"
             ></button>
+          </div>
+
+          <!-- Clip list -->
+          <div class="clip-list" x-show="clips.length > 0">
+            <template x-for="(clip, index) in clips" :key="clip.id">
+              <div class="clip-list-item">
+                <span class="clip-list-number" x-text="'#' + (index + 1)"></span>
+                <span class="clip-list-range" x-text="formatTimecode(clip.start) + ' – ' + formatTimecode(clip.end)"></span>
+                <button class="btn-icon clip-list-play" @click="playClip(clip)" aria-label="Play clip">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+                <button class="btn-icon clip-list-delete" @click="removeClip(clip)" aria-label="Delete clip">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </template>
           </div>
         </div>
 

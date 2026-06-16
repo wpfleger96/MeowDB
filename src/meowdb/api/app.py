@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from meowdb.api import auth
-from meowdb.api.routers import audio, ingest, meows, stats
+from meowdb.api.routers import audio, ingest, meows, photos, stats
 from meowdb.config import (
     _DEFAULT_SESSION_SECRET,
     CORS_ORIGINS,
@@ -21,6 +21,7 @@ from meowdb.config import (
     DB_PATH,
     IS_LOCALHOST,
     MP3_DIR,
+    PHOTOS_DIR,
     SESSION_SECRET,
     STAGING_DIR,
     WAV_DIR,
@@ -47,7 +48,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             "MEOWDB_SESSION_SECRET is using the default value — session cookies are forgeable"
         )
 
-    for directory in (DATA_DIR, WAV_DIR, MP3_DIR, STAGING_DIR):
+    for directory in (DATA_DIR, WAV_DIR, MP3_DIR, STAGING_DIR, PHOTOS_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
     app.state.db = MeowDB(DB_PATH)
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest.router, prefix="/api")
     app.include_router(audio.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
+    app.include_router(photos.router, prefix="/api")
 
     @app.get("/health", include_in_schema=False, response_model=None)
     async def health(request: Request) -> JSONResponse:
