@@ -75,6 +75,16 @@ function libraryView() {
       await this._loadMeows(true);
     },
 
+    async recalculate() {
+      try {
+        const result = await recalculateUniqueness();
+        showToast(`Uniqueness updated (${result.updated_count} fingerprints computed)`, 'success');
+        await this._loadMeows(true);
+      } catch (err) {
+        showToast(err.message || 'Recalculation failed', 'error');
+      }
+    },
+
     async toggleLabelFilter(label) {
       if (this.filterLabel === label) {
         this.filterLabel = '';

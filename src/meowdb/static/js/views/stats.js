@@ -15,6 +15,8 @@ function statsView() {
     async load() {
       this.isLoading = true;
       this.error = null;
+      // Recompute uniqueness scores in the background whenever stats are refreshed
+      recalculateUniqueness().catch(() => {});
       try {
         this.stats = await getStats();
       } catch (err) {
