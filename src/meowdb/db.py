@@ -470,9 +470,13 @@ class MeowDB:
                 "SELECT * FROM cat_photos WHERE id != ? ORDER BY RANDOM() LIMIT 1", (exclude_id,)
             ).fetchone()
             if row is None:
-                row = self._conn.execute("SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1").fetchone()
+                row = self._conn.execute(
+                    "SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1"
+                ).fetchone()
         else:
-            row = self._conn.execute("SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1").fetchone()
+            row = self._conn.execute(
+                "SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1"
+            ).fetchone()
         return dict(row) if row else None
 
     def get_photo(self, photo_id: str) -> dict | None:  # type: ignore[type-arg]
