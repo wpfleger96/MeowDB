@@ -26,7 +26,7 @@ class MeowProcessor:
         cat_band, low_band = self._build_discriminator_signals(samples, sr)
 
         candidates = self._detect_segments(cat_band, sr)
-        classified = self._classify_segments(candidates, cat_band, low_band)
+        classified = self._classify_segments(candidates, cat_band, low_band, sr)
         padded = self._apply_padding(classified, len(samples), sr)
 
         rejected_count = len(candidates) - len(classified)
@@ -97,7 +97,7 @@ class MeowProcessor:
         audio, samples, sr = self._load(path)
         cat_band, low_band = self._build_discriminator_signals(samples, sr)
         candidates = self._detect_segments(cat_band, sr)
-        classified = self._classify_segments(candidates, cat_band, low_band)
+        classified = self._classify_segments(candidates, cat_band, low_band, sr)
         padded = self._apply_padding(classified, len(samples), sr)
         return [(int(s / sr * 1000), int(e / sr * 1000)) for s, e, _ in padded]
 
@@ -188,7 +188,7 @@ class MeowProcessor:
         sos_cat = butter(4, [low_norm, high_norm], btype="bandpass", output="sos")
         cat_band = sosfilt(sos_cat, samples)
 
-        sos_low = butter(4, 300.0 / (sr / 2), btype="lowpass", output="sos")
+        sos_low = butter(4, seg.cat_band_low_hz / (sr / 2), btype="lowpass", output="sos")
         low_band = sosfilt(sos_low, samples)
 
         return cat_band.astype(np.float32), low_band.astype(np.float32)
@@ -211,7 +211,7 @@ class MeowProcessor:
         frame_indices = np.arange(0, len(dbfs), hop_len)
         frame_dbfs = dbfs[frame_indices]
 
-        threshold = seg.silence_threshold_dbfs
+        threshold = self._compute_adaptive_threshold(frame_dbfs)
         is_silent = frame_dbfs < threshold
 
         # Merge silence gaps shorter than min_silence_ms
@@ -252,20 +252,93 @@ class MeowProcessor:
         max_samples = int(seg.max_segment_ms / 1000 * sr)
         return [(s, e) for s, e in candidates if min_samples <= (e - s) <= max_samples]
 
+    def _compute_adaptive_threshold(self, frame_dbfs: np.ndarray) -> float:
+        seg = self.config.segmentation
+        if not seg.adaptive_threshold:
+            return seg.silence_threshold_dbfs
+        active = frame_dbfs[frame_dbfs > -80.0]
+        if len(active) < 10:
+            return seg.silence_threshold_dbfs
+        noise_floor = float(np.percentile(active, seg.adaptive_percentile))
+        threshold = noise_floor + seg.adaptive_offset_db
+        return max(seg.adaptive_floor_dbfs, min(seg.adaptive_ceiling_dbfs, threshold))
+
+    def _spectral_flatness(self, samples: np.ndarray, sr: int) -> float:
+        if len(samples) < 256:
+            return 0.0
+        seg = self.config.segmentation
+        n_fft = 2048
+        freq_bins = np.fft.rfftfreq(n_fft, 1.0 / sr)
+        mask = (freq_bins >= seg.cat_band_low_hz) & (freq_bins <= seg.cat_band_high_hz)
+        if not np.any(mask):
+            return 0.0
+        window = np.hanning(n_fft)
+        flatnesses: list[float] = []
+        for start in range(0, len(samples) - n_fft + 1, n_fft):
+            spectrum = np.abs(np.fft.rfft(samples[start : start + n_fft] * window)) ** 2
+            band = np.maximum(spectrum[mask], 1e-20)
+            arith_mean = float(np.mean(band))
+            if arith_mean < 1e-20:
+                continue
+            geo_mean = float(np.exp(np.mean(np.log(band))))
+            flatnesses.append(float(np.clip(geo_mean / arith_mean, 0.0, 1.0)))
+        if not flatnesses:
+            # segment shorter than one full window — analyze whatever we have
+            n = len(samples)
+            windowed = samples * np.hanning(n)
+            spectrum = np.abs(np.fft.rfft(windowed, n=n_fft)) ** 2
+            band = np.maximum(spectrum[mask], 1e-20)
+            arith_mean = float(np.mean(band))
+            if arith_mean < 1e-20:
+                return 0.0
+            geo_mean = float(np.exp(np.mean(np.log(band))))
+            return float(np.clip(geo_mean / arith_mean, 0.0, 1.0))
+        return float(np.mean(flatnesses))
+
     def _classify_segments(
         self,
         candidates: list[tuple[int, int]],
         cat_band: np.ndarray,
         low_band: np.ndarray,
+        sr: int,
     ) -> list[tuple[int, int, float]]:
-        threshold = self.config.segmentation.min_cat_energy_ratio
+        seg = self.config.segmentation
+        win_samples = max(1, int(seg.peak_ratio_window_ms / 1000 * sr))
         result: list[tuple[int, int, float]] = []
         for s, e in candidates:
-            cat_rms = float(np.sqrt(np.mean(cat_band[s:e] ** 2)))
-            low_rms = float(np.sqrt(np.mean(low_band[s:e] ** 2)))
-            ratio = cat_rms / (low_rms + 1e-10)
-            if ratio >= threshold:
-                result.append((s, e, ratio))
+            cat_slice = cat_band[s:e]
+            low_slice = low_band[s:e]
+
+            # Test 1: whole-segment average ratio
+            cat_rms = float(np.sqrt(np.mean(cat_slice**2)))
+            low_rms = float(np.sqrt(np.mean(low_slice**2)))
+            avg_ratio = cat_rms / (low_rms + 1e-10)
+            test1 = avg_ratio >= seg.min_cat_energy_ratio
+
+            # Test 2: peak windowed ratio (rescues short meows diluted by surrounding noise)
+            peak_ratio = 0.0
+            hop = max(1, win_samples // 2)
+            n_wins = (
+                max(1, (len(cat_slice) - win_samples) // hop + 1)
+                if len(cat_slice) >= win_samples
+                else 1
+            )
+            for wi in range(n_wins):
+                ws = wi * hop
+                we = min(ws + win_samples, len(cat_slice))
+                w_cat = float(np.sqrt(np.mean(cat_slice[ws:we] ** 2)))
+                w_low = float(np.sqrt(np.mean(low_slice[ws:we] ** 2)))
+                peak_ratio = max(peak_ratio, w_cat / (w_low + 1e-10))
+            test2 = peak_ratio >= seg.min_peak_ratio
+
+            # Test 3: spectral flatness (meows are tonal; rejects broadband noise)
+            if seg.use_spectral_classifier:
+                test3 = self._spectral_flatness(cat_slice, sr) <= seg.max_spectral_flatness
+            else:
+                test3 = True
+
+            if test1 and test2 and test3:
+                result.append((s, e, max(avg_ratio, peak_ratio)))
         return result
 
     def _apply_padding(

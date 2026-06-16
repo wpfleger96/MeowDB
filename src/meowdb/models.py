@@ -11,15 +11,24 @@ if TYPE_CHECKING:
 
 
 class SegmentationConfig(BaseModel):
-    cat_band_low_hz: float = 300.0
+    cat_band_low_hz: float = 250.0
     cat_band_high_hz: float = 5000.0
     silence_threshold_dbfs: float = -40.0
-    min_silence_ms: int = 300
-    min_segment_ms: int = 200
-    max_segment_ms: int = 4000
-    min_cat_energy_ratio: float = 1.2
-    pre_pad_ms: int = 150
-    post_pad_ms: int = 150
+    min_silence_ms: int = 150
+    min_segment_ms: int = 80
+    max_segment_ms: int = 5000
+    min_cat_energy_ratio: float = 3.0
+    pre_pad_ms: int = 200
+    post_pad_ms: int = 200
+    adaptive_threshold: bool = True
+    adaptive_percentile: float = 30.0
+    adaptive_offset_db: float = 10.0
+    adaptive_floor_dbfs: float = -45.0
+    adaptive_ceiling_dbfs: float = -40.0
+    min_peak_ratio: float = 3.5
+    peak_ratio_window_ms: int = 50
+    use_spectral_classifier: bool = True
+    max_spectral_flatness: float = 0.45
 
 
 class ProcessingConfig(BaseModel):
