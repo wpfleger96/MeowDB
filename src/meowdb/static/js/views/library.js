@@ -77,7 +77,7 @@ function libraryView() {
 
     async recalculate() {
       try {
-        const result = await recalculateUniqueness();
+        const result = await recalculateUniqueness({ force: true });
         showToast(`Uniqueness updated (${result.updated_count} fingerprints computed)`, 'success');
         await this._loadMeows(true);
       } catch (err) {

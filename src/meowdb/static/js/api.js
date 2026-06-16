@@ -292,8 +292,10 @@ async function deletePhoto(id) {
    ============================================================ */
 
 /**
+ * @param {{ force?: boolean }} [opts]
  * @returns {Promise<{ updated_count: number, elapsed_seconds: number }>}
  */
-async function recalculateUniqueness() {
-  return apiFetch('/uniqueness/recalculate', { method: 'POST' });
+async function recalculateUniqueness({ force = false } = {}) {
+  const qs = force ? '?force=true' : '';
+  return apiFetch(`/uniqueness/recalculate${qs}`, { method: 'POST' });
 }

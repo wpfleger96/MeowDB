@@ -40,8 +40,8 @@ def _update_uniqueness_after_ingest(db: Any, new_meow_ids: list[str]) -> None:
                 fp = _similarity.extract_fingerprint(all_rows[meow_id])
                 db.update_fingerprint(meow_id, fp)
                 fingerprints[meow_id] = fp
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to extract fingerprint for %s: %s", meow_id, exc)
 
     if fingerprints:
         scores = _similarity.compute_uniqueness_scores(fingerprints)

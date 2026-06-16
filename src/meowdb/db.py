@@ -351,13 +351,12 @@ class MeowDB:
                 if seg is None:
                     continue
 
+                meow_id = str(uuid.uuid4())
                 src_wav = Path(seg["wav_path"])
-                dst_wav = wav_dir / src_wav.name
-                dst_mp3 = mp3_dir / src_wav.with_suffix(".mp3").name
+                dst_wav = wav_dir / f"{meow_id}.wav"
+                dst_mp3 = mp3_dir / f"{meow_id}.mp3"
                 shutil.move(str(src_wav), dst_wav)
                 shutil.move(str(src_wav.with_suffix(".mp3")), dst_mp3)
-
-                meow_id = str(uuid.uuid4())
                 self._conn.execute(
                     """
                     INSERT INTO meows
