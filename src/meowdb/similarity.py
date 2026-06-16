@@ -84,9 +84,7 @@ class MeowSimilarity:
         stds = frames_arr.std(axis=0)
         return list(np.concatenate([means, stds]).astype(float))
 
-    def compute_uniqueness_scores(
-        self, fingerprints: dict[str, list[float]]
-    ) -> dict[str, float]:
+    def compute_uniqueness_scores(self, fingerprints: dict[str, list[float]]) -> dict[str, float]:
         """Return {meow_id: uniqueness_score} for all meows.
 
         Uniqueness = (1 - cosine_similarity_to_nearest_neighbor) * 100.

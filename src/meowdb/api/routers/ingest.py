@@ -47,6 +47,7 @@ def _update_uniqueness_after_ingest(db: Any, new_meow_ids: list[str]) -> None:
         scores = _similarity.compute_uniqueness_scores(fingerprints)
         db.update_uniqueness_scores_bulk(scores)
 
+
 router = APIRouter(dependencies=[Depends(require_auth)])
 logger = logging.getLogger(__name__)
 
