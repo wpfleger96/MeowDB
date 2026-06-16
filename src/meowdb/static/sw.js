@@ -1,4 +1,4 @@
-const CACHE_NAME = 'meowdb-v2';
+const CACHE_NAME = 'meowdb-v3';
 
 const APP_SHELL = [
   '/',
