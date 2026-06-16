@@ -346,22 +346,6 @@ function ingestView() {
       this._resetting = false;
     },
 
-    async onPhotoChange(event) {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      event.target.value = '';
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
-        return;
-      }
-      try {
-        await uploadPhoto(file);
-        showToast('Photo uploaded!', 'success');
-      } catch (err) {
-        showToast(err.message || 'Photo upload failed', 'error');
-      }
-    },
-
     /* ──────────────────────────────────────────────────────
        Formatting helpers
     ────────────────────────────────────────────────────── */

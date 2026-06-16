@@ -44,9 +44,9 @@ async def list_photos(request: Request) -> PhotoListResponse:
 
 
 @router.get("/photos/random", response_model=PhotoResponse)
-async def get_random_photo(request: Request) -> PhotoResponse:
+async def get_random_photo(request: Request, exclude: str | None = None) -> PhotoResponse:
     db = request.app.state.db
-    photo = db.get_random_photo()
+    photo = db.get_random_photo(exclude_id=exclude)
     if photo is None:
         raise HTTPException(status_code=404, detail="No photos available")
     return _photo_to_response(photo)

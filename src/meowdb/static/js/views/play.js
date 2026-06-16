@@ -43,7 +43,7 @@ function playView() {
 
       let meow;
       try {
-        meow = await getRandomMeow();
+        meow = await getRandomMeow(this.currentMeow?.id);
       } catch (err) {
         this.isLoading = false;
         showToast(err.message || 'Could not fetch a meow', 'error');
@@ -51,7 +51,7 @@ function playView() {
       }
 
       this.currentMeow = meow;
-      getRandomPhoto().then(photo => { this.currentPhoto = photo; }).catch(() => {});
+      getRandomPhoto(this.currentPhoto?.id).then(photo => { this.currentPhoto = photo; }).catch(() => {});
       this.isLoading = false;
       this.isPlaying = true;
 

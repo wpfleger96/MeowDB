@@ -141,8 +141,15 @@ class MeowDB:
         self._conn.commit()
         return meow_id
 
-    def get_random(self) -> dict | None:  # type: ignore[type-arg]
-        row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
+    def get_random(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
+        if exclude_id:
+            row = self._conn.execute(
+                "SELECT * FROM meows WHERE id != ? ORDER BY RANDOM() LIMIT 1", (exclude_id,)
+            ).fetchone()
+            if row is None:
+                row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
+        else:
+            row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
         if row is None:
             return None
         meow_id = row["id"]
@@ -457,8 +464,19 @@ class MeowDB:
         rows = self._conn.execute("SELECT * FROM cat_photos ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
 
-    def get_random_photo(self) -> dict | None:  # type: ignore[type-arg]
-        row = self._conn.execute("SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1").fetchone()
+    def get_random_photo(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
+        if exclude_id:
+            row = self._conn.execute(
+                "SELECT * FROM cat_photos WHERE id != ? ORDER BY RANDOM() LIMIT 1", (exclude_id,)
+            ).fetchone()
+            if row is None:
+                row = self._conn.execute(
+                    "SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1"
+                ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1"
+            ).fetchone()
         return dict(row) if row else None
 
     def get_photo(self, photo_id: str) -> dict | None:  # type: ignore[type-arg]

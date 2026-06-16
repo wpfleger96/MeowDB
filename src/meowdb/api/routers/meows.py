@@ -34,9 +34,9 @@ def _meow_to_response(meow: dict) -> MeowResponse:  # type: ignore[type-arg]
 
 # /meows/random MUST be registered before /{id} — see Gotcha 2 in PLAN
 @router.get("/meows/random", response_model=MeowResponse)
-async def get_random_meow(request: Request) -> MeowResponse:
+async def get_random_meow(request: Request, exclude: str | None = None) -> MeowResponse:
     db = request.app.state.db
-    meow = db.get_random()
+    meow = db.get_random(exclude_id=exclude)
     if meow is None:
         raise HTTPException(status_code=404, detail="No meows in library")
     return _meow_to_response(meow)

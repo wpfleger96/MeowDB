@@ -59,8 +59,8 @@ async function getMeows(params = {}) {
 /**
  * @returns {Promise<object>} RandomMeowResponse with mp3_url, waveform_data, etc.
  */
-async function getRandomMeow() {
-  return apiFetch('/meows/random');
+async function getRandomMeow(excludeId) {
+  return apiFetch('/meows/random' + (excludeId ? '?exclude=' + encodeURIComponent(excludeId) : ''));
 }
 
 /**
@@ -265,8 +265,8 @@ async function getPhotos() {
 /**
  * @returns {Promise<object>} PhotoResponse with image_url
  */
-async function getRandomPhoto() {
-  return apiFetch('/photos/random');
+async function getRandomPhoto(excludeId) {
+  return apiFetch('/photos/random' + (excludeId ? '?exclude=' + encodeURIComponent(excludeId) : ''));
 }
 
 /**

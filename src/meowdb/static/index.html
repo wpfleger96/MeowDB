@@ -28,6 +28,7 @@
   <script src="/static/js/views/library.js" defer></script>
   <script src="/static/js/views/ingest.js" defer></script>
   <script src="/static/js/views/stats.js" defer></script>
+  <script src="/static/js/views/photos.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <!-- Alpine.js LAST — auto-starts on load, so all components must be defined first -->
   <script src="/static/vendor/alpine.min.js" defer></script>
@@ -369,6 +370,131 @@
 
 
     <!-- ══════════════════════════════════════════════════
+         View: Photos
+    ══════════════════════════════════════════════════ -->
+    <div
+      class="view-container"
+      x-show="isView('photos')"
+      x-data="photosView()"
+      x-init="init()"
+    >
+      <div class="photos-view" :class="{ 'detail-open': showDetail }">
+
+        <!-- Header with upload button -->
+        <div class="photos-header view-header">
+          <h1 class="view-title">Photos</h1>
+          <div x-show="!$root.authRequired || $root.authenticated">
+            <button class="btn btn-secondary btn-sm" @click="$refs.photoInput.click()">Upload</button>
+            <input
+              type="file"
+              accept="image/*"
+              x-ref="photoInput"
+              @change="onPhotoChange($event)"
+              style="display:none"
+              aria-hidden="true"
+            >
+          </div>
+        </div>
+
+        <!-- Loading state -->
+        <div class="upload-progress" x-show="isLoading">
+          <div class="spinner spinner-lg"></div>
+          <p class="text-secondary">Loading photos…</p>
+        </div>
+
+        <!-- Empty state -->
+        <div class="empty-state" x-show="!isLoading && photos.length === 0">
+          <div class="empty-state-icon">📷</div>
+          <div class="empty-state-title">No photos yet</div>
+          <div class="empty-state-body">Upload cat photos to use as MEOW button backgrounds</div>
+          <button
+            class="btn btn-primary"
+            x-show="!$root.authRequired || $root.authenticated"
+            @click="$refs.photoInputEmpty.click()"
+          >Upload a photo</button>
+          <input
+            type="file"
+            accept="image/*"
+            x-ref="photoInputEmpty"
+            @change="onPhotoChange($event)"
+            style="display:none"
+            aria-hidden="true"
+          >
+        </div>
+
+        <!-- Photo grid -->
+        <div class="photo-grid" x-show="!isLoading && photos.length > 0">
+          <template x-for="photo in photos" :key="photo.id">
+            <div class="photo-thumb" @click="openDetail(photo)">
+              <img :src="photo.image_url" :alt="'Photo ' + photo.id" loading="lazy">
+            </div>
+          </template>
+        </div>
+
+      </div>
+
+      <!-- ────────────────────────────────────────────────
+           Detail bottom-sheet modal
+      ──────────────────────────────────────────────── -->
+      <div
+        class="modal-backdrop"
+        x-show="showDetail"
+        @click.self="closeDetail()"
+        style="display:none"
+      >
+        <!-- Main detail sheet -->
+        <div class="modal-sheet" x-show="showDetail && !showDeleteConfirm">
+          <div class="modal-handle"></div>
+
+          <div class="modal-header">
+            <span class="modal-title-input" x-text="formatDate(detailPhoto?.created_at)"></span>
+            <button class="btn-icon" @click="closeDetail()" aria-label="Close">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M18 6 6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="modal-body" x-show="detailPhoto">
+            <!-- Full image -->
+            <div class="detail-photo-wrap">
+              <img :src="detailPhoto?.image_url" :alt="'Photo'" class="detail-photo-img">
+            </div>
+
+            <div class="divider" x-show="!$root.authRequired || $root.authenticated"></div>
+
+            <!-- Delete -->
+            <button
+              class="btn btn-danger btn-full"
+              x-show="!$root.authRequired || $root.authenticated"
+              @click="confirmDelete()"
+            >Delete photo</button>
+          </div>
+        </div>
+
+        <!-- Delete confirmation sheet -->
+        <div
+          class="modal-confirm"
+          x-show="showDeleteConfirm"
+          style="width:100%;display:flex;align-items:center;justify-content:center;padding:var(--sp-4);"
+        >
+          <div style="background:var(--bg-surface);border-radius:var(--radius-xl);padding:var(--sp-6);width:100%;max-width:340px;">
+            <h2 class="modal-title" style="margin-bottom:var(--sp-3);">Delete this photo?</h2>
+            <p class="text-secondary" style="margin-bottom:var(--sp-5);">
+              This cannot be undone. The image file will be permanently deleted.
+            </p>
+            <div class="flex gap-3">
+              <button class="btn btn-ghost" style="flex:1;" @click="showDeleteConfirm = false">Cancel</button>
+              <button class="btn btn-danger" style="flex:1;" @click="deletePhotoConfirmed()">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+
+    <!-- ══════════════════════════════════════════════════
          View: Upload / Ingest
     ══════════════════════════════════════════════════ -->
     <div
@@ -445,27 +571,6 @@
             <p class="record-timer" x-show="isRecording" x-text="formatRecordTime(recordSeconds)"></p>
             <p class="text-xs text-muted" x-show="isRecording">Tap again to stop</p>
           </div>
-        </div>
-
-        <!-- Cat photo upload -->
-        <div class="photo-upload-section" x-show="phase === 'idle'" style="padding: 0 var(--sp-4);">
-          <div class="divider"></div>
-          <div class="photo-upload-row">
-            <button
-              class="btn btn-secondary"
-              @click="$refs.photoInput.click()"
-              x-show="!$root.authRequired || $root.authenticated"
-            >Upload cat photo</button>
-            <span class="text-sm text-muted">Add photos of Squishy for the MEOW button</span>
-          </div>
-          <input
-            type="file"
-            accept="image/*"
-            x-ref="photoInput"
-            @change="onPhotoChange($event)"
-            style="display:none"
-            aria-hidden="true"
-          >
         </div>
 
         <!-- ── uploading / processing ── -->
@@ -704,6 +809,21 @@
           <path d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
         </svg>
         <span class="nav-tab-label">Library</span>
+      </button>
+
+      <!-- Photos tab -->
+      <button
+        :class="navClass('photos')"
+        @click="goTo('/photos')"
+        aria-label="Photos"
+        :aria-current="isView('photos') ? 'page' : null"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        <span class="nav-tab-label">Photos</span>
       </button>
 
       <!-- Upload tab -->
