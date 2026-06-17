@@ -124,6 +124,20 @@
   color: var(--text-secondary);
 }
 
+/* Meow ID + date row below the waveform */
+.play-meow-meta {
+  display: flex;
+  gap: var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.play-meow-meta-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 /* ============================================================
    Library View
    ============================================================ */

@@ -23,6 +23,6 @@ window.MeowUtils = {
 
   formatId(id) {
     if (!id) return '';
-    return id.slice(0, 8) + '…';
+    return id.slice(0, 8);
   },
 };

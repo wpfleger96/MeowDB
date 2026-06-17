@@ -22,8 +22,8 @@ function libraryView() {
     showDeleteConfirm: false,
     labelInput: '',
     detailTitle: '',
-    _wavesurfer: null,
-    _wavesurferLoaded: false,
+    _detailIsPlaying: false,
+    _cancelDetailWaveform: null,
 
     async init() {
       await Promise.all([
@@ -140,80 +140,89 @@ function libraryView() {
        Detail modal
     ────────────────────────────────────────────────────── */
 
-    async openDetail(meow) {
+    openDetail(meow) {
       audioPlayer.stop();
+      this._stopDetailWaveform();
       this.playingId = null;
+      this._detailIsPlaying = false;
       this.detailMeow = { ...meow, labels: [...(meow.labels || [])] };
       this.detailTitle = meow.title || '';
       this.showDetail = true;
       this.showDeleteConfirm = false;
       this.labelInput = '';
 
-      // Lazy-load WaveSurfer the first time a detail modal opens
-      await this._ensureWaveSurfer();
-
-      // Defer waveform init to next tick so the modal is in the DOM
+      // Draw static waveform after modal is in the DOM
       this.$nextTick(() => {
-        this._initWaveSurfer(meow.mp3_url);
+        this._drawDetailWaveform(meow, 0);
       });
     },
 
     closeDetail() {
-      this._destroyWaveSurfer();
+      audioPlayer.stop();
+      this._stopDetailWaveform();
+      this._detailIsPlaying = false;
       this.showDetail = false;
       this.detailMeow = null;
       this.showDeleteConfirm = false;
     },
 
-    async _ensureWaveSurfer() {
-      if (this._wavesurferLoaded) return;
-      if (typeof WaveSurfer !== 'undefined') {
-        this._wavesurferLoaded = true;
-        return;
+    _drawDetailWaveform(meow, progress) {
+      const canvas = this.$refs.detailWaveformCanvas;
+      if (!canvas || !meow?.waveform_data?.length) return;
+
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b6b';
+
+      if (this._detailIsPlaying && progress === 0) {
+        this._cancelDetailWaveform = animateWaveform(
+          canvas,
+          meow.waveform_data,
+          color,
+          () => {
+            if (audioPlayer.duration === 0) return 0;
+            return audioPlayer.currentTime / audioPlayer.duration;
+          }
+        );
+      } else {
+        drawWaveform(canvas, meow.waveform_data, color, progress);
       }
-      // Lazy-load via dynamic script tag
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = '/static/vendor/wavesurfer.min.js';
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-      this._wavesurferLoaded = true;
     },
 
-    _initWaveSurfer(url) {
-      const container = document.getElementById('wavesurfer-container');
-      if (!container || typeof WaveSurfer === 'undefined') return;
-
-      this._destroyWaveSurfer();
-
-      this._wavesurfer = WaveSurfer.create({
-        container,
-        waveColor: 'var(--border-strong)',
-        progressColor: 'var(--accent)',
-        cursorColor: 'transparent',
-        barWidth: 3,
-        barRadius: 2,
-        barGap: 2,
-        height: 80,
-        normalize: true,
-        interact: true,
-        url,
-      });
-    },
-
-    _destroyWaveSurfer() {
-      if (this._wavesurfer) {
-        try { this._wavesurfer.destroy(); } catch {}
-        this._wavesurfer = null;
+    _stopDetailWaveform() {
+      if (this._cancelDetailWaveform) {
+        this._cancelDetailWaveform();
+        this._cancelDetailWaveform = null;
       }
     },
 
     playDetailMeow() {
-      if (this._wavesurfer) {
-        this._wavesurfer.playPause();
+      if (this._detailIsPlaying) {
+        audioPlayer.stop();
+        this._stopDetailWaveform();
+        this._detailIsPlaying = false;
+        return;
       }
+
+      const meow = this.detailMeow;
+      if (!meow) return;
+
+      this._detailIsPlaying = true;
+      recordPlay(meow.id).catch(() => {});
+      this._drawDetailWaveform(meow, 0);
+
+      audioPlayer.onEnded = () => {
+        this._detailIsPlaying = false;
+        this._stopDetailWaveform();
+        this._drawDetailWaveform(meow, 1);
+      };
+      audioPlayer.onError = () => {
+        this._detailIsPlaying = false;
+        this._stopDetailWaveform();
+      };
+
+      audioPlayer.playWithFallback(meow.mp3_url, meow.wav_url).catch(() => {
+        this._detailIsPlaying = false;
+        this._stopDetailWaveform();
+      });
     },
 
     /* ──────────────────────────────────────────────────────
