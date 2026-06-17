@@ -161,7 +161,9 @@ class MeowDB:
                     "SELECT * FROM meows WHERE id != ? ORDER BY RANDOM() LIMIT 1", (exclude_id,)
                 ).fetchone()
                 if row is None:
-                    row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
+                    row = self._conn.execute(
+                        "SELECT * FROM meows ORDER BY RANDOM() LIMIT 1"
+                    ).fetchone()
             else:
                 row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
             if row is None:
@@ -507,14 +509,17 @@ class MeowDB:
 
     def get_photos(self) -> list[dict]:  # type: ignore[type-arg]
         with self._lock:
-            rows = self._conn.execute("SELECT * FROM cat_photos ORDER BY created_at DESC").fetchall()
+            rows = self._conn.execute(
+                "SELECT * FROM cat_photos ORDER BY created_at DESC"
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_random_photo(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
         with self._lock:
             if exclude_id:
                 row = self._conn.execute(
-                    "SELECT * FROM cat_photos WHERE id != ? ORDER BY RANDOM() LIMIT 1", (exclude_id,)
+                    "SELECT * FROM cat_photos WHERE id != ? ORDER BY RANDOM() LIMIT 1",
+                    (exclude_id,),
                 ).fetchone()
                 if row is None:
                     row = self._conn.execute(
@@ -528,7 +533,9 @@ class MeowDB:
 
     def get_photo(self, photo_id: str) -> dict | None:  # type: ignore[type-arg]
         with self._lock:
-            row = self._conn.execute("SELECT * FROM cat_photos WHERE id = ?", (photo_id,)).fetchone()
+            row = self._conn.execute(
+                "SELECT * FROM cat_photos WHERE id = ?", (photo_id,)
+            ).fetchone()
         return dict(row) if row else None
 
     def delete_photo(self, photo_id: str) -> bool:
