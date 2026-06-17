@@ -358,7 +358,7 @@ class MeowDB:
     ) -> list[str]:
         new_meow_ids: list[str] = []
         # (meow_id, seg, dst_wav, dst_mp3) tuples built after file moves, written in one DB txn
-        committed: list[tuple[str, str, dict, Path, Path]] = []
+        committed: list[tuple[str, str, dict, Path, Path]] = []  # type: ignore[type-arg]
 
         if accepted_ids:
             wav_dir.mkdir(parents=True, exist_ok=True)
