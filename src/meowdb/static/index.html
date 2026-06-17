@@ -12,26 +12,26 @@
   <link rel="manifest" href="/static/manifest.webmanifest">
 
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/layout.css">
-  <link rel="stylesheet" href="/static/css/components.css">
-  <link rel="stylesheet" href="/static/css/views.css">
-  <link rel="stylesheet" href="/static/css/desktop.css">
+  <link rel="stylesheet" href="/static/css/base.0a6e3f22.css">
+  <link rel="stylesheet" href="/static/css/layout.9d28acfa.css">
+  <link rel="stylesheet" href="/static/css/components.1313c8d1.css">
+  <link rel="stylesheet" href="/static/css/views.6796ff25.css">
+  <link rel="stylesheet" href="/static/css/desktop.babed37a.css">
   <style>[x-cloak] { display: none !important; }</style>
 
   <!-- App scripts — load in dependency order, all deferred -->
-  <script src="/static/js/api.js" defer></script>
-  <script src="/static/js/audio.js" defer></script>
-  <script src="/static/js/waveform.js" defer></script>
-  <script src="/static/js/utils.js" defer></script>
-  <script src="/static/js/views/play.js" defer></script>
-  <script src="/static/js/views/library.js" defer></script>
-  <script src="/static/js/views/ingest.js" defer></script>
-  <script src="/static/js/views/stats.js" defer></script>
-  <script src="/static/js/views/photos.js" defer></script>
-  <script src="/static/js/app.js" defer></script>
+  <script src="/static/js/api.3ecdef2c.js" defer></script>
+  <script src="/static/js/audio.19bb51cb.js" defer></script>
+  <script src="/static/js/waveform.cc7b9e1d.js" defer></script>
+  <script src="/static/js/utils.1b483ba3.js" defer></script>
+  <script src="/static/js/views/play.8139e54f.js" defer></script>
+  <script src="/static/js/views/library.b64115e1.js" defer></script>
+  <script src="/static/js/views/ingest.81fb68f1.js" defer></script>
+  <script src="/static/js/views/stats.ba445b7f.js" defer></script>
+  <script src="/static/js/views/photos.f5da0602.js" defer></script>
+  <script src="/static/js/app.10cf7044.js" defer></script>
   <!-- Alpine.js LAST — auto-starts on load, so all components must be defined first -->
-  <script src="/static/vendor/alpine.min.js" defer></script>
+  <script src="/static/vendor/alpine.min.57b37d7c.js" defer></script>
 </head>
 
 <body x-data="app()" x-init="init()">
@@ -968,11 +968,13 @@
     </div>
   </div>
 
-  <!-- Service worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+      });
+      caches.keys().then(keys => {
+        keys.forEach(k => caches.delete(k));
       });
     }
   </script>

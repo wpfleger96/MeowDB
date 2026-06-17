@@ -1,0 +1,242 @@
+/* ============================================================
+   desktop.css — layout overrides for viewport ≥ 768px
+   ============================================================ */
+
+/* Declared outside the query for broadest WebKit compatibility */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@media (min-width: 768px) {
+
+  /* ── App shell ──────────────────────────────────────────── */
+
+  #app {
+    margin-left: 220px;
+    max-width: none;
+  }
+
+  .view-container {
+    padding-bottom: 0;
+  }
+
+  /* Re-center toasts relative to the content area (right of sidebar) */
+  #toast-container {
+    left: calc(50% + 110px);
+  }
+
+  /* ── Sidebar navigation ──────────────────────────────────── */
+
+  .bottom-nav {
+    position: fixed;
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    width: 220px;
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    border-top: none;
+    border-right: 1px solid var(--border);
+    padding-bottom: 0;
+  }
+
+  .nav-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-5);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--sp-2);
+    pointer-events: none;
+  }
+
+  .nav-brand-icon {
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .nav-tab {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--sp-3);
+    height: 48px;
+    min-height: auto;
+    padding: 0 var(--sp-5);
+    border-radius: 0;
+    position: relative;
+  }
+
+  .nav-tab svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .nav-tab-label {
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  /* Active indicator: vertical bar on left edge instead of bottom dot */
+  .nav-tab.active::before {
+    left: 0;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 24px;
+    border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  }
+
+  /* ── Play view ───────────────────────────────────────────── */
+
+  .play-view {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  /* ── Library view ────────────────────────────────────────── */
+
+  .library-view {
+    transition: margin-right var(--trans-normal);
+  }
+
+  .library-view.detail-open {
+    margin-right: 420px;
+  }
+
+  /* Detail panel: right-pinned strip instead of full-screen overlay */
+  .modal-backdrop {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: 420px;
+    background: transparent;
+    align-items: stretch;
+    border-left: 1px solid var(--border);
+    animation: none;
+  }
+
+  /* Panel fills full height, slides in from the right */
+  .modal-sheet {
+    border-radius: 0;
+    max-height: 100dvh;
+    height: 100%;
+    animation: slide-in-right 0.3s var(--spring);
+    padding-bottom: var(--sp-8);
+  }
+
+  /* Drag handle is a mobile-only affordance */
+  .modal-handle {
+    display: none;
+  }
+
+  /* ── Ingest view ─────────────────────────────────────────── */
+
+  .ingest-view {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  /* Side-by-side upload + record in idle phase */
+  .ingest-idle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-4);
+    align-items: start;
+    padding: 0 var(--sp-4);
+  }
+
+  .ingest-idle .upload-zone {
+    margin: var(--sp-4) 0 0;
+  }
+
+  /* "or" separator is only meaningful when the two sections are stacked */
+  .ingest-or-divider {
+    display: none;
+  }
+
+  .ingest-idle .record-section {
+    border-top: none;
+    margin-top: var(--sp-4);
+  }
+
+  .clip-container {
+    max-width: 900px;
+  }
+
+  .clip-waveform-wrap {
+    min-height: 200px;
+  }
+
+  /* ── Stats view ──────────────────────────────────────────── */
+
+  .stats-view {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  /* 4-across stat tiles */
+  .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  /* Stats content: switch from flex-col to 2-column grid */
+  .stats-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Stats tile grid and empty state span both columns */
+  .stats-content .stats-grid,
+  .stats-content .empty-state {
+    grid-column: 1 / -1;
+  }
+
+  .nav-auth {
+    position: static;
+    transform: none;
+    margin-top: auto;
+    padding: var(--sp-3) 0;
+  }
+
+}
+
+/* Hover states: only for pointer (non-touch) devices */
+@media (min-width: 768px) and (hover: hover) {
+
+  .nav-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+  }
+
+  .list-row:hover {
+    background: var(--bg-elevated);
+  }
+
+  .leaderboard-item:hover {
+    background: var(--bg-elevated);
+  }
+
+  .chip-filter:hover {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+  }
+
+  .meow-btn:hover:not(:disabled) {
+    box-shadow:
+      0 8px 48px rgba(255, 107, 107, 0.45),
+      0 2px 8px rgba(0, 0, 0, 0.5);
+    transform: scale(1.01);
+  }
+
+}

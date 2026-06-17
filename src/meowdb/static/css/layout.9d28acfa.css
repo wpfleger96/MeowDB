@@ -1,0 +1,145 @@
+/* ============================================================
+   layout.css — bottom nav, view containers, responsive
+   ============================================================ */
+
+/* ============================================================
+   App shell
+   ============================================================ */
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* dynamic viewport height for iOS */
+  overflow: hidden;
+}
+
+/* ============================================================
+   View container
+   ============================================================ */
+
+.view-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  /* Space for the bottom nav */
+  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+}
+
+/* When a view does not scroll itself (play view), disable scroll */
+.view-container.no-scroll {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================================
+   Bottom navigation bar
+   ============================================================ */
+
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  /* Safe area for iPhone home indicator */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.nav-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  /* Minimum 44px touch target (Apple HIG) */
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color var(--trans-fast);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  padding: 0 var(--sp-2);
+}
+
+.nav-tab:active {
+  opacity: 0.7;
+}
+
+.nav-tab.active {
+  color: var(--accent);
+}
+
+.nav-tab svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.nav-tab-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* Active indicator dot */
+.nav-tab.active::before {
+  content: "";
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ============================================================
+   Page header (shared across views)
+   ============================================================ */
+
+.view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  position: sticky;
+  top: 0;
+  background: var(--bg-base);
+  z-index: 10;
+  border-bottom: 1px solid var(--border);
+}
+
+.view-title {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ============================================================
+   Nav brand (hidden on mobile, shown via desktop.css)
+   ============================================================ */
+
+.nav-brand {
+  display: none;
+}
+
+/* ============================================================
+   Safe area utilities
+   ============================================================ */
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
