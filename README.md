@@ -1,4 +1,4 @@
-# meowdb
+# MeowDB
 
 [![CI](https://github.com/wpfleger96/meowdb/actions/workflows/ci.yml/badge.svg)](https://github.com/wpfleger96/meowdb/actions/workflows/ci.yml)
 

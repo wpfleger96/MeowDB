@@ -17,6 +17,14 @@
   position: relative;
 }
 
+/* Auth control pinned to the empty top-right area (Play has no header) */
+.play-auth-mobile {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + var(--sp-3));
+  right: var(--sp-3);
+  z-index: 5;
+}
+
 /* Giant MEOW button — ~60% viewport height */
 .meow-btn {
   width: 100%;

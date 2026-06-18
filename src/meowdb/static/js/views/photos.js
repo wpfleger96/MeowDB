@@ -73,7 +73,7 @@ function photosView() {
 
     async deletePhotoConfirmed() {
       if (!this.detailPhoto) return;
-      if (this.$root.authRequired && !this.$root.authenticated) { this.$root.showLoginModal = true; return; }
+      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
       const id = this.detailPhoto.id;
       try {
         await deletePhoto(id);
@@ -89,8 +89,8 @@ function photosView() {
       const files = Array.from(event.target.files || []);
       event.target.value = '';
       if (files.length === 0) return;
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
+      if (this.authRequired && !this.authenticated) {
+        this.showLoginModal = true;
         return;
       }
       await this._uploadPhotos(files);
@@ -109,8 +109,8 @@ function photosView() {
     async onPhotoDrop(event) {
       event.preventDefault();
       this.isDragOver = false;
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
+      if (this.authRequired && !this.authenticated) {
+        this.showLoginModal = true;
         return;
       }
       const files = Array.from(event.dataTransfer?.files || []).filter(

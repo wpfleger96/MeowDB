@@ -53,6 +53,12 @@
     >
       <div class="play-view">
 
+        <!-- Auth control (top-right; Play has no header) -->
+        <div class="play-auth-mobile" x-show="authRequired" x-cloak>
+          <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+          <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+        </div>
+
         <!-- Empty state (0 meows in library) -->
         <div class="empty-state" x-show="meowCount === 0 && !isLoading">
           <div class="empty-state-icon">🐱</div>
@@ -139,7 +145,7 @@
         <!-- Sticky header with sort dropdown -->
         <div class="library-header view-header">
           <h1 class="view-title">Library</h1>
-          <div style="display:flex;gap:var(--space-2);align-items:center;">
+          <div class="flex items-center gap-2">
             <button
               class="btn-icon"
               @click="recalculate()"
@@ -164,6 +170,11 @@
               <option value="duration_desc">Longest</option>
               <option value="most_unique">Most unique</option>
             </select>
+            <!-- mobile auth control — keep all copies identical -->
+            <div class="nav-auth-mobile" x-show="authRequired" x-cloak>
+              <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+              <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+            </div>
           </div>
         </div>
 
@@ -280,7 +291,7 @@
 
           <div class="modal-header">
             <input
-              x-show="!$root.authRequired || $root.authenticated"
+              x-show="!authRequired || authenticated"
               type="text"
               class="modal-title-input"
               :placeholder="'Meow ' + formatId(detailMeow?.id || '')"
@@ -290,7 +301,7 @@
               aria-label="Meow title"
             >
             <span
-              x-show="$root.authRequired && !$root.authenticated"
+              x-show="authRequired && !authenticated"
               class="modal-title-input"
               x-text="detailTitle || ('Meow ' + formatId(detailMeow?.id || ''))"
             ></span>
@@ -359,11 +370,11 @@
                 <template x-for="label in (detailMeow?.labels || [])" :key="label">
                   <div class="chip">
                     <span x-text="label"></span>
-                    <button class="chip-remove" x-show="!$root.authRequired || $root.authenticated" @click="removeLabel(label)" aria-label="Remove label">×</button>
+                    <button class="chip-remove" x-show="!authRequired || authenticated" @click="removeLabel(label)" aria-label="Remove label">×</button>
                   </div>
                 </template>
               </div>
-              <div class="label-add-form" x-show="!$root.authRequired || $root.authenticated">
+              <div class="label-add-form" x-show="!authRequired || authenticated">
                 <input
                   type="text"
                   class="label-add-input"
@@ -380,10 +391,10 @@
               </div>
             </div>
 
-            <div class="divider" x-show="!$root.authRequired || $root.authenticated"></div>
+            <div class="divider" x-show="!authRequired || authenticated"></div>
 
             <!-- Delete -->
-            <button class="btn btn-danger btn-full" x-show="!$root.authRequired || $root.authenticated" @click="confirmDelete()">
+            <button class="btn btn-danger btn-full" x-show="!authRequired || authenticated" @click="confirmDelete()">
               Delete meow
             </button>
           </div>
@@ -425,17 +436,24 @@
         <!-- Header with upload button -->
         <div class="photos-header view-header">
           <h1 class="view-title">Photos</h1>
-          <div x-show="!$root.authRequired || $root.authenticated">
-            <button class="btn btn-secondary btn-sm" @click="$refs.photoInput.click()">Upload</button>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              x-ref="photoInput"
-              @change="onPhotoChange($event)"
-              style="display:none"
-              aria-hidden="true"
-            >
+          <div class="flex items-center gap-2">
+            <div x-show="!authRequired || authenticated">
+              <button class="btn btn-secondary btn-sm" @click="$refs.photoInput.click()">Upload</button>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                x-ref="photoInput"
+                @change="onPhotoChange($event)"
+                style="display:none"
+                aria-hidden="true"
+              >
+            </div>
+            <!-- mobile auth control — keep all copies identical -->
+            <div class="nav-auth-mobile" x-show="authRequired" x-cloak>
+              <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+              <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+            </div>
           </div>
         </div>
 
@@ -458,7 +476,7 @@
           <div class="empty-state-body">Upload cat photos to use as MEOW button backgrounds</div>
           <button
             class="btn btn-primary"
-            x-show="!$root.authRequired || $root.authenticated"
+            x-show="!authRequired || authenticated"
             @click="$refs.photoInputEmpty.click()"
           >Upload a photo</button>
           <input
@@ -511,12 +529,12 @@
               <img :src="detailPhoto?.image_url" :alt="'Photo'" class="detail-photo-img">
             </div>
 
-            <div class="divider" x-show="!$root.authRequired || $root.authenticated"></div>
+            <div class="divider" x-show="!authRequired || authenticated"></div>
 
             <!-- Delete -->
             <button
               class="btn btn-danger btn-full"
-              x-show="!$root.authRequired || $root.authenticated"
+              x-show="!authRequired || authenticated"
               @click="confirmDelete()"
             >Delete photo</button>
           </div>
@@ -557,14 +575,21 @@
 
         <div class="view-header">
           <h1 class="view-title">Add Meows</h1>
-          <button
-            class="btn btn-ghost"
-            x-show="phase !== 'idle'"
-            @click="reset()"
-            style="height:36px;font-size:var(--text-sm);"
-          >
-            Start over
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              class="btn btn-ghost"
+              x-show="phase !== 'idle'"
+              @click="reset()"
+              style="height:36px;font-size:var(--text-sm);"
+            >
+              Start over
+            </button>
+            <!-- mobile auth control — keep all copies identical -->
+            <div class="nav-auth-mobile" x-show="authRequired" x-cloak>
+              <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+              <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+            </div>
+          </div>
         </div>
 
         <!-- ── idle: upload UI ── -->
@@ -746,12 +771,19 @@
 
         <div class="view-header" style="position:static;border-bottom:none;padding-bottom:0;">
           <h1 class="view-title">Stats</h1>
-          <button class="btn-icon" @click="load()" aria-label="Refresh stats">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
-              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
-            </svg>
-          </button>
+          <div class="flex items-center gap-2">
+            <button class="btn-icon" @click="load()" aria-label="Refresh stats">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+            </button>
+            <!-- mobile auth control — keep all copies identical -->
+            <div class="nav-auth-mobile" x-show="authRequired" x-cloak>
+              <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+              <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+            </div>
+          </div>
         </div>
 
         <!-- Loading -->

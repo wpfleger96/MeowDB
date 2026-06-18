@@ -69,8 +69,8 @@ function ingestView() {
 
     async _uploadFiles(files) {
       if (this._resetting) return;
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
+      if (this.authRequired && !this.authenticated) {
+        this.showLoginModal = true;
         return;
       }
 
@@ -149,7 +149,7 @@ function ingestView() {
     ────────────────────────────────────────────────────── */
 
     async startRecording() {
-      if (this.$root.authRequired && !this.$root.authenticated) { this.$root.showLoginModal = true; return; }
+      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
       try {
         this.isRecording = true;
         this.recordSeconds = 0;
@@ -318,8 +318,8 @@ function ingestView() {
     },
 
     async autoDetect(job) {
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
+      if (this.authRequired && !this.authenticated) {
+        this.showLoginModal = true;
         return;
       }
       job.isAutoDetecting = true;
@@ -360,8 +360,8 @@ function ingestView() {
     },
 
     async saveClips(job) {
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
+      if (this.authRequired && !this.authenticated) {
+        this.showLoginModal = true;
         return;
       }
       const entry = this._wavesurfers?.get(job.containerId);
@@ -394,8 +394,8 @@ function ingestView() {
     },
 
     async saveAllClips() {
-      if (this.$root.authRequired && !this.$root.authenticated) {
-        this.$root.showLoginModal = true;
+      if (this.authRequired && !this.authenticated) {
+        this.showLoginModal = true;
         return;
       }
       const clippingJobs = this.jobs.filter(j => j.phase === 'clipping');
