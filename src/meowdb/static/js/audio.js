@@ -17,6 +17,7 @@ class AudioPlayer {
     this._onPlaying = null;
     this._onEnded = null;
     this._onError = null;
+    this._settle = null;
   }
 
   /** @param {(event: Event) => void} cb */
@@ -29,8 +30,9 @@ class AudioPlayer {
   set onError(cb) { this._onError = cb; }
 
   /**
-   * Play audio from a URL. Returns a Promise that resolves when the
-   * audio finishes (or rejects on error/abort).
+   * Play audio from a URL. Returns a Promise that resolves when playback
+   * finishes (or is intentionally superseded by stop()) and rejects only on a
+   * genuine media error.
    *
    * MUST be called from within a user gesture on iOS Safari.
    *
@@ -39,81 +41,96 @@ class AudioPlayer {
    */
   play(url) {
     this.stop();
-
-    return new Promise((resolve, reject) => {
-      const audio = new Audio();
-      this._audio = audio;
-      this._currentUrl = url;
-
-      audio.preload = 'auto';
-
-      audio.addEventListener('playing', (e) => {
-        if (this._onPlaying) this._onPlaying(e);
-      });
-
-      audio.addEventListener('ended', (e) => {
-        if (this._onEnded) this._onEnded(e);
-        this._audio = null;
-        resolve();
-      });
-
-      audio.addEventListener('error', (e) => {
-        const err = new Error(`Audio error: ${audio.error?.message || 'unknown'}`);
-        if (this._onError) this._onError(err);
-        this._audio = null;
-        reject(err);
-      });
-
-      audio.src = url;
-
-      // play() returns a Promise on modern browsers; catch rejection
-      // (e.g. AbortError when stop() is called before playback starts)
-      audio.play().catch((err) => {
-        // AbortError is expected when stop() interrupts; resolve cleanly
-        if (err.name === 'AbortError') {
-          resolve();
-        } else {
-          if (this._onError) this._onError(err);
-          reject(err);
-        }
-      });
-    });
+    return this._run(url, null);
   }
 
   /**
-   * Play audio from a primary URL, falling back to a secondary URL on error.
-   * Suppresses the onError callback during the primary attempt so a failed
-   * primary does not surface an error before the fallback is tried.
+   * Play a primary URL, falling back to a secondary URL if the primary fails
+   * to load/decode. Only a genuine error on the final source reaches onError;
+   * an intentional stop()/supersede resolves cleanly.
    *
    * @param {string} url
    * @param {string|null} [fallbackUrl]
    * @returns {Promise<void>}
    */
-  async playWithFallback(url, fallbackUrl = null) {
-    if (!fallbackUrl) {
-      return this.play(url);
-    }
-    const savedOnError = this._onError;
-    this._onError = null;
-    try {
-      await this.play(url);
-    } catch {
-      this._onError = savedOnError;
-      await this.play(fallbackUrl);
-      return;
-    }
-    this._onError = savedOnError;
+  playWithFallback(url, fallbackUrl = null) {
+    this.stop();
+    return this._run(url, fallbackUrl);
   }
 
   /**
-   * Stop any current playback.
+   * Core playback loop for a single <audio> element. Every callback is guarded
+   * by element identity (this._audio === audio) so a superseded element —
+   * stopped, or replaced by a newer play() — can never fire onEnded/onError or
+   * settle the promise. A genuine error tries the fallback URL (if any) before
+   * surfacing onError.
+   *
+   * @param {string} url
+   * @param {string|null} fallbackUrl
+   * @returns {Promise<void>}
+   */
+  _run(url, fallbackUrl) {
+    return new Promise((resolve, reject) => {
+      const audio = new Audio();
+      this._audio = audio;
+      this._currentUrl = url;
+      this._settle = resolve; // stop() calls this to resolve an interrupted play cleanly
+      audio.preload = 'auto';
+
+      const fail = (err) => {
+        if (this._audio !== audio) return; // superseded — ignore
+        // Clear before recursing so the fallback _run owns the fresh element/settle.
+        this._audio = null;
+        this._settle = null;
+        if (fallbackUrl) {
+          this._run(fallbackUrl, null).then(resolve, reject);
+          return;
+        }
+        if (this._onError) this._onError(err);
+        reject(err);
+      };
+
+      audio.addEventListener('playing', (e) => {
+        if (this._audio === audio && this._onPlaying) this._onPlaying(e);
+      });
+
+      audio.addEventListener('ended', (e) => {
+        if (this._audio !== audio) return;
+        this._audio = null;
+        this._settle = null;
+        if (this._onEnded) this._onEnded(e);
+        resolve();
+      });
+
+      audio.addEventListener('error', () => {
+        fail(new Error(`Audio error: ${audio.error?.message || 'unknown'}`));
+      });
+
+      audio.src = url;
+      audio.play().catch((err) => {
+        // AbortError is the expected interrupt from stop(); the identity guard
+        // in fail() covers any later rejection after a supersede.
+        if (err.name === 'AbortError') return;
+        fail(err);
+      });
+    });
+  }
+
+  /**
+   * Stop any current playback. Marks the element superseded (so its callbacks
+   * become inert) and resolves the in-flight promise cleanly, so clearing src
+   * can never surface a user-facing error.
    */
   stop() {
     if (this._audio) {
-      this._audio.pause();
-      this._audio.src = '';
+      const audio = this._audio;
+      const settle = this._settle;
       this._audio = null;
       this._currentUrl = null;
+      this._settle = null;
+      audio.pause();
+      audio.src = '';
+      if (settle) settle();
     }
   }
 

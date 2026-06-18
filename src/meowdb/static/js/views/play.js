@@ -10,6 +10,7 @@ function playView() {
     currentMeow: null,
     currentPhoto: null,
     _cancelWaveform: null,
+    _gen: 0,
 
     async init() {
       await this._refreshCount();
@@ -26,33 +27,36 @@ function playView() {
     },
 
     /**
-     * Main MEOW button handler.
+     * Main MEOW button handler. Every tap cancels the current meow and advances
+     * to a new random meow + photo. A generation counter ensures only the latest
+     * tap's async work takes effect, so rapid taps land on the last one.
      * Called directly from a click event — satisfies iOS user-gesture requirement.
      */
     async onMeowPress() {
-      if (this.isLoading) return;
+      const gen = ++this._gen;
 
-      // Stop any current playback immediately (within the gesture)
-      if (this.isPlaying) {
-        audioPlayer.stop();
-        this._stopWaveform();
-        this.isPlaying = false;
-        return;
-      }
-
+      // Cancel the current meow within the gesture; stop() never errors.
+      audioPlayer.stop();
+      this._stopWaveform();
+      this.isPlaying = false;
       this.isLoading = true;
 
       let meow;
       try {
         meow = await getRandomMeow(this.currentMeow?.id);
       } catch (err) {
+        if (gen !== this._gen) return; // superseded by a newer tap
         this.isLoading = false;
         showToast(err.message || 'Could not fetch a meow', 'error');
         return;
       }
+      if (gen !== this._gen) return; // a newer tap won; abandon this one
 
       this.currentMeow = meow;
-      getRandomPhoto(this.currentPhoto?.id).then(photo => { this.currentPhoto = photo; }).catch(() => {});
+      // New photo on every advance; guard so only the latest tap's photo sticks.
+      getRandomPhoto(this.currentPhoto?.id)
+        .then(photo => { if (gen === this._gen) this.currentPhoto = photo; })
+        .catch(() => {});
       this.isLoading = false;
       this.isPlaying = true;
 
@@ -62,7 +66,9 @@ function playView() {
       // Draw initial waveform
       this._drawWaveform(meow, 0);
 
-      // Set up callbacks before calling play()
+      // Set up callbacks before calling play(). No _gen guard needed here: the
+      // audio core fires these only for the current element, and the next tap's
+      // stop() reassigns them before a stale one could fire.
       audioPlayer.onEnded = () => {
         this.isPlaying = false;
         this._stopWaveform();

@@ -97,23 +97,16 @@ def test_get_random_returns_meow(tmp_db: MeowDB) -> None:
 
 
 @pytest.mark.unit
-def test_get_random_increments_play_count(tmp_db: MeowDB) -> None:
-    meow_id = tmp_db.add(_meow())
-    tmp_db.get_random()
-    result = tmp_db.get_by_id(meow_id)
-    assert result is not None
-    assert result["play_count"] == 1
-
-
-@pytest.mark.unit
-def test_get_random_multiple_times_increments_each_call(tmp_db: MeowDB) -> None:
-    # With a single meow, every random call hits it
+def test_get_random_does_not_count_a_play(tmp_db: MeowDB) -> None:
+    # A random fetch is a read, not a play; counting happens on the explicit
+    # play path (CLI play / POST /meows/{id}/play), so superseded rapid-tap
+    # fetches never inflate play_count.
     meow_id = tmp_db.add(_meow())
     for _ in range(3):
         tmp_db.get_random()
     result = tmp_db.get_by_id(meow_id)
     assert result is not None
-    assert result["play_count"] == 3
+    assert result["play_count"] == 0
 
 
 @pytest.mark.unit

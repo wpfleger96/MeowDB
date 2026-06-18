@@ -168,14 +168,7 @@ class MeowDB:
                 row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
             if row is None:
                 return None
-            meow_id = row["id"]
-            self._conn.execute(
-                "UPDATE meows SET play_count = play_count + 1, last_played = datetime('now') WHERE id = ?",
-                (meow_id,),
-            )
-            self._conn.commit()
-            updated = self._conn.execute("SELECT * FROM meows WHERE id = ?", (meow_id,)).fetchone()
-            return self._row_to_dict(updated)
+            return self._row_to_dict(row)
 
     def get_all(
         self,

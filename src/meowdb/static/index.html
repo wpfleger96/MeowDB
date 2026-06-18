@@ -81,12 +81,11 @@
               :class="{ playing: isPlaying, 'has-photo': currentPhoto }"
               :style="currentPhoto ? 'background-image: url(' + currentPhoto.image_url + '); background-size: cover; background-position: center;' : ''"
               @click="onMeowPress()"
-              :disabled="isLoading"
               aria-label="Play a random meow"
             >
               <span class="meow-btn-label">MEOW</span>
               <span class="meow-btn-sub" x-show="isLoading">loading…</span>
-              <span class="meow-btn-sub" x-show="isPlaying && !isLoading">tap to stop</span>
+              <span class="meow-btn-sub" x-show="isPlaying && !isLoading">tap for next</span>
             </button>
 
             <!-- Mini waveform canvas (shown during + after playback) -->

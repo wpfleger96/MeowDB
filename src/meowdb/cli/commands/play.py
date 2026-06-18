@@ -31,7 +31,6 @@ def play(id: str | None, use_random: bool, db_path: str | None) -> None:
             print_error(f"Meow not found: {id}")
             ctx.db.close()
             sys.exit(1)
-        ctx.db.increment_play_count(id)
 
     wav_path = Path(meow["wav_path"])
     if not wav_path.exists():
@@ -39,6 +38,8 @@ def play(id: str | None, use_random: bool, db_path: str | None) -> None:
         ctx.db.close()
         sys.exit(1)
 
+    # get_random() no longer counts a play, so record it here for both paths
+    ctx.db.increment_play_count(meow["id"])
     play_audio(wav_path)
 
     short_id = meow["id"][:8]
