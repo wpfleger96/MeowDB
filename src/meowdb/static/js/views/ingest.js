@@ -86,7 +86,7 @@ function ingestView() {
       for (let i = 0; i < files.length; i++) {
         if (this._resetting) return;
         const file = files[i];
-        const job = {
+        this.jobs.push({
           jobId: null,
           filename: file.name,
           phase: 'uploading',
@@ -99,8 +99,8 @@ function ingestView() {
           duration: 0,
           currentTime: 0,
           containerId: 'clip-waveform-' + i,
-        };
-        this.jobs.push(job);
+        });
+        const job = this.jobs[i];
 
         try {
           const result = await createIngestJob(file);
