@@ -569,9 +569,13 @@
   font-size: var(--text-sm);
 }
 
+/* Sidebar auth (desktop only — re-shown in desktop.css). Hidden on mobile,
+   where the auth control lives in each view's header instead. */
 .nav-auth {
-  position: absolute;
-  right: var(--sp-3);
-  top: 50%;
-  transform: translateY(-50%);
+  display: none;
+}
+
+.nav-auth-mobile {
+  display: flex;
+  align-items: center;
 }

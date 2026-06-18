@@ -203,10 +203,17 @@
   }
 
   .nav-auth {
+    display: flex;
     position: static;
     transform: none;
     margin-top: auto;
     padding: var(--sp-3) 0;
+  }
+
+  /* Mobile header/Play auth copies are not used on desktop */
+  .nav-auth-mobile,
+  .play-auth-mobile {
+    display: none;
   }
 
 }
