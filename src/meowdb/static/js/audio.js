@@ -79,6 +79,7 @@ class AudioPlayer {
 
       const fail = (err) => {
         if (this._audio !== audio) return; // superseded — ignore
+        // Clear before recursing so the fallback _run owns the fresh element/settle.
         this._audio = null;
         this._settle = null;
         if (fallbackUrl) {

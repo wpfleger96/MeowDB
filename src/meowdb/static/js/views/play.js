@@ -66,7 +66,9 @@ function playView() {
       // Draw initial waveform
       this._drawWaveform(meow, 0);
 
-      // Set up callbacks before calling play()
+      // Set up callbacks before calling play(). No _gen guard needed here: the
+      // audio core fires these only for the current element, and the next tap's
+      // stop() reassigns them before a stale one could fire.
       audioPlayer.onEnded = () => {
         this.isPlaying = false;
         this._stopWaveform();
