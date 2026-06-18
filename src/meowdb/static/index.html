@@ -524,17 +524,73 @@
           </div>
 
           <div class="modal-body" x-show="detailPhoto">
-            <!-- Full image -->
-            <div class="detail-photo-wrap">
-              <img :src="detailPhoto?.image_url" :alt="'Photo'" class="detail-photo-img">
+            <!-- Full image (normal mode) -->
+            <div class="detail-photo-wrap" x-show="!isCropping">
+              <img :src="detailPhoto?.image_url" :alt="'Photo'" class="detail-photo-img" :class="{ 'opacity-40': isEditing }">
             </div>
 
-            <div class="divider" x-show="!authRequired || authenticated"></div>
+            <!-- Crop canvas (crop mode) -->
+            <div class="detail-photo-wrap" x-show="isCropping">
+              <canvas
+                x-ref="cropCanvas"
+                class="crop-canvas"
+                @mousedown="onCropPointerDown($event)"
+                @mousemove="onCropPointerMove($event)"
+                @mouseup="onCropPointerUp($event)"
+                @touchstart.prevent="onCropPointerDown($event)"
+                @touchmove.prevent="onCropPointerMove($event)"
+                @touchend="onCropPointerUp($event)"
+              ></canvas>
+            </div>
+
+            <!-- Edit controls (normal mode) -->
+            <div class="photo-edit-controls" x-show="(!authRequired || authenticated) && !isCropping">
+              <button class="btn-icon" @click="rotateCCW()" :disabled="isEditing" title="Rotate left">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                </svg>
+              </button>
+              <button class="btn-icon" @click="rotateCW()" :disabled="isEditing" title="Rotate right">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                  <path d="M21 3v5h-5"/>
+                </svg>
+              </button>
+              <button class="btn-icon" @click="flipH()" :disabled="isEditing" title="Flip horizontal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3"/>
+                  <path d="M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3"/>
+                  <path d="M12 20v2m0-20v2"/>
+                </svg>
+              </button>
+              <button class="btn-icon" @click="flipV()" :disabled="isEditing" title="Flip vertical">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/>
+                  <path d="M21 16v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/>
+                  <path d="M4 12H2m20 0h-2"/>
+                </svg>
+              </button>
+              <button class="btn-icon" @click="startCrop()" :disabled="isEditing" title="Crop">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 2v14a2 2 0 0 0 2 2h14"/>
+                  <path d="M18 22V8a2 2 0 0 0-2-2H2"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Crop action buttons -->
+            <div class="flex gap-3" x-show="isCropping" style="margin-bottom: var(--sp-3);">
+              <button class="btn btn-ghost" style="flex:1;" @click="cancelCrop()">Cancel</button>
+              <button class="btn btn-primary" style="flex:1;" @click="applyCrop()">Apply Crop</button>
+            </div>
+
+            <div class="divider" x-show="(!authRequired || authenticated) && !isCropping"></div>
 
             <!-- Delete -->
             <button
               class="btn btn-danger btn-full"
-              x-show="!authRequired || authenticated"
+              x-show="(!authRequired || authenticated) && !isCropping"
               @click="confirmDelete()"
             >Delete photo</button>
           </div>

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, model_validator
 
 
@@ -121,6 +123,41 @@ class PhotoResponse(BaseModel):
 
 class PhotoListResponse(BaseModel):
     items: list[PhotoResponse]
+
+
+class PhotoEditRequest(BaseModel):
+    action: Literal["rotate", "flip", "crop"]
+    direction: Literal["cw", "ccw"] | None = None
+    axis: Literal["horizontal", "vertical"] | None = None
+    x: float | None = None
+    y: float | None = None
+    width: float | None = None
+    height: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_fields(self) -> PhotoEditRequest:
+        if self.action == "rotate":
+            if self.direction is None:
+                raise ValueError("direction required for rotate")
+        elif self.action == "flip":
+            if self.axis is None:
+                raise ValueError("axis required for flip")
+        elif self.action == "crop":
+            if self.x is None or self.y is None or self.width is None or self.height is None:
+                raise ValueError("x, y, width, height required for crop")
+            if not (0.0 <= self.x <= 1.0):
+                raise ValueError("x must be in [0, 1]")
+            if not (0.0 <= self.y <= 1.0):
+                raise ValueError("y must be in [0, 1]")
+            if not (0.0 < self.width <= 1.0):
+                raise ValueError("width must be in (0, 1]")
+            if not (0.0 < self.height <= 1.0):
+                raise ValueError("height must be in (0, 1]")
+            if self.x + self.width > 1.0:
+                raise ValueError("x + width must be <= 1")
+            if self.y + self.height > 1.0:
+                raise ValueError("y + height must be <= 1")
+        return self
 
 
 class RecalculateResponse(BaseModel):

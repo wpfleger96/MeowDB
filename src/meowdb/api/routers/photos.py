@@ -7,9 +7,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from PIL import Image
 
 from meowdb.api.auth import require_auth
-from meowdb.api.models import PhotoListResponse, PhotoResponse
+from meowdb.api.models import PhotoEditRequest, PhotoListResponse, PhotoResponse
 from meowdb.api.streaming import safe_path, stream_file
 from meowdb.config import PHOTOS_DIR
 from meowdb.photos import optimize_photo
@@ -146,3 +147,58 @@ async def delete_photo(
             pass
 
     db.delete_photo(photo_id)
+
+
+@router.post("/photos/{photo_id}/edit", response_model=PhotoResponse)
+async def edit_photo(
+    photo_id: str,
+    body: PhotoEditRequest,
+    request: Request,
+    _: None = Depends(require_auth),
+) -> PhotoResponse:
+    db = request.app.state.db
+    photo = db.get_photo(photo_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    path = PHOTOS_DIR / photo["filename"]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Photo file not found on disk")
+
+    try:
+        path = safe_path(path, PHOTOS_DIR)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied") from None
+
+    try:
+        with Image.open(path) as img:
+            if body.action == "rotate":
+                method = (
+                    Image.Transpose.ROTATE_270
+                    if body.direction == "cw"
+                    else Image.Transpose.ROTATE_90
+                )
+                result = img.transpose(method)
+            elif body.action == "flip":
+                method = (
+                    Image.Transpose.FLIP_LEFT_RIGHT
+                    if body.axis == "horizontal"
+                    else Image.Transpose.FLIP_TOP_BOTTOM
+                )
+                result = img.transpose(method)
+            else:  # crop
+                assert body.x is not None and body.y is not None
+                assert body.width is not None and body.height is not None
+                w, h = img.size
+                left = int(body.x * w)
+                upper = int(body.y * h)
+                right = int((body.x + body.width) * w)
+                lower = int((body.y + body.height) * h)
+                result = img.crop((left, upper, right, lower))
+            result.save(path, format="WEBP", quality=85)
+    except Exception as exc:
+        _logger.warning("Photo edit failed for %s: %s", photo_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to edit photo") from exc
+
+    photo = db.get_photo(photo_id)
+    return _photo_to_response(photo)

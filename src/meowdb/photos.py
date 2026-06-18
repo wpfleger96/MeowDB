@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 def optimize_photo(src: Path) -> Path:
-    """
-    Resize to max 1200px on longest edge, convert to WebP quality=85.
-    Saves alongside src as {stem}.webp. Returns the dest path.
-    """
     dest = src.with_suffix(".webp")
-    with Image.open(src) as img:
+    with Image.open(src) as raw:
+        img = ImageOps.exif_transpose(raw)
         max_dim = 1200
         if max(img.width, img.height) > max_dim:
             img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
