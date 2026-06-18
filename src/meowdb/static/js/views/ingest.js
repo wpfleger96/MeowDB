@@ -61,9 +61,17 @@ function ingestView() {
     onDrop(event) {
       event.preventDefault();
       this.isDragOver = false;
-      const files = Array.from(event.dataTransfer?.files || []).filter(
-        f => f.type.startsWith('audio/') || f.type.startsWith('video/')
+      // Mirror the picker's accept list so drag-drop allows exactly what the server accepts.
+      const accepted = new Set(
+        (this.$refs.fileInput?.accept || '')
+          .split(',')
+          .map(s => s.trim().toLowerCase())
+          .filter(Boolean)
       );
+      const files = Array.from(event.dataTransfer?.files || []).filter(f => {
+        const dot = f.name.lastIndexOf('.');
+        return dot !== -1 && accepted.has(f.name.slice(dot).toLowerCase());
+      });
       if (files.length > 0) this._uploadFiles(files);
     },
 
