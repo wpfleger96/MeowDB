@@ -10,12 +10,13 @@ A personal cat meow library. Record, upload, and play back cat meow audio clips.
 ## Architecture
 
 ```
-Browser → Cloudflare (CDN/WAF/geo-block/rate-limit) → Fly.io (Anycast) → MeowDB (FastAPI + SQLite)
+Browser → Cloudflare (CDN/WAF/geo-block/rate-limit) → Cloudflare Tunnel → Proxmox LXC → MeowDB (FastAPI + SQLite)
 ```
 
-- **Compute:** Fly.io `shared-cpu-1x` / 512MB, Seattle (sjc) region, auto-stop/auto-start
-- **Storage:** Fly.io NVMe volume (`meowdb_data`, 1GB) mounted at `/data` for SQLite + audio files
+- **Compute:** Proxmox LXC container (Debian 12, Docker) on homelab, 1GB RAM
+- **Storage:** Bind-mounted `/data` directory on LXC container for SQLite + audio files
 - **CDN/Security:** Cloudflare proxy — DDoS protection, geo-blocking (US only), login rate limiting, bot protection
+- **Ingress:** Cloudflare Tunnel (`cloudflared`) — zero firewall changes, no public IP exposure
 - **Auth:** Shared password via bcrypt + Starlette `SessionMiddleware` (14-day HttpOnly cookies)
 - **Infrastructure as code:** Cloudflare DNS, WAF, and zone settings managed in [homelabconfigs](https://github.com/wpfleger96/homelabconfigs)
 
@@ -54,41 +55,36 @@ The compose setup mounts a named volume at `/data` for SQLite and audio files.
 
 ## Deployment
 
-Deploys automatically on push to `main` via `.github/workflows/fly-deploy.yml` using `flyctl deploy --remote-only`. The image is built remotely by Fly.io's Depot builder.
+Deploys automatically on push to `main` via `.github/workflows/deploy.yml`. The workflow builds the Docker image and pushes it to `ghcr.io/wpfleger96/meowdb:latest`. [Watchtower](https://containrrr.dev/watchtower/) on the server polls GHCR every 5 minutes and auto-restarts the container on new images.
 
-To deploy manually:
+## Production Setup
+
+The production stack runs via `docker-compose.prod.yml` with three services:
+
+- `meowdb` — the app (pulled from GHCR)
+- `cloudflared` — Cloudflare Tunnel daemon
+- `watchtower` — auto-pulls new images from GHCR
+
+Secrets are stored in `.env` on the server (not committed):
+
+| Variable | Description |
+|----------|-------------|
+| `MEOWDB_PASSWORD_HASH` | bcrypt hash of shared password |
+| `MEOWDB_SESSION_SECRET` | Signing key for session cookies |
+| `MEOWDB_CORS_ORIGINS` | `https://meowdb.app` |
+| `TUNNEL_TOKEN` | Cloudflare Tunnel authentication token |
+
+Generate secrets:
 
 ```bash
-fly deploy
+# Password hash
+python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASSWORD', bcrypt.gensalt()).decode())"
+
+# Session secret
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-## Fly.io First-Time Setup
-
-These are one-time commands run during initial provisioning:
-
-```bash
-# Authenticate
-fly auth login
-
-# Create the app (fly.toml already exists)
-fly launch --name meowdb --region sjc --ha=false --no-deploy
-
-# Create persistent volume
-fly volumes create meowdb_data --size 1 --region sjc
-
-# Generate and set secrets
-fly secrets set MEOWDB_CORS_ORIGINS=https://meowdb.app
-fly secrets set MEOWDB_PASSWORD_HASH="$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASSWORD', bcrypt.gensalt()).decode())")"
-fly secrets set MEOWDB_SESSION_SECRET="$(python -c "import secrets; print(secrets.token_urlsafe(48))")"
-
-# Deploy
-fly deploy
-
-# Add custom domain (run after DNS records are in Cloudflare)
-fly certs add meowdb.app
-```
-
-The `FLY_API_TOKEN` GitHub secret is set automatically by `fly launch`.
+Infrastructure (LXC container, Cloudflare Tunnel, DNS) is managed in [homelabconfigs](https://github.com/wpfleger96/homelabconfigs).
 
 ## Environment Variables
 
@@ -103,4 +99,4 @@ The `FLY_API_TOKEN` GitHub secret is set automatically by `fly launch`.
 
 ## Infrastructure
 
-Cloudflare configuration (DNS, WAF, zone settings) is managed via Terraform in [homelabconfigs](https://github.com/wpfleger96/homelabconfigs/tree/main/terraform/cloudflare). Changes there deploy automatically on merge to main.
+Cloudflare configuration (DNS, WAF, Cloudflare Tunnel, zone settings) and the Proxmox LXC container are managed via Terraform in [homelabconfigs](https://github.com/wpfleger96/homelabconfigs). Cloudflare changes deploy automatically on merge to main; homelab changes are applied locally.
