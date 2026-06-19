@@ -225,6 +225,7 @@ data/
 *.m4a
 *.wav
 *.mp3
+meowdb_backup.tar.gz
 
 # Playwright
 ui/node_modules/

@@ -7,7 +7,7 @@ REMOTE_HOST="${MEOWDB_REMOTE_HOST:?Set MEOWDB_REMOTE_HOST to the LXC container I
 REMOTE_DATA_DIR="${MEOWDB_REMOTE_DATA_DIR:-/opt/meowdb/data}"
 
 echo "=== Step 1: Checkpoint SQLite WAL ==="
-fly ssh console -a "$FLY_APP" -C "sqlite3 /data/meowdb.sqlite 'PRAGMA wal_checkpoint(TRUNCATE)'"
+fly ssh console -a "$FLY_APP" -C "python -c \"import sqlite3; c = sqlite3.connect('/data/meowdb.sqlite'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close(); print('WAL checkpoint complete')\""
 
 echo "=== Step 2: Tar and download data from Fly.io ==="
 fly ssh console -a "$FLY_APP" -C "tar czf - -C / data/meowdb.sqlite data/audio data/photos" > "$BACKUP_FILE"
@@ -22,7 +22,7 @@ ssh -i ~/.ssh/id_rsa_homelab "root@${REMOTE_HOST}" \
 
 echo "=== Step 5: Verify ==="
 DB_COUNT=$(ssh -i ~/.ssh/id_rsa_homelab "root@${REMOTE_HOST}" \
-  "sqlite3 ${REMOTE_DATA_DIR}/meowdb.sqlite 'SELECT COUNT(*) FROM meows'")
+  "docker exec meowdb python -c \"import sqlite3; c = sqlite3.connect('/data/meowdb.sqlite'); print(c.execute('SELECT COUNT(*) FROM meows').fetchone()[0]); c.close()\"")
 MP3_COUNT=$(ssh -i ~/.ssh/id_rsa_homelab "root@${REMOTE_HOST}" \
   "ls -1 ${REMOTE_DATA_DIR}/audio/mp3/ | wc -l")
 PHOTO_COUNT=$(ssh -i ~/.ssh/id_rsa_homelab "root@${REMOTE_HOST}" \
