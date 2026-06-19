@@ -48,7 +48,7 @@ def _photo_to_response(photo: dict) -> PhotoResponse:  # type: ignore[type-arg]
         id=photo["id"],
         filename=photo["filename"],
         created_at=photo.get("created_at", ""),
-        updated_at=photo.get("updated_at", ""),
+        updated_at=photo.get("updated_at") or "",
         image_url=f"/api/photos/{photo['id']}/image?v={v}",
         is_default=bool(photo.get("is_default", False)),
     )
