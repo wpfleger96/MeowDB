@@ -4,7 +4,7 @@
 
 function playView() {
   return {
-    meowCount: 0,
+    meowCount: null,
     isPlaying: false,
     isLoading: false,
     currentMeow: null,
@@ -13,7 +13,9 @@ function playView() {
     _gen: 0,
 
     async init() {
+      this.isLoading = true;
       await this._refreshCount();
+      this.isLoading = false;
       getRandomPhoto().then(photo => { this.currentPhoto = photo; }).catch(() => {});
     },
 
