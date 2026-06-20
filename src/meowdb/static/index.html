@@ -63,7 +63,7 @@
         </div>
 
         <!-- Empty state (0 meows in library) -->
-        <div class="empty-state" x-show="meowCount === 0 && !isLoading">
+        <div class="empty-state" x-show="meowCount === 0 && meowCount !== null">
           <div class="empty-state-icon">🐱</div>
           <div class="empty-state-title">No meows yet</div>
           <div class="empty-state-body">Add your first meow to get started</div>
