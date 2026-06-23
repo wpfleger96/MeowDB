@@ -68,6 +68,7 @@ class CommitResponse(BaseModel):
 
 class FeedbackRequest(BaseModel):
     vote: Literal["up", "down"]
+    previous: Literal["up", "down"] | None = None
 
 
 class MeowSummary(BaseModel):

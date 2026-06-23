@@ -136,6 +136,11 @@ async def play_meow(meow_id: str, request: Request) -> Response:
 @router.post("/meows/{meow_id}/feedback", status_code=204)
 async def feedback_meow(meow_id: str, body: FeedbackRequest, request: Request) -> Response:
     db = request.app.state.db
-    if not db.record_feedback(meow_id, is_upvote=body.vote == "up"):
+    is_upvote = body.vote == "up"
+    if body.previous and body.previous != body.vote:
+        ok = db.switch_feedback(meow_id, is_upvote=is_upvote)
+    else:
+        ok = db.record_feedback(meow_id, is_upvote=is_upvote)
+    if not ok:
         raise HTTPException(status_code=404, detail="Meow not found")
     return Response(status_code=204)

@@ -105,7 +105,7 @@
               <button
                 class="feedback-btn feedback-up"
                 :class="{ active: feedbackGiven === 'up', voted: feedbackGiven }"
-                :disabled="feedbackGiven != null"
+                :disabled="feedbackGiven === 'up'"
                 @click="submitFeedback('up')"
                 aria-label="Thumbs up"
               >
@@ -117,7 +117,7 @@
               <button
                 class="feedback-btn feedback-down"
                 :class="{ active: feedbackGiven === 'down', voted: feedbackGiven }"
-                :disabled="feedbackGiven != null"
+                :disabled="feedbackGiven === 'down'"
                 @click="submitFeedback('down')"
                 aria-label="Thumbs down"
               >

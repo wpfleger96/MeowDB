@@ -137,14 +137,16 @@ function playView() {
     },
 
     submitFeedback(vote) {
-      if (!this.currentMeow || this.feedbackGiven) return;
+      if (!this.currentMeow || this.feedbackGiven === vote) return;
+      const previous = this.feedbackGiven;
       this.feedbackGiven = vote;
-      recordFeedback(this.currentMeow.id, vote)
+      const body = previous ? { vote, previous } : { vote };
+      recordFeedback(this.currentMeow.id, body)
         .then(() => {
           showToast(vote === 'up' ? 'Upvoted!' : 'Downvoted', vote === 'up' ? 'success' : 'info');
         })
         .catch(() => {
-          this.feedbackGiven = null;
+          this.feedbackGiven = previous;
           showToast('Vote failed', 'error');
         });
     },

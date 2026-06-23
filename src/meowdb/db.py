@@ -258,6 +258,17 @@ class MeowDB:
             self._conn.commit()
         return cursor.rowcount > 0
 
+    def switch_feedback(self, meow_id: str, is_upvote: bool) -> bool:
+        inc = "upvote_count" if is_upvote else "downvote_count"
+        dec = "downvote_count" if is_upvote else "upvote_count"
+        with self._lock:
+            cursor = self._conn.execute(
+                f"UPDATE meows SET {inc} = {inc} + 1, {dec} = MAX({dec} - 1, 0) WHERE id = ?",
+                (meow_id,),
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
     def get_count(self, label_filter: str | None = None) -> int:
         with self._lock:
             if label_filter:

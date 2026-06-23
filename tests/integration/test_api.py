@@ -320,6 +320,19 @@ def test_feedback_not_found(client):
 
 
 @pytest.mark.integration
+def test_feedback_switch_vote(seeded_client):
+    meow_id = seeded_client.get("/api/meows").json()["items"][0]["id"]
+    seeded_client.post(f"/api/meows/{meow_id}/feedback", json={"vote": "up"})
+    resp = seeded_client.post(
+        f"/api/meows/{meow_id}/feedback", json={"vote": "down", "previous": "up"}
+    )
+    assert resp.status_code == 204
+    data = seeded_client.get("/api/meows").json()["items"][0]
+    assert data["upvote_count"] == 0
+    assert data["downvote_count"] == 1
+
+
+@pytest.mark.integration
 def test_list_meows_sort_most_downvoted(seeded_client, tmp_dirs):
     # Add a second meow with more downvotes
     wav_file = next(tmp_dirs["wav"].glob("*.wav"))

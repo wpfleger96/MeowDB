@@ -313,6 +313,33 @@ def test_get_stats_includes_vote_leaderboards(tmp_db: MeowDB) -> None:
     assert stats["most_downvoted"][0]["id"] == id2
 
 
+@pytest.mark.unit
+def test_switch_feedback(tmp_db: MeowDB) -> None:
+    meow_id = tmp_db.add(_meow())
+    tmp_db.record_feedback(meow_id, is_upvote=True)
+    assert tmp_db.switch_feedback(meow_id, is_upvote=False) is True
+    result = tmp_db.get_by_id(meow_id)
+    assert result is not None
+    assert result["upvote_count"] == 0
+    assert result["downvote_count"] == 1
+
+
+@pytest.mark.unit
+def test_switch_feedback_prevents_negative(tmp_db: MeowDB) -> None:
+    meow_id = tmp_db.add(_meow())
+    # Switch without a prior vote — old column is already 0
+    tmp_db.switch_feedback(meow_id, is_upvote=True)
+    result = tmp_db.get_by_id(meow_id)
+    assert result is not None
+    assert result["downvote_count"] == 0  # MAX(..., 0) prevents going negative
+    assert result["upvote_count"] == 1
+
+
+@pytest.mark.unit
+def test_switch_feedback_missing_id(tmp_db: MeowDB) -> None:
+    assert tmp_db.switch_feedback("nonexistent", is_upvote=True) is False
+
+
 # =============================================================================
 # Job staging flow
 # =============================================================================
