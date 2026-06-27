@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/wpfleger96/MeowDB/compare/v0.5.0...v0.5.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* **cli:** show truncation hint in list output; pin Dockerfile to Python 3.13 ([#59](https://github.com/wpfleger96/MeowDB/issues/59)) ([d672077](https://github.com/wpfleger96/MeowDB/commit/d672077f1c98f32476ba284da126c93ec06c19a2))
+
 ## [0.5.0](https://github.com/wpfleger96/MeowDB/compare/v0.4.0...v0.5.0) (2026-06-27)
 
 
