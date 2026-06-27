@@ -13,6 +13,8 @@ def main() -> None:
 
 def _register_commands() -> None:
     from meowdb.cli.commands.delete import delete
+    from meowdb.cli.commands.export_cmd import export_meows
+    from meowdb.cli.commands.import_cmd import import_meows
     from meowdb.cli.commands.ingest import ingest
     from meowdb.cli.commands.list import list_meows
     from meowdb.cli.commands.play import play
@@ -21,6 +23,8 @@ def _register_commands() -> None:
     from meowdb.cli.groups.db import db
 
     main.add_command(delete)
+    main.add_command(export_meows, name="export")
+    main.add_command(import_meows, name="import")
     main.add_command(ingest)
     main.add_command(list_meows, name="list")
     main.add_command(play)

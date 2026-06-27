@@ -1,11 +1,39 @@
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from pydub import AudioSegment
 from scipy.fft import dct
+
+if TYPE_CHECKING:
+    from meowdb.db import MeowDB
+
+_logger = logging.getLogger(__name__)
+
+
+def update_library_uniqueness(db: MeowDB, new_meow_ids: list[str]) -> None:
+    """Extract fingerprints for new meows, then recompute uniqueness scores for the whole library."""
+    similarity = MeowSimilarity()
+    all_wav_paths = {r["id"]: r["wav_path"] for r in db.get_all_wav_paths()}
+    fingerprints = db.get_all_fingerprints()
+
+    for meow_id in new_meow_ids:
+        if meow_id not in fingerprints and meow_id in all_wav_paths:
+            try:
+                fp = similarity.extract_fingerprint(all_wav_paths[meow_id])
+                db.update_fingerprint(meow_id, fp)
+                fingerprints[meow_id] = fp
+            except Exception as exc:
+                _logger.warning("Failed to extract fingerprint for %s: %s", meow_id, exc)
+
+    if fingerprints:
+        scores = similarity.compute_uniqueness_scores(fingerprints)
+        db.update_uniqueness_scores_bulk(scores)
 
 
 class MeowSimilarity:

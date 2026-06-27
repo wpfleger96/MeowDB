@@ -23,7 +23,7 @@ def db_path(tmp_path: Path) -> Path:
 def test_help_shows_all_commands(runner: CliRunner) -> None:
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("ingest", "list", "play", "delete", "serve", "stats"):
+    for cmd in ("ingest", "list", "play", "delete", "serve", "stats", "export", "import"):
         assert cmd in result.output
 
 

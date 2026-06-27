@@ -50,6 +50,7 @@ def list_meows(output_format: str, limit: int, sort: str, db_path: str | None) -
 
     sort_key = _SORT_MAP.get(sort, "newest")
     meows = ctx.db.get_all(sort=sort_key, limit=limit)
+    total = ctx.db.get_count()
     ctx.db.close()
 
     if output_format == "json":
@@ -61,6 +62,8 @@ def list_meows(output_format: str, limit: int, sort: str, db_path: str | None) -
         return
 
     _print_table(meows)
+    if len(meows) < total:
+        print_info(f"Showing {len(meows)} of {total} meows (use --limit to see more)")
 
 
 def _print_table(meows: list[dict]) -> None:  # type: ignore[type-arg]

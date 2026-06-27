@@ -162,6 +162,49 @@ class MeowDB:
             self._conn.commit()
         return meow_id
 
+    def get_all_for_export(self) -> list[dict]:  # type: ignore[type-arg]
+        """Return all meows with no limit, for export."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM meows ORDER BY created_at ASC").fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def import_meow(self, meow_id: str, meow: dict, wav_path: str, mp3_path: str) -> None:  # type: ignore[type-arg]
+        """Insert a fully-formed meow row from an import archive."""
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO meows
+                    (id, timestamp, duration_ms, labels, wav_path, mp3_path,
+                     waveform_data, peak_dbfs, cat_energy_ratio, recorded_at,
+                     title, play_count, last_played, created_at,
+                     upvote_count, downvote_count)
+                VALUES
+                    (:id, :timestamp, :duration_ms, :labels, :wav_path, :mp3_path,
+                     :waveform_data, :peak_dbfs, :cat_energy_ratio, :recorded_at,
+                     :title, :play_count, :last_played, :created_at,
+                     :upvote_count, :downvote_count)
+                """,
+                {
+                    "id": meow_id,
+                    "timestamp": meow.get("timestamp", ""),
+                    "duration_ms": meow["duration_ms"],
+                    "labels": json.dumps(meow.get("labels", [])),
+                    "wav_path": wav_path,
+                    "mp3_path": mp3_path,
+                    "waveform_data": json.dumps(meow.get("waveform_data", [])),
+                    "peak_dbfs": meow.get("peak_dbfs"),
+                    "cat_energy_ratio": meow.get("cat_energy_ratio"),
+                    "recorded_at": meow.get("recorded_at"),
+                    "title": meow.get("title"),
+                    "play_count": meow.get("play_count", 0),
+                    "last_played": meow.get("last_played"),
+                    "created_at": meow.get("created_at", ""),
+                    "upvote_count": meow.get("upvote_count", 0),
+                    "downvote_count": meow.get("downvote_count", 0),
+                },
+            )
+            self._conn.commit()
+
     def get_random(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
         with self._lock:
             if exclude_id:
@@ -552,6 +595,22 @@ class MeowDB:
                 "SELECT * FROM cat_photos ORDER BY created_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def import_photo(
+        self,
+        photo_id: str,
+        filename: str,
+        created_at: str | None,
+        is_default: bool,
+        updated_at: str | None,
+    ) -> None:
+        """Insert a fully-formed photo row from an import archive."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO cat_photos (id, filename, created_at, is_default, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (photo_id, filename, created_at, is_default, updated_at),
+            )
+            self._conn.commit()
 
     def get_random_photo(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
         with self._lock:
