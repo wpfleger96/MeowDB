@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/wpfleger96/MeowDB/compare/v0.4.0...v0.5.0) (2026-06-27)
+
+
+### Features
+
+* **cli:** add export and import commands for meow library transfer ([#58](https://github.com/wpfleger96/MeowDB/issues/58)) ([fe2bf7d](https://github.com/wpfleger96/MeowDB/commit/fe2bf7d4a0c3b6694740eff5a33b28e549c5dcae))
+
+
+### Chores
+
+* **deps:** Lock file maintenance ([#53](https://github.com/wpfleger96/MeowDB/issues/53)) ([01ee82b](https://github.com/wpfleger96/MeowDB/commit/01ee82bb7578de0104b9a5f6d672e17c19684d6b))
+* **deps:** Lock file maintenance ([#55](https://github.com/wpfleger96/MeowDB/issues/55)) ([4989314](https://github.com/wpfleger96/MeowDB/commit/498931458a500a2297c8ff00e935041bcca371e9))
+* **deps:** Lock file maintenance ([#56](https://github.com/wpfleger96/MeowDB/issues/56)) ([134ac3d](https://github.com/wpfleger96/MeowDB/commit/134ac3dab9948f2eb803534262ec2f1c6ab8a12a))
+* **deps:** Update actions/checkout action to v7 ([#52](https://github.com/wpfleger96/MeowDB/issues/52)) ([e18230b](https://github.com/wpfleger96/MeowDB/commit/e18230be2b5135975a0461fd3e4f4d6650d8106c))
+
 ## [0.4.0](https://github.com/wpfleger96/MeowDB/compare/v0.3.0...v0.4.0) (2026-06-24)
 
 
