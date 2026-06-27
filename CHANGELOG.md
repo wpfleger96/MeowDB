@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/wpfleger96/MeowDB/compare/v0.5.3...v0.6.0) (2026-06-27)
+
+
+### Features
+
+* **similarity:** add PCEN, delta MFCCs, and k-NN uniqueness scoring ([#57](https://github.com/wpfleger96/MeowDB/issues/57)) ([53abf5a](https://github.com/wpfleger96/MeowDB/commit/53abf5a56a56f5ba7ef1fcb7629a06c3b69e2231))
+
+
+### Continuous Integration
+
+* sync CI workflow ([8317dee](https://github.com/wpfleger96/MeowDB/commit/8317dee219e3b24b3f7285cb3c9e2c2e47177dc5))
+* sync CI workflow ([5f05b27](https://github.com/wpfleger96/MeowDB/commit/5f05b27515ddcb10a63b927337c15b0b48f54fa1))
+* sync CI workflow ([5bc3309](https://github.com/wpfleger96/MeowDB/commit/5bc33092c57c846e16236f05d57f0bf652d0254b))
+* sync release workflow ([2246b1e](https://github.com/wpfleger96/MeowDB/commit/2246b1e83c9da20526cad240449d69ba117633b9))
+* sync release workflow ([86006f4](https://github.com/wpfleger96/MeowDB/commit/86006f4b0e07dbf39c54db43115c84802923b631))
+
 ## [0.5.3](https://github.com/wpfleger96/MeowDB/compare/v0.5.2...v0.5.3) (2026-06-27)
 
 
