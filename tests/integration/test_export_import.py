@@ -16,6 +16,26 @@ from meowdb.db import MeowDB
 _MANIFEST_PATH = "meowdb-export/manifest.json"
 
 
+class _FakeAudioSegment:
+    """Stub that avoids needing ffmpeg in CI."""
+
+    @staticmethod
+    def from_wav(path: str) -> _FakeAudioSegment:
+        return _FakeAudioSegment()
+
+    def export(self, path: str, **kwargs: object) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_bytes(b"\x00")
+
+
+@pytest.fixture(autouse=True)
+def _mock_pydub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch AudioSegment in import_cmd so tests don't need ffmpeg."""
+    import meowdb.cli.commands.import_cmd as mod
+
+    monkeypatch.setattr(mod, "AudioSegment", _FakeAudioSegment)
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
