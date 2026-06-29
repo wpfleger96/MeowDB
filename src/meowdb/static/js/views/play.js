@@ -62,6 +62,38 @@ function playView() {
         .then(photo => { if (gen === this._gen) this.currentPhoto = photo; })
         .catch(() => {});
       this.isLoading = false;
+
+      await this._playCurrent(meow);
+    },
+
+    /**
+     * Replay the meow that's already loaded, without advancing to a new one.
+     * Shares the gesture/cancel contract with onMeowPress: bumping _gen and
+     * calling audioPlayer.stop() here means an in-flight advance is abandoned,
+     * and a later advance abandons this replay. Called directly from the click
+     * handler so it satisfies the iOS user-gesture requirement.
+     */
+    async replayMeow() {
+      if (!this.currentMeow || this.isLoading) return;
+
+      ++this._gen;
+      audioPlayer.stop();
+      this._stopWaveform();
+      this.isPlaying = false;
+
+      // A replay is a fresh listen, so allow re-voting on the same meow.
+      this.feedbackGiven = null;
+
+      await this._playCurrent(this.currentMeow);
+    },
+
+    /**
+     * Play this.currentMeow from the start: record the play, draw + animate the
+     * waveform, wire the audio callbacks, and start playback. Shared tail of
+     * onMeowPress() and replayMeow(); the caller has already settled currentMeow
+     * and the generation counter.
+     */
+    async _playCurrent(meow) {
       this.isPlaying = true;
 
       // Record play event (fire-and-forget)

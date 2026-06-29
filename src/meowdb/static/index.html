@@ -100,6 +100,23 @@
               aria-hidden="true"
             ></canvas>
 
+            <!-- Replay button (re-play the meow just heard, without advancing) -->
+            <button
+              class="btn btn-ghost btn-sm replay-btn"
+              x-show="currentMeow"
+              x-cloak
+              :disabled="isLoading"
+              @click="replayMeow()"
+              aria-label="Replay the last meow"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 4v6h6"/>
+                <path d="M3.51 15a9 9 0 1 0 .49-9L1 10"/>
+              </svg>
+              <span>Replay</span>
+            </button>
+
             <!-- Feedback buttons (thumbs up/down for the meow just played) -->
             <div class="play-feedback" x-show="currentMeow" x-cloak>
               <button

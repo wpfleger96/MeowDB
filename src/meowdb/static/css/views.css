@@ -146,6 +146,11 @@
   color: var(--text-secondary);
 }
 
+/* Replay button (re-play the last meow) */
+.replay-btn {
+  gap: var(--sp-2);
+}
+
 /* Feedback buttons (thumbs up/down) */
 .play-feedback {
   display: flex;
