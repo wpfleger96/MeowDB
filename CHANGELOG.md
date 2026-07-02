@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/wpfleger96/MeowDB/compare/v0.7.0...v0.7.1) (2026-07-02)
+
+
+### Chores
+
+* **deps:** Update dependency @playwright/test to v1.61.1 ([#69](https://github.com/wpfleger96/MeowDB/issues/69)) ([4a04aba](https://github.com/wpfleger96/MeowDB/commit/4a04abaf25a081eee0feb81a4e35b66f668dae62))
+* sync pre-commit hook ([2604b67](https://github.com/wpfleger96/MeowDB/commit/2604b67e774e8f720faf28e008f01e183e6ddf4a))
+
 ## [0.7.0](https://github.com/wpfleger96/MeowDB/compare/v0.6.0...v0.7.0) (2026-06-29)
 
 
