@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.1](https://github.com/wpfleger96/MeowDB/compare/v0.8.0...v0.8.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* harden staging path guard and simplify codebase ([#74](https://github.com/wpfleger96/MeowDB/issues/74)) ([25b394b](https://github.com/wpfleger96/MeowDB/commit/25b394b1b383785e2cdba191c796a90decc420f8))
+
+
+### Performance Improvements
+
+* fix CLS, LCP, and INP regressions on the play view ([#76](https://github.com/wpfleger96/MeowDB/issues/76)) ([9f3e4ba](https://github.com/wpfleger96/MeowDB/commit/9f3e4bae3e90b3fd15d0975e57ee07db8abc213e))
+
+
+### Chores
+
+* add perf to release-please changelog sections ([#77](https://github.com/wpfleger96/MeowDB/issues/77)) ([bc1a3db](https://github.com/wpfleger96/MeowDB/commit/bc1a3dbadf421a2d5e9a11d18292b751d941076e))
+
+
+### Continuous Integration
+
+* sync CI workflow ([f6ed6af](https://github.com/wpfleger96/MeowDB/commit/f6ed6af3215ba88f17d38615077e2ba04a73f45d))
+
 ## [0.8.0](https://github.com/wpfleger96/MeowDB/compare/v0.7.0...v0.8.0) (2026-07-02)
 
 
