@@ -42,7 +42,7 @@ def _cache_version(dt_str: str) -> int:
         return 0
 
 
-def _photo_to_response(photo: dict) -> PhotoResponse:  # type: ignore[type-arg]
+def photo_to_response(photo: dict) -> PhotoResponse:  # type: ignore[type-arg]
     v = _cache_version(photo.get("updated_at") or photo.get("created_at", ""))
     return PhotoResponse(
         id=photo["id"],
@@ -58,7 +58,7 @@ def _photo_to_response(photo: dict) -> PhotoResponse:  # type: ignore[type-arg]
 async def list_photos(request: Request) -> PhotoListResponse:
     db = request.app.state.db
     photos = db.get_photos()
-    return PhotoListResponse(items=[_photo_to_response(p) for p in photos])
+    return PhotoListResponse(items=[photo_to_response(p) for p in photos])
 
 
 @router.get("/photos/random", response_model=PhotoResponse)
@@ -67,7 +67,7 @@ async def get_random_photo(request: Request, exclude: str | None = None) -> Phot
     photo = db.get_random_photo(exclude_id=exclude)
     if photo is None:
         raise HTTPException(status_code=404, detail="No photos available")
-    return _photo_to_response(photo)
+    return photo_to_response(photo)
 
 
 @router.post("/photos", response_model=PhotoResponse, status_code=201)
@@ -104,7 +104,7 @@ async def upload_photo(
 
     db.add_photo(dest_filename, photo_id=photo_id)
     photo = db.get_photo(photo_id)
-    return _photo_to_response(photo)
+    return photo_to_response(photo)
 
 
 @router.get("/photos/{photo_id}/image")
@@ -224,4 +224,4 @@ async def edit_photo(
         db.update_photo_filename(photo_id, new_filename)
     else:
         db.touch_photo(photo_id)
-    return _photo_to_response(db.get_photo(photo_id))
+    return photo_to_response(db.get_photo(photo_id))

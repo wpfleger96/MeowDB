@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import json
+import re
 import shutil
 import warnings
 
@@ -9,6 +11,8 @@ from unittest.mock import patch
 
 import bcrypt
 import pytest
+
+from PIL import Image
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -836,3 +840,97 @@ def test_auth_status_no_password_localhost(client):
 def test_no_password_localhost_allows_writes(client):
     resp = client.delete("/api/meows/nonexistent-id")
     assert resp.status_code == 404  # not 401 — write endpoint accessible without auth
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap injection tests
+# ---------------------------------------------------------------------------
+
+_PLACEHOLDER_HTML = (
+    "<html><head>"
+    "<script>window.__BOOTSTRAP__ = {{BOOTSTRAP_JSON}};</script>"
+    "</head><body><!-- {{PHOTO_PRELOAD}} --></body></html>"
+)
+
+_BOOTSTRAP_RE = re.compile(r"window\.__BOOTSTRAP__ = (.+?);</script>")
+
+
+def _bootstrap_from(body: str) -> dict:
+    match = _BOOTSTRAP_RE.search(body)
+    assert match, "bootstrap script not found in served HTML"
+    payload: dict = json.loads(match.group(1))
+    return payload
+
+
+def _png_bytes() -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), "black").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@pytest.mark.integration
+def test_index_bootstrap_injected(seeded_client, tmp_dirs):
+    (tmp_dirs["static"] / "index.html").write_text(_PLACEHOLDER_HTML)
+
+    auth_payload = seeded_client.get("/api/auth/status").json()
+    resp = seeded_client.get("/")
+    body = resp.text
+
+    assert "window.__BOOTSTRAP__ = {" in body
+    payload = _bootstrap_from(body)
+    assert isinstance(payload["meow_count"], int)
+    assert payload["auth"] == auth_payload
+    assert "{{BOOTSTRAP_JSON}}" not in body
+    assert "{{PHOTO_PRELOAD}}" not in body
+
+
+@pytest.mark.integration
+def test_index_html_source_contains_placeholders():
+    # The fixtures serve a synthetic index.html, so pin the real file here:
+    # without its placeholders the server's replace is a silent no-op and the
+    # frontend quietly falls back to API calls — no other test would fail.
+    html = (Path(__file__).parents[2] / "src" / "meowdb" / "static" / "index.html").read_text()
+    assert "window.__BOOTSTRAP__ = {{BOOTSTRAP_JSON}};" in html
+    assert "<!-- {{PHOTO_PRELOAD}} -->" in html
+
+
+@pytest.mark.integration
+def test_index_bootstrap_no_photos(client, tmp_dirs):
+    (tmp_dirs["static"] / "index.html").write_text(_PLACEHOLDER_HTML)
+
+    resp = client.get("/")
+    body = resp.text
+    payload = _bootstrap_from(body)
+
+    assert payload["photo"] is None
+    assert 'rel="preload"' not in body
+
+
+@pytest.mark.integration
+def test_index_photo_preload_only_on_root(client, tmp_dirs):
+    (tmp_dirs["static"] / "index.html").write_text(_PLACEHOLDER_HTML)
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+
+    with patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir):
+        upload_resp = client.post(
+            "/api/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+    assert upload_resp.status_code == 201
+
+    root_resp = client.get("/")
+    root_body = root_resp.text
+    root_payload = _bootstrap_from(root_body)
+
+    assert root_payload["photo"] is not None
+    assert '<link rel="preload" as="image"' in root_body
+    image_url = root_payload["photo"]["image_url"]
+    assert f'href="{image_url}"' in root_body
+
+    stats_resp = client.get("/stats")
+    stats_body = stats_resp.text
+    stats_payload = _bootstrap_from(stats_body)
+
+    assert '<link rel="preload"' not in stats_body
+    assert stats_payload["photo"] is not None

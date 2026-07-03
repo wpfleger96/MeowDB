@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +141,26 @@ def create_app() -> FastAPI:
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_catch_all(full_path: str, request: Request) -> HTMLResponse:
         html = _INDEX_HTML.read_text(encoding="utf-8").replace("{{UPLOAD_ACCEPT}}", UPLOAD_ACCEPT)
-        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+        bootstrap_json, preload = "null", ""
+        try:
+            db = request.app.state.db
+            photo = db.get_random_photo()
+            photo_payload = photos.photo_to_response(photo).model_dump() if photo else None
+            payload = {
+                "meow_count": db.get_count(),
+                "auth": auth.auth_status_payload(request),
+                "photo": photo_payload,
+            }
+            bootstrap_json = json.dumps(payload).replace("<", "\\u003c")
+            if full_path == "" and photo_payload:  # full_path is "" for the root "/" request
+                href = html_escape(photo_payload["image_url"], quote=True)
+                preload = f'<link rel="preload" as="image" href="{href}">'
+        except Exception:
+            _logger.exception("bootstrap payload failed; serving HTML without it")
+        html = html.replace("{{BOOTSTRAP_JSON}}", bootstrap_json)
+        html = html.replace("<!-- {{PHOTO_PRELOAD}} -->", preload)
+        # no-store: the bootstrap embeds per-session auth state, so shared
+        # caches must never store this response.
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store"})
 
     return app
