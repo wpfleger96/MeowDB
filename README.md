@@ -59,7 +59,7 @@ Deploys automatically on push to `main` via `.github/workflows/deploy.yml`. The 
 
 ## Production Setup
 
-The production stack runs via `docker-compose.prod.yml` with three services:
+The production stack is defined in [homelabconfigs](https://github.com/wpfleger96/homelabconfigs) at `ansible/playbooks/files/meowdb/docker-compose.yml`. It runs three services:
 
 - `meowdb` — the app (pulled from GHCR)
 - `cloudflared` — Cloudflare Tunnel daemon

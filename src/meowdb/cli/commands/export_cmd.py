@@ -8,15 +8,11 @@ from pathlib import Path
 
 import click
 
+from meowdb.cli.archive import AUDIO_PREFIX, FORMAT_VERSION, MANIFEST_PATH, PHOTOS_PREFIX
 from meowdb.cli.helpers import build_context
 from meowdb.cli.options import db_path_option
 from meowdb.config import DATA_DIR, PHOTOS_DIR
 from meowdb.display import print_success, print_warning
-
-_MANIFEST_PATH = "meowdb-export/manifest.json"
-_AUDIO_PREFIX = "meowdb-export/audio/"
-_PHOTOS_PREFIX = "meowdb-export/photos/"
-_FORMAT_VERSION = 1
 
 _PORTABLE_FIELDS = {
     "id",
@@ -44,7 +40,7 @@ _PORTABLE_FIELDS = {
 @db_path_option
 def export_meows(output: str | None, include_photos: bool, db_path: str | None) -> None:
     """Export the meow library to a portable zip archive."""
-    ctx = build_context(Path(db_path) if db_path else None)
+    ctx = build_context(db_path)
     meows = ctx.db.get_all_for_export()
     photos = ctx.db.get_photos() if include_photos else []
     ctx.db.close()
@@ -65,9 +61,7 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
                 print_warning(f"Missing WAV for {meow['id'][:8]}, skipping")
                 skipped_meows += 1
                 continue
-            zf.write(
-                wav_path, _AUDIO_PREFIX + meow["id"] + ".wav", compress_type=zipfile.ZIP_STORED
-            )
+            zf.write(wav_path, AUDIO_PREFIX + meow["id"] + ".wav", compress_type=zipfile.ZIP_STORED)
             manifest_meows.append({k: v for k, v in meow.items() if k in _PORTABLE_FIELDS})
             exported_meows += 1
 
@@ -78,7 +72,7 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
                 skipped_photos += 1
                 continue
             zf.write(
-                photo_path, _PHOTOS_PREFIX + photo["filename"], compress_type=zipfile.ZIP_STORED
+                photo_path, PHOTOS_PREFIX + photo["filename"], compress_type=zipfile.ZIP_STORED
             )
             manifest_photos.append(
                 {
@@ -92,7 +86,7 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
             exported_photos += 1
 
         manifest: dict[str, object] = {
-            "format_version": _FORMAT_VERSION,
+            "format_version": FORMAT_VERSION,
             "meow_count": exported_meows,
             "meows": manifest_meows,
         }
@@ -100,7 +94,7 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
             manifest["photos"] = manifest_photos
 
         zf.writestr(
-            zipfile.ZipInfo(_MANIFEST_PATH),
+            zipfile.ZipInfo(MANIFEST_PATH),
             json.dumps(manifest, indent=2),
             compress_type=zipfile.ZIP_DEFLATED,
         )

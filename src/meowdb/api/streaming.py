@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,20 @@ def safe_path(path: Path, root: Path) -> Path:
     if not resolved.is_relative_to(root.resolve()):
         raise ValueError(f"Path escapes root: {path}")
     return resolved
+
+
+async def save_upload(file: UploadFile, dest: Path, max_bytes: int, detail: str) -> int:
+    total = 0
+    with dest.open("wb") as f:
+        while True:
+            chunk = await file.read(_CHUNK_SIZE)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail=detail)
+            f.write(chunk)
+    return total
 
 
 async def _stream_range(path: Path, start: int, end: int) -> AsyncGenerator[bytes]:

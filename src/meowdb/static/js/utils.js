@@ -25,4 +25,11 @@ window.MeowUtils = {
     if (!id) return '';
     return id.slice(0, 8);
   },
+
+  uniquenessBadgeClass(score) {
+    if (score == null) return 'badge-default';
+    if (score >= 67) return 'badge-green';
+    if (score >= 33) return 'badge-yellow';
+    return 'badge-red';
+  },
 };

@@ -138,34 +138,19 @@ function playView() {
         this._cancelWaveform = animateWaveform(
           canvas,
           meow.waveform_data,
-          getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b6b',
+          getAccentColor(),
           () => {
             if (audioPlayer.duration === 0) return 0;
             return audioPlayer.currentTime / audioPlayer.duration;
           }
         );
       } else {
-        drawWaveform(
-          canvas,
-          meow.waveform_data,
-          getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b6b',
-          progress
-        );
+        drawWaveform(canvas, meow.waveform_data, getAccentColor(), progress);
       }
     },
 
     _stopWaveform() {
-      if (this._cancelWaveform) {
-        this._cancelWaveform();
-        this._cancelWaveform = null;
-      }
-    },
-
-    uniquenessBadgeClass(score) {
-      if (score == null) return 'badge-default';
-      if (score >= 67) return 'badge-green';
-      if (score >= 33) return 'badge-yellow';
-      return 'badge-red';
+      this._cancelWaveform = cancelDraw(this._cancelWaveform);
     },
 
     submitFeedback(vote) {
@@ -183,9 +168,5 @@ function playView() {
         });
     },
 
-    /** Navigate to the upload view */
-    goToUpload() {
-      navigateTo('/upload');
-    },
   };
 }

@@ -36,7 +36,7 @@ src/meowdb/
   static/                # Vanilla JS + Alpine.js SPA (no build step)
     js/app.js             # Client-side router, Alpine.data() registrations
 tests/
-  unit/test_db.py         # 48 tests — MeowDB CRUD, job staging
+  unit/test_db.py         # 57 tests — MeowDB CRUD, job staging
   unit/test_processor.py  # Synthetic audio segmentation tests
   integration/test_api.py # FastAPI TestClient endpoint tests
   integration/test_cli.py # Click CliRunner tests
@@ -71,13 +71,21 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 
 **Shared CLI options** -- use `@db_path_option` from `cli/options.py`, never inline `@click.option("--db-path", ...)`.
 
+**CLI error exits** -- call `die(ctx, msg)` from `cli/helpers.py` (prints message, closes db, exits 1) instead of inlining the sequence.
+
+**Archive format constants** -- `cli/archive.py` defines `MANIFEST_PATH`, `AUDIO_PREFIX`, `PHOTOS_PREFIX`, `FORMAT_VERSION`, and `SUPPORTED_FORMAT_VERSIONS`.
+
+**Staging dict** -- `MeowSegment.to_db_dict()` in `models.py` produces the 6-key dict used by both CLI ingest and the API clip-and-commit route.
+
+**Chunked upload writer** -- `save_upload(file, dest, max_bytes, detail)` in `api/streaming.py` handles chunked streaming and raises 413 on overflow.
+
 ## Testing
 
-- `just test` runs unit + integration (99 tests, 75% coverage)
+- `just test` runs unit + integration (176 passed, 71% coverage)
 - `uv run pytest tests/unit/test_db.py` runs a single file
 - Processor tests skip without ffmpeg: `@pytest.mark.skipif(shutil.which("ffmpeg") is None)`
 - E2e tests skip without local audio files
-- Integration tests need `_make_silent_wav_bytes()` for real file fixtures
+- Integration tests use the `silent_wav_bytes` fixture from `tests/conftest.py` for real file fixtures
 - `commit_job` tests must create real WAV+MP3 staging files (shutil.move happens inside)
 - E2E tests: `just test-e2e` runs Playwright specs verifying views render (desktop only, no screenshots)
 - Screenshots: `just screenshots` captures desktop + mobile PNGs locally (requires `npm ci` in `ui/` first)
@@ -98,7 +106,7 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 | Task | Files |
 |------|-------|
 | Add API endpoint | `api/routers/*.py`, `api/models.py`, `tests/integration/test_api.py` |
-| Add CLI command | `cli/commands/*.py`, `cli/__init__.py` (_register_commands), `tests/integration/test_cli.py` |
+| Add CLI command | `cli/commands/*.py`, `cli/__init__.py`, `tests/integration/test_cli.py` |
 | Change DB schema | `db.py` (CREATE TABLE in __init__), `tests/unit/test_db.py` |
 | Modify audio pipeline | `processor.py`, `models.py`, `tests/unit/test_processor.py` |
 | Frontend changes | `static/js/views/*.js`, `static/index.html`, `static/css/views.css` |

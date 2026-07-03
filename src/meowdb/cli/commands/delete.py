@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from meowdb.cli.helpers import build_context
+from meowdb.cli.helpers import build_context, die
 from meowdb.cli.options import db_path_option
 from meowdb.display import print_error, print_success
 
@@ -17,13 +17,11 @@ from meowdb.display import print_error, print_success
 @db_path_option
 def delete(id: str, force: bool, db_path: str | None) -> None:
     """Delete a meow from the library."""
-    ctx = build_context(Path(db_path) if db_path else None)
+    ctx = build_context(db_path)
 
     meow = ctx.db.get_by_id(id)
     if meow is None:
-        print_error(f"Meow not found: {id}")
-        ctx.db.close()
-        sys.exit(1)
+        die(ctx, f"Meow not found: {id}")
 
     if not force:
         confirmed = click.confirm(f"Delete meow {id[:8]}?", default=False)

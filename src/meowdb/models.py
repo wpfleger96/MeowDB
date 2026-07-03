@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    pass
 
 
 class SegmentationConfig(BaseModel):
@@ -63,6 +59,16 @@ class MeowSegment:
     wav_path: Path | None = None
     mp3_path: Path | None = None
     waveform_data: list[float] = field(default_factory=list)
+
+    def to_db_dict(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "duration_ms": self.duration_ms,
+            "wav_path": str(self.wav_path) if self.wav_path else "",
+            "waveform_data": self.waveform_data,
+            "peak_dbfs": self.peak_dbfs,
+            "cat_energy_ratio": self.cat_energy_ratio,
+        }
 
 
 @dataclass

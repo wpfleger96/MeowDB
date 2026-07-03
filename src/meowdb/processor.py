@@ -376,7 +376,6 @@ class MeowProcessor:
         proc = self.config.processing
         sr = audio.frame_rate
 
-        # Step 1: Noise reduction (non-stationary — no explicit noise profile needed)
         samples = self._audio_to_numpy(audio)
         denoised = noisereduce.reduce_noise(
             y=samples,
@@ -386,13 +385,11 @@ class MeowProcessor:
         )
         audio = self._numpy_to_audio(denoised, sr)
 
-        # Step 2: Normalization — bring to target_dbfs
         current_dbfs = audio.dBFS
         if current_dbfs != float("-inf"):
             gain_db = proc.target_dbfs - current_dbfs
             audio = audio.apply_gain(gain_db)
 
-        # Step 3: Dynamic compression
         samples = self._audio_to_numpy(audio)
         threshold_linear = 10.0 ** (proc.compressor_threshold_dbfs / 20.0)
         ratio = proc.compressor_ratio
@@ -406,7 +403,6 @@ class MeowProcessor:
         compressed = np.where(abs_samples > 0, samples * (gain / (abs_samples + 1e-10)), samples)
         audio = self._numpy_to_audio(compressed.astype(np.float32), sr)
 
-        # Step 4: Silence trim from both ends with 50ms padding (gotcha 7)
         start_trim = detect_leading_silence(
             audio, silence_threshold=proc.trim_silence_threshold_dbfs
         )

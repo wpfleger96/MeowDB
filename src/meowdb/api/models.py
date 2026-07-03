@@ -5,15 +5,18 @@ from typing import Literal
 from pydantic import BaseModel, model_validator
 
 
-class MeowResponse(BaseModel):
+class MeowBase(BaseModel):
     id: str
-    timestamp: str
     duration_ms: int
     labels: list[str]
     play_count: int
     upvote_count: int = 0
     downvote_count: int = 0
     created_at: str
+
+
+class MeowResponse(MeowBase):
+    timestamp: str
     wav_url: str | None = None
     mp3_url: str | None = None
     waveform_data: list[float] = []
@@ -71,14 +74,8 @@ class FeedbackRequest(BaseModel):
     previous: Literal["up", "down"] | None = None
 
 
-class MeowSummary(BaseModel):
-    id: str
-    duration_ms: int
-    labels: list[str]
-    play_count: int
-    upvote_count: int = 0
-    downvote_count: int = 0
-    created_at: str
+class MeowSummary(MeowBase):
+    pass
 
 
 class StatsResponse(BaseModel):
@@ -115,9 +112,7 @@ class ClipRequest(BaseModel):
     regions: list[ClipRegion]
 
 
-class DetectRegion(BaseModel):
-    start_ms: int
-    end_ms: int
+type DetectRegion = ClipRegion
 
 
 class DetectResponse(BaseModel):

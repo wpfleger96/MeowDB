@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import io
 import shutil
-import struct
 import warnings
-import wave
 
 from pathlib import Path
 from unittest.mock import patch
@@ -20,18 +18,6 @@ from meowdb.api.app import create_app
 
 _TEST_PASSWORD = "hunter2"
 _TEST_HASH = bcrypt.hashpw(_TEST_PASSWORD.encode(), bcrypt.gensalt()).decode()
-
-
-def _make_silent_wav_bytes() -> bytes:
-    sample_rate = 44100
-    num_frames = sample_rate
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(struct.pack("<" + "h" * num_frames, *([0] * num_frames)))
-    return buf.getvalue()
 
 
 @pytest.fixture
@@ -78,7 +64,7 @@ def client(tmp_dirs):
 
 
 @pytest.fixture
-def seeded_client(tmp_dirs):
+def seeded_client(tmp_dirs, silent_wav_bytes):
     wav_dir = tmp_dirs["wav"]
     mp3_dir = tmp_dirs["mp3"]
     wav_dir.mkdir(parents=True, exist_ok=True)
@@ -86,7 +72,7 @@ def seeded_client(tmp_dirs):
 
     wav_file = wav_dir / "test.wav"
     mp3_file = mp3_dir / "test.mp3"
-    wav_file.write_bytes(_make_silent_wav_bytes())
+    wav_file.write_bytes(silent_wav_bytes)
     mp3_file.write_bytes(b"ID3" + b"\x00" * 100)
 
     with (
@@ -402,7 +388,7 @@ def test_ingest_delete_not_found(client):
 
 
 @pytest.mark.integration
-def test_ingest_flow_post_and_poll(tmp_dirs):
+def test_ingest_flow_post_and_poll(tmp_dirs, silent_wav_bytes):
     with (
         patch("meowdb.api.app.DB_PATH", tmp_dirs["db"]),
         patch("meowdb.api.app.DATA_DIR", tmp_dirs["data"]),
@@ -426,7 +412,7 @@ def test_ingest_flow_post_and_poll(tmp_dirs):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         app = create_app()
         with TestClient(app, raise_server_exceptions=True) as tc:
-            wav_bytes = _make_silent_wav_bytes()
+            wav_bytes = silent_wav_bytes
             resp = tc.post(
                 "/api/ingest",
                 files={"file": ("test.wav", wav_bytes, "audio/wav")},
@@ -443,7 +429,7 @@ def test_ingest_flow_post_and_poll(tmp_dirs):
 
 
 @pytest.mark.integration
-def test_ingest_commit(tmp_dirs):
+def test_ingest_commit(tmp_dirs, silent_wav_bytes):
     wav_dir = tmp_dirs["wav"]
     mp3_dir = tmp_dirs["mp3"]
     staging_dir = tmp_dirs["staging"]
@@ -480,7 +466,7 @@ def test_ingest_commit(tmp_dirs):
             job_staging.mkdir(parents=True)
             seg_wav = job_staging / "seg_000.wav"
             seg_mp3 = job_staging / "seg_000.mp3"
-            seg_wav.write_bytes(_make_silent_wav_bytes())
+            seg_wav.write_bytes(silent_wav_bytes)
             seg_mp3.write_bytes(b"\xff\xfb" + b"\x00" * 100)
 
             db.add_segments(
@@ -513,8 +499,8 @@ def test_ingest_commit(tmp_dirs):
 
 
 @pytest.mark.integration
-def test_stream_source_audio(client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_stream_source_audio(client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
@@ -528,8 +514,17 @@ def test_stream_source_audio(client):
 
 
 @pytest.mark.integration
-def test_detect_regions(client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_ingest_source_traversal_job_id_denied(client):
+    with patch.object(
+        client.app.state.db, "get_job", return_value={"id": "..", "status": "uploaded"}
+    ):
+        resp = client.get("/api/ingest/%2e%2e/source")
+    assert resp.status_code == 403
+
+
+@pytest.mark.integration
+def test_detect_regions(client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
@@ -546,8 +541,8 @@ def test_detect_regions(client):
 
 @pytest.mark.integration
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
-def test_clip_and_commit(client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_clip_and_commit(client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
@@ -566,8 +561,8 @@ def test_clip_and_commit(client):
 
 
 @pytest.mark.integration
-def test_clip_empty_regions_rejected(client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_clip_empty_regions_rejected(client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
@@ -582,8 +577,8 @@ def test_clip_empty_regions_rejected(client):
 
 
 @pytest.mark.integration
-def test_clip_inverted_region_rejected(client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_clip_inverted_region_rejected(client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
@@ -598,8 +593,8 @@ def test_clip_inverted_region_rejected(client):
 
 
 @pytest.mark.integration
-def test_clip_negative_region_rejected(client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_clip_negative_region_rejected(client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
@@ -762,8 +757,8 @@ def test_login_grants_access_to_protected_endpoint(auth_client):
 
 
 @pytest.mark.integration
-def test_ingest_requires_auth(auth_client):
-    wav_bytes = _make_silent_wav_bytes()
+def test_ingest_requires_auth(auth_client, silent_wav_bytes):
+    wav_bytes = silent_wav_bytes
     resp = auth_client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},

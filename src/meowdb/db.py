@@ -131,10 +131,6 @@ class MeowDB:
                 d[field] = json.loads(d[field])
         return d
 
-    # -------------------------------------------------------------------------
-    # Meow CRUD
-    # -------------------------------------------------------------------------
-
     def add(self, metadata: dict) -> str:  # type: ignore[type-arg]
         meow_id = str(uuid.uuid4())
         with self._lock:
@@ -163,13 +159,11 @@ class MeowDB:
         return meow_id
 
     def get_all_for_export(self) -> list[dict]:  # type: ignore[type-arg]
-        """Return all meows with no limit, for export."""
         with self._lock:
             rows = self._conn.execute("SELECT * FROM meows ORDER BY created_at ASC").fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def import_meow(self, meow_id: str, meow: dict, wav_path: str, mp3_path: str) -> None:  # type: ignore[type-arg]
-        """Insert a fully-formed meow row from an import archive."""
         with self._lock:
             self._conn.execute(
                 """
@@ -205,21 +199,26 @@ class MeowDB:
             )
             self._conn.commit()
 
-    def get_random(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
+    def _random_row(self, table: str, exclude_id: str | None) -> sqlite3.Row | None:
         with self._lock:
             if exclude_id:
                 row = self._conn.execute(
-                    "SELECT * FROM meows WHERE id != ? ORDER BY RANDOM() LIMIT 1", (exclude_id,)
+                    f"SELECT * FROM {table} WHERE id != ? ORDER BY RANDOM() LIMIT 1",
+                    (exclude_id,),
                 ).fetchone()
                 if row is None:
                     row = self._conn.execute(
-                        "SELECT * FROM meows ORDER BY RANDOM() LIMIT 1"
+                        f"SELECT * FROM {table} ORDER BY RANDOM() LIMIT 1"
                     ).fetchone()
             else:
-                row = self._conn.execute("SELECT * FROM meows ORDER BY RANDOM() LIMIT 1").fetchone()
-            if row is None:
-                return None
-            return self._row_to_dict(row)
+                row = self._conn.execute(
+                    f"SELECT * FROM {table} ORDER BY RANDOM() LIMIT 1"
+                ).fetchone()
+        return row  # type: ignore[no-any-return]
+
+    def get_random(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
+        row = self._random_row("meows", exclude_id)
+        return self._row_to_dict(row) if row else None
 
     def get_all(
         self,
@@ -330,10 +329,6 @@ class MeowDB:
                 (wav_path, mp3_path, meow_id),
             )
             self._conn.commit()
-
-    # -------------------------------------------------------------------------
-    # Job staging
-    # -------------------------------------------------------------------------
 
     def create_job(self, source_filename: str) -> str:
         job_id = str(uuid.uuid4())
@@ -499,10 +494,6 @@ class MeowDB:
             self._conn.execute("DELETE FROM ingest_jobs WHERE id = ?", (job_id,))
             self._conn.commit()
 
-    # -------------------------------------------------------------------------
-    # Stats
-    # -------------------------------------------------------------------------
-
     def _count_labels(self) -> dict[str, int]:
         with self._lock:
             rows = self._conn.execute("SELECT labels FROM meows").fetchall()
@@ -572,10 +563,6 @@ class MeowDB:
         counts = self._count_labels()
         return [{"label": lbl, "count": cnt} for lbl, cnt in sorted(counts.items())]
 
-    # -------------------------------------------------------------------------
-    # Cat photos
-    # -------------------------------------------------------------------------
-
     def add_photo(
         self, filename: str, photo_id: str | None = None, is_default: bool = False
     ) -> str:
@@ -604,7 +591,6 @@ class MeowDB:
         is_default: bool,
         updated_at: str | None,
     ) -> None:
-        """Insert a fully-formed photo row from an import archive."""
         with self._lock:
             self._conn.execute(
                 "INSERT INTO cat_photos (id, filename, created_at, is_default, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -613,20 +599,7 @@ class MeowDB:
             self._conn.commit()
 
     def get_random_photo(self, exclude_id: str | None = None) -> dict | None:  # type: ignore[type-arg]
-        with self._lock:
-            if exclude_id:
-                row = self._conn.execute(
-                    "SELECT * FROM cat_photos WHERE id != ? ORDER BY RANDOM() LIMIT 1",
-                    (exclude_id,),
-                ).fetchone()
-                if row is None:
-                    row = self._conn.execute(
-                        "SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1"
-                    ).fetchone()
-            else:
-                row = self._conn.execute(
-                    "SELECT * FROM cat_photos ORDER BY RANDOM() LIMIT 1"
-                ).fetchone()
+        row = self._random_row("cat_photos", exclude_id)
         return dict(row) if row else None
 
     def get_photo(self, photo_id: str) -> dict | None:  # type: ignore[type-arg]
@@ -657,10 +630,6 @@ class MeowDB:
             cursor = self._conn.execute("DELETE FROM cat_photos WHERE id = ?", (photo_id,))
             self._conn.commit()
         return cursor.rowcount > 0
-
-    # -------------------------------------------------------------------------
-    # Meow fingerprints and uniqueness scores
-    # -------------------------------------------------------------------------
 
     def update_fingerprint(self, meow_id: str, fingerprint: list[float]) -> None:
         with self._lock:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
@@ -10,9 +9,7 @@ from meowdb.api.auth import require_auth
 from meowdb.api.models import FeedbackRequest, MeowListResponse, MeowResponse, UpdateMeowRequest
 from meowdb.api.streaming import safe_path
 from meowdb.config import MP3_DIR, WAV_DIR
-from meowdb.similarity import MeowSimilarity
-
-_similarity = MeowSimilarity()
+from meowdb.similarity import update_library_uniqueness
 
 router = APIRouter()
 
@@ -38,13 +35,6 @@ def _meow_to_response(meow: dict) -> MeowResponse:  # type: ignore[type-arg]
         title=meow.get("title"),
         uniqueness_score=meow.get("uniqueness_score"),
     )
-
-
-def _recompute_all_uniqueness(db: Any) -> None:
-    fingerprints = db.get_all_fingerprints()
-    if fingerprints:
-        scores = _similarity.compute_uniqueness_scores(fingerprints)
-        db.update_uniqueness_scores_bulk(scores)
 
 
 # /meows/random MUST be registered before /{id} — see Gotcha 2 in PLAN
@@ -121,7 +111,7 @@ async def delete_meow(meow_id: str, request: Request, _: None = Depends(require_
             pass
 
     db.delete(meow_id)
-    await run_in_threadpool(_recompute_all_uniqueness, db)
+    await run_in_threadpool(update_library_uniqueness, db, [])
     return Response(status_code=204)
 
 

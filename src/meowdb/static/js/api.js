@@ -65,19 +65,6 @@ async function getRandomMeow(excludeId) {
 
 /**
  * @param {string} id
- * @param {string[]} labels
- * @returns {Promise<object>}
- */
-async function updateLabels(id, labels) {
-  return apiFetch(`/meows/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ labels }),
-  });
-}
-
-/**
- * @param {string} id
  * @param {{ labels?: string[], title?: string|null, recorded_at?: string|null }} fields
  * @returns {Promise<object>}
  */
@@ -144,49 +131,6 @@ async function createIngestJob(file) {
   const form = new FormData();
   form.append('file', file, file.name || 'recording.webm');
   return apiFetch('/ingest', { method: 'POST', body: form });
-}
-
-/**
- * Poll job status.
- * @param {string} jobId
- * @returns {Promise<{ job_id: string, status: string, segments?: object[] }>}
- */
-async function getIngestJob(jobId) {
-  return apiFetch(`/ingest/${jobId}`);
-}
-
-/**
- * Commit a job: save accepted segments, discard rejected.
- * @param {string} jobId
- * @param {string[]} acceptedIds
- * @param {string[]} rejectedIds
- * @returns {Promise<{ meow_ids: string[], rejected_count: number }>}
- */
-async function commitJob(jobId, acceptedIds, rejectedIds) {
-  return apiFetch(`/ingest/${jobId}/commit`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accepted_ids: acceptedIds, rejected_ids: rejectedIds }),
-  });
-}
-
-/**
- * Delete a job and all staging files.
- * @param {string} jobId
- * @returns {Promise<null>}
- */
-async function deleteJob(jobId) {
-  return apiFetch(`/ingest/${jobId}`, { method: 'DELETE' });
-}
-
-/**
- * Build the streaming URL for a staging segment.
- * @param {string} jobId
- * @param {string} segmentId
- * @returns {string}
- */
-function segmentAudioUrl(jobId, segmentId) {
-  return `${API_BASE}/ingest/${jobId}/audio/${segmentId}`;
 }
 
 /**

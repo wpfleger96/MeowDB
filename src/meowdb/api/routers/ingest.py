@@ -13,15 +13,15 @@ from starlette.concurrency import run_in_threadpool
 
 from meowdb.api.auth import require_auth
 from meowdb.api.models import (
+    ClipRegion,
     ClipRequest,
     CommitRequest,
     CommitResponse,
-    DetectRegion,
     DetectResponse,
     IngestJobResponse,
     IngestSegmentResponse,
 )
-from meowdb.api.streaming import safe_path, stream_file
+from meowdb.api.streaming import safe_path, save_upload, stream_file
 from meowdb.config import ALLOWED_MEDIA_SUFFIXES, MP3_DIR, STAGING_DIR, VIDEO_SUFFIXES, WAV_DIR
 from meowdb.similarity import update_library_uniqueness
 
@@ -55,12 +55,16 @@ def _job_to_response(job: dict) -> IngestJobResponse:  # type: ignore[type-arg]
     )
 
 
-def _resolve_source(job_id: str) -> Path:
-    """Locate the source audio file for an ingest job, with path-traversal guard."""
-    candidate = (STAGING_DIR / job_id).resolve()
-    if not str(candidate).startswith(str(STAGING_DIR.resolve())):
-        raise HTTPException(status_code=403, detail="Access denied")
-    source_files = list(candidate.glob("source.*"))
+def _resolve_staging_path(job_id: str, prefer_audio: bool = False) -> Path:
+    try:
+        job_dir = safe_path(STAGING_DIR / job_id, STAGING_DIR)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied") from None
+    if prefer_audio:
+        audio_path = job_dir / "source_audio.wav"
+        if audio_path.exists():
+            return audio_path
+    source_files = list(job_dir.glob("source.*"))
     if not source_files:
         raise HTTPException(status_code=404, detail="Source file not found")
     return source_files[0]
@@ -99,19 +103,13 @@ async def create_ingest_job(
     job_staging_dir.mkdir(parents=True, exist_ok=True)
 
     temp_path = job_staging_dir / f"source{suffix}"
-    total = 0
-    with temp_path.open("wb") as dest:
-        while True:
-            chunk = await file.read(65536)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > _MAX_UPLOAD_BYTES:
-                temp_path.unlink(missing_ok=True)
-                shutil.rmtree(job_staging_dir, ignore_errors=True)
-                db.delete_job(job_id)
-                raise HTTPException(status_code=413, detail="Upload exceeds 500 MB limit")
-            dest.write(chunk)
+    try:
+        await save_upload(file, temp_path, _MAX_UPLOAD_BYTES, "Upload exceeds 500 MB limit")
+    except HTTPException:
+        temp_path.unlink(missing_ok=True)
+        shutil.rmtree(job_staging_dir, ignore_errors=True)
+        db.delete_job(job_id)
+        raise
 
     db.update_job_status(job_id, "uploaded")
 
@@ -243,20 +241,6 @@ _SOURCE_MEDIA_TYPES = {
 }
 
 
-def _resolve_source_audio(job_id: str) -> Path:
-    """Return source_audio.wav for video uploads, original source file for audio uploads."""
-    candidate = (STAGING_DIR / job_id).resolve()
-    if not str(candidate).startswith(str(STAGING_DIR.resolve())):
-        raise HTTPException(status_code=403, detail="Access denied")
-    audio_path = candidate / "source_audio.wav"
-    if audio_path.exists():
-        return audio_path
-    source_files = list(candidate.glob("source.*"))
-    if not source_files:
-        raise HTTPException(status_code=404, detail="Source file not found")
-    return source_files[0]
-
-
 @router.get("/ingest/{job_id}/source")
 async def stream_source_audio(job_id: str, request: Request) -> StreamingResponse:
     db = request.app.state.db
@@ -264,7 +248,7 @@ async def stream_source_audio(job_id: str, request: Request) -> StreamingRespons
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    source_path = _resolve_source_audio(job_id)
+    source_path = _resolve_staging_path(job_id, prefer_audio=True)
     media_type = _SOURCE_MEDIA_TYPES.get(source_path.suffix.lower(), "application/octet-stream")
     return stream_file(source_path, request, media_type)
 
@@ -278,9 +262,9 @@ async def detect_regions(job_id: str, request: Request) -> DetectResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    source_path = _resolve_source(job_id)
+    source_path = _resolve_staging_path(job_id)
     result = await run_in_threadpool(MeowProcessor().detect_only, source_path)
-    return DetectResponse(regions=[DetectRegion(start_ms=s, end_ms=e) for s, e in result])
+    return DetectResponse(regions=[ClipRegion(start_ms=s, end_ms=e) for s, e in result])
 
 
 @router.post("/ingest/{job_id}/clip", response_model=CommitResponse)
@@ -295,7 +279,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     if not body.regions:
         raise HTTPException(status_code=400, detail="At least one region is required")
 
-    source_path = _resolve_source(job_id)
+    source_path = _resolve_staging_path(job_id)
     try:
         mtime = os.path.getmtime(str(source_path))
         recorded_at: str | None = datetime.fromtimestamp(mtime).isoformat()
@@ -308,17 +292,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
         MeowProcessor().process_clips, source_path, regions, staging_dir
     )
 
-    seg_dicts = [
-        {
-            "index": seg.index,
-            "duration_ms": seg.duration_ms,
-            "wav_path": str(seg.wav_path) if seg.wav_path else "",
-            "waveform_data": seg.waveform_data,
-            "peak_dbfs": seg.peak_dbfs,
-            "cat_energy_ratio": seg.cat_energy_ratio,
-        }
-        for seg in segments
-    ]
+    seg_dicts = [seg.to_db_dict() for seg in segments]
     db.add_segments(job_id, seg_dicts)
     segment_ids = db.get_segment_ids(job_id)
     meow_ids = db.commit_job(job_id, segment_ids, [], WAV_DIR, MP3_DIR, recorded_at=recorded_at)

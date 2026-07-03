@@ -82,12 +82,6 @@
   opacity: 0.85;
 }
 
-/* Success (accept) */
-.btn-success {
-  background: var(--green);
-  color: #000;
-}
-
 /* Icon button */
 .btn-icon {
   width: 44px;
@@ -109,35 +103,9 @@
   height: 20px;
 }
 
-/* Large icon button (play/record) */
-.btn-icon-lg {
-  width: 56px;
-  height: 56px;
-}
-
-.btn-icon-lg svg {
-  width: 28px;
-  height: 28px;
-}
-
 /* Full width */
 .btn-full {
   width: 100%;
-}
-
-/* ============================================================
-   Card
-   ============================================================ */
-
-.card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.card-padded {
-  padding: var(--sp-4);
 }
 
 /* ============================================================
@@ -230,12 +198,12 @@
 }
 
 .badge-green {
-  background: rgba(74, 222, 128, 0.15);
+  background: var(--green-glow);
   color: var(--green);
 }
 
 .badge-red {
-  background: rgba(248, 113, 113, 0.15);
+  background: var(--red-glow);
   color: var(--red);
 }
 
@@ -352,6 +320,14 @@
 }
 
 /* Confirm dialog (centered modal) */
+.modal-confirm-overlay {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+}
+
 .modal-confirm .modal-sheet {
   max-width: 340px;
   margin: auto;
@@ -364,6 +340,18 @@
   from { transform: scale(0.9); opacity: 0; }
   to   { transform: scale(1); opacity: 1; }
 }
+
+.modal-confirm-card {
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-6);
+  width: 100%;
+  max-width: 340px;
+}
+
+.modal-confirm-card .modal-title { margin-bottom: var(--sp-3); }
+.modal-confirm-card .text-secondary { margin-bottom: var(--sp-5); }
+.modal-confirm-card .flex .btn { flex: 1; }
 
 /* ============================================================
    Toast notifications
@@ -487,11 +475,6 @@
   color: var(--text-primary);
 }
 
-.stat-tile-sub {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
 /* ============================================================
    Empty state
    ============================================================ */
@@ -531,19 +514,6 @@
   height: 1px;
   background: var(--border);
   margin: var(--sp-4) 0;
-}
-
-/* ============================================================
-   Section header
-   ============================================================ */
-
-.section-header {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: var(--sp-4) var(--sp-4) var(--sp-2);
 }
 
 /* ============================================================

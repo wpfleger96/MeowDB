@@ -36,16 +36,6 @@ def _mock_pydub(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mod, "AudioSegment", _FakeAudioSegment)
 
 
-@pytest.fixture
-def runner() -> CliRunner:
-    return CliRunner()
-
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    return tmp_path / "test.sqlite"
-
-
 def _write_wav(path: Path, silent_wav_bytes: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(silent_wav_bytes)
@@ -78,9 +68,9 @@ def _insert_meow(db: MeowDB, wav_path: Path, mp3_path: Path) -> str:
 
 
 @pytest.mark.integration
-def test_export_empty_library(runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
+def test_export_empty_library(cli_runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
     out = tmp_path / "out.zip"
-    result = runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
+    result = cli_runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
     assert result.exit_code == 0, result.output
     assert out.exists()
     with zipfile.ZipFile(out) as zf:
@@ -92,7 +82,7 @@ def test_export_empty_library(runner: CliRunner, db_path: Path, tmp_path: Path) 
 
 @pytest.mark.integration
 def test_export_includes_meow_wav_and_metadata(
-    runner: CliRunner, db_path: Path, tmp_path: Path, silent_wav_bytes: bytes
+    cli_runner: CliRunner, db_path: Path, tmp_path: Path, silent_wav_bytes: bytes
 ) -> None:
     wav = tmp_path / "wav" / "test.wav"
     mp3 = tmp_path / "mp3" / "test.mp3"
@@ -105,7 +95,7 @@ def test_export_includes_meow_wav_and_metadata(
     db.close()
 
     out = tmp_path / "out.zip"
-    result = runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
+    result = cli_runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
     assert result.exit_code == 0, result.output
 
     with zipfile.ZipFile(out) as zf:
@@ -122,7 +112,7 @@ def test_export_includes_meow_wav_and_metadata(
 
 @pytest.mark.integration
 def test_export_excludes_nonportable_fields(
-    runner: CliRunner, db_path: Path, tmp_path: Path, silent_wav_bytes: bytes
+    cli_runner: CliRunner, db_path: Path, tmp_path: Path, silent_wav_bytes: bytes
 ) -> None:
     wav = tmp_path / "wav" / "test.wav"
     mp3 = tmp_path / "mp3" / "test.mp3"
@@ -135,7 +125,7 @@ def test_export_excludes_nonportable_fields(
     db.close()
 
     out = tmp_path / "out.zip"
-    runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
+    cli_runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
 
     with zipfile.ZipFile(out) as zf:
         meow = json.loads(zf.read(_MANIFEST_PATH))["meows"][0]
@@ -145,13 +135,13 @@ def test_export_excludes_nonportable_fields(
 
 
 @pytest.mark.integration
-def test_export_skips_missing_wav(runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
+def test_export_skips_missing_wav(cli_runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
     db = MeowDB(db_path)
     _insert_meow(db, Path("/nonexistent/path.wav"), Path("/nonexistent/path.mp3"))
     db.close()
 
     out = tmp_path / "out.zip"
-    result = runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
+    result = cli_runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
     assert result.exit_code == 0
     with zipfile.ZipFile(out) as zf:
         manifest = json.loads(zf.read(_MANIFEST_PATH))
@@ -161,7 +151,7 @@ def test_export_skips_missing_wav(runner: CliRunner, db_path: Path, tmp_path: Pa
 @pytest.mark.integration
 def test_import_adds_meows(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     db_path: Path,
     tmp_path: Path,
     silent_wav_bytes: bytes,
@@ -202,7 +192,7 @@ def test_import_adds_meows(
     monkeypatch.setattr(import_mod, "WAV_DIR", wav_dir)
     monkeypatch.setattr(import_mod, "MP3_DIR", mp3_dir)
 
-    result = runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
+    result = cli_runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
     assert result.exit_code == 0, result.output
 
     db = MeowDB(db_path)
@@ -220,7 +210,7 @@ def test_import_adds_meows(
 @pytest.mark.integration
 def test_import_skip_conflict(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     db_path: Path,
     tmp_path: Path,
     silent_wav_bytes: bytes,
@@ -266,7 +256,7 @@ def test_import_skip_conflict(
     monkeypatch.setattr(import_mod, "WAV_DIR", tmp_path / "wav")
     monkeypatch.setattr(import_mod, "MP3_DIR", tmp_path / "mp3")
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         main, ["import", str(archive), "--on-conflict", "skip", "--db-path", str(db_path)]
     )
     assert result.exit_code == 0
@@ -282,7 +272,7 @@ def test_import_skip_conflict(
 @pytest.mark.integration
 def test_import_new_ids(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     db_path: Path,
     tmp_path: Path,
     silent_wav_bytes: bytes,
@@ -322,7 +312,7 @@ def test_import_new_ids(
     monkeypatch.setattr(import_mod, "WAV_DIR", wav_dir)
     monkeypatch.setattr(import_mod, "MP3_DIR", mp3_dir)
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         main, ["import", str(archive), "--on-conflict", "new-ids", "--db-path", str(db_path)]
     )
     assert result.exit_code == 0
@@ -339,26 +329,26 @@ def test_import_new_ids(
 
 
 @pytest.mark.integration
-def test_import_invalid_zip(runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
+def test_import_invalid_zip(cli_runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
     bad_file = tmp_path / "notazip.zip"
     bad_file.write_bytes(b"this is not a zip file")
-    result = runner.invoke(main, ["import", str(bad_file), "--db-path", str(db_path)])
+    result = cli_runner.invoke(main, ["import", str(bad_file), "--db-path", str(db_path)])
     assert result.exit_code != 0
 
 
 @pytest.mark.integration
-def test_import_missing_manifest(runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
+def test_import_missing_manifest(cli_runner: CliRunner, db_path: Path, tmp_path: Path) -> None:
     archive = tmp_path / "nomanifest.zip"
     with zipfile.ZipFile(archive, "w") as zf:
         zf.writestr("some-other-file.txt", "hello")
-    result = runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
+    result = cli_runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
     assert result.exit_code != 0
 
 
 @pytest.mark.integration
 def test_round_trip(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     tmp_path: Path,
     silent_wav_bytes: bytes,
 ) -> None:
@@ -379,7 +369,7 @@ def test_round_trip(
 
     # Export
     archive = tmp_path / "export.zip"
-    result = runner.invoke(main, ["export", str(archive), "--db-path", str(src_db_path)])
+    result = cli_runner.invoke(main, ["export", str(archive), "--db-path", str(src_db_path)])
     assert result.exit_code == 0, result.output
 
     # Import into fresh DB
@@ -390,7 +380,7 @@ def test_round_trip(
     monkeypatch.setattr(import_mod, "WAV_DIR", dst_wav_dir)
     monkeypatch.setattr(import_mod, "MP3_DIR", dst_mp3_dir)
 
-    result = runner.invoke(main, ["import", str(archive), "--db-path", str(dst_db_path)])
+    result = cli_runner.invoke(main, ["import", str(archive), "--db-path", str(dst_db_path)])
     assert result.exit_code == 0, result.output
 
     dst_db = MeowDB(dst_db_path)
@@ -433,7 +423,7 @@ def _insert_photo(db: MeowDB, photos_dir: Path) -> str:
 @pytest.mark.integration
 def test_export_includes_photos(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     db_path: Path,
     tmp_path: Path,
     silent_wav_bytes: bytes,
@@ -448,7 +438,7 @@ def test_export_includes_photos(
     db.close()
 
     out = tmp_path / "out.zip"
-    result = runner.invoke(
+    result = cli_runner.invoke(
         main, ["export", str(out), "--include-photos", "--db-path", str(db_path)]
     )
     assert result.exit_code == 0, result.output
@@ -466,7 +456,7 @@ def test_export_includes_photos(
 @pytest.mark.integration
 def test_export_without_flag_omits_photos(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     db_path: Path,
     tmp_path: Path,
 ) -> None:
@@ -480,7 +470,7 @@ def test_export_without_flag_omits_photos(
     db.close()
 
     out = tmp_path / "out.zip"
-    runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
+    cli_runner.invoke(main, ["export", str(out), "--db-path", str(db_path)])
 
     with zipfile.ZipFile(out) as zf:
         manifest = json.loads(zf.read(_MANIFEST_PATH))
@@ -493,7 +483,7 @@ def test_export_without_flag_omits_photos(
 @pytest.mark.integration
 def test_import_photos_round_trip(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     tmp_path: Path,
     silent_wav_bytes: bytes,
 ) -> None:
@@ -515,12 +505,12 @@ def test_import_photos_round_trip(
     src_db.close()
 
     archive = tmp_path / "export.zip"
-    result = runner.invoke(
+    result = cli_runner.invoke(
         main, ["export", str(archive), "--include-photos", "--db-path", str(src_db_path)]
     )
     assert result.exit_code == 0, result.output
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         main, ["import", str(archive), "--include-photos", "--db-path", str(dst_db_path)]
     )
     assert result.exit_code == 0, result.output
@@ -537,7 +527,7 @@ def test_import_photos_round_trip(
 @pytest.mark.integration
 def test_import_photos_skip_conflict(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "test.sqlite"
@@ -557,8 +547,8 @@ def test_import_photos_skip_conflict(
 
     # Export then re-import with skip (default)
     archive = tmp_path / "export.zip"
-    runner.invoke(main, ["export", str(archive), "--include-photos", "--db-path", str(db_path)])
-    result = runner.invoke(
+    cli_runner.invoke(main, ["export", str(archive), "--include-photos", "--db-path", str(db_path)])
+    result = cli_runner.invoke(
         main,
         [
             "import",
@@ -583,7 +573,7 @@ def test_import_photos_skip_conflict(
 @pytest.mark.integration
 def test_import_photos_warns_when_archive_has_no_photos(
     monkeypatch: pytest.MonkeyPatch,
-    runner: CliRunner,
+    cli_runner: CliRunner,
     db_path: Path,
     tmp_path: Path,
     silent_wav_bytes: bytes,
@@ -605,7 +595,7 @@ def test_import_photos_warns_when_archive_has_no_photos(
     with zipfile.ZipFile(archive, "w") as zf:
         zf.writestr(_MANIFEST_PATH, json.dumps(manifest))
 
-    result = runner.invoke(
+    result = cli_runner.invoke(
         main, ["import", str(archive), "--include-photos", "--db-path", str(db_path)]
     )
     assert result.exit_code == 0

@@ -52,7 +52,7 @@
     box-shadow var(--trans-normal),
     background-color var(--trans-normal);
   box-shadow:
-    0 8px 32px rgba(255, 107, 107, 0.3),
+    0 8px 32px var(--accent-glow-md),
     0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
@@ -71,9 +71,9 @@
 }
 
 @keyframes meow-pulse {
-  0%   { box-shadow: 0 8px 32px rgba(255, 107, 107, 0.3), 0 2px 8px rgba(0,0,0,0.5); }
+  0%   { box-shadow: 0 8px 32px var(--accent-glow-md), 0 2px 8px rgba(0,0,0,0.5); }
   50%  { box-shadow: 0 8px 48px rgba(255, 107, 107, 0.55), 0 2px 8px rgba(0,0,0,0.5); }
-  100% { box-shadow: 0 8px 32px rgba(255, 107, 107, 0.3), 0 2px 8px rgba(0,0,0,0.5); }
+  100% { box-shadow: 0 8px 32px var(--accent-glow-md), 0 2px 8px rgba(0,0,0,0.5); }
 }
 
 .meow-btn-label {
@@ -191,13 +191,13 @@
 
 .feedback-btn.feedback-up.active {
   color: var(--green);
-  background: rgba(74, 222, 128, 0.15);
+  background: var(--green-glow);
   border-color: var(--green);
 }
 
 .feedback-btn.feedback-down.active {
   color: var(--red);
-  background: rgba(248, 113, 113, 0.15);
+  background: var(--red-glow);
   border-color: var(--red);
 }
 
@@ -212,14 +212,8 @@
 
 .library-header {
   padding: var(--sp-3) var(--sp-4);
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  background: var(--bg-base);
-  z-index: 10;
+  justify-content: flex-start;
 }
 
 .library-filters {
@@ -390,178 +384,6 @@
   padding: var(--sp-8);
 }
 
-/* Phase 2: Review card */
-.review-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: var(--sp-4);
-  gap: var(--sp-4);
-}
-
-.review-progress-bar {
-  height: 4px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.review-progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: var(--radius-full);
-  transition: width 0.3s var(--spring);
-}
-
-.review-progress-label {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  text-align: center;
-  margin-top: var(--sp-2);
-}
-
-/* Swipeable card */
-.review-card-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  min-height: 320px;
-}
-
-.review-card {
-  width: 100%;
-  max-width: 400px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  touch-action: none;
-  will-change: transform;
-  transition: transform 0.05s ease; /* fast during drag; removed during swipe animation */
-  box-shadow: var(--shadow-md);
-}
-
-.review-card.swiping {
-  transition: none;
-}
-
-.review-card.accept-anim {
-  animation: swipe-accept 0.35s var(--spring) forwards;
-}
-
-.review-card.reject-anim {
-  animation: swipe-reject 0.35s var(--spring) forwards;
-}
-
-@keyframes swipe-accept {
-  to { transform: translateX(130%) rotate(20deg); opacity: 0; }
-}
-
-@keyframes swipe-reject {
-  to { transform: translateX(-130%) rotate(-20deg); opacity: 0; }
-}
-
-.review-card-waveform {
-  width: 100%;
-  height: 80px;
-  background: var(--bg-elevated);
-  display: block;
-}
-
-.review-card-body {
-  padding: var(--sp-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.review-card-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.review-card-duration {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-
-/* Accept / Reject overlay hint */
-.swipe-hint {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: var(--text-2xl);
-  font-weight: 900;
-  border: 3px solid;
-  padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--radius-md);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.1s;
-  letter-spacing: 0.08em;
-}
-
-.swipe-hint.accept {
-  left: var(--sp-4);
-  color: var(--green);
-  border-color: var(--green);
-}
-
-.swipe-hint.reject {
-  right: var(--sp-4);
-  color: var(--red);
-  border-color: var(--red);
-}
-
-.review-actions {
-  display: flex;
-  gap: var(--sp-3);
-}
-
-.review-actions .btn {
-  flex: 1;
-  height: 52px;
-  font-size: var(--text-lg);
-}
-
-/* Review summary */
-.review-summary {
-  padding: var(--sp-6) var(--sp-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  text-align: center;
-}
-
-.review-summary-counts {
-  display: flex;
-  justify-content: center;
-  gap: var(--sp-6);
-}
-
-.review-summary-count {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.review-summary-num {
-  font-size: var(--text-3xl);
-  font-weight: 900;
-}
-
-.review-summary-num.green { color: var(--green); }
-.review-summary-num.red   { color: var(--red); }
-
-.review-summary-label {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
 /* Record button */
 .record-section {
   padding: var(--sp-4);
@@ -713,35 +535,6 @@
   background: var(--bg-elevated);
 }
 
-/* ============================================================
-   Loading skeleton
-   ============================================================ */
-
-@keyframes shimmer {
-  from { background-position: -200% 0; }
-  to   { background-position: 200% 0; }
-}
-
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--bg-elevated) 25%,
-    var(--bg-surface) 50%,
-    var(--bg-elevated) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
-  border-radius: var(--radius-sm);
-}
-
-.skeleton-line {
-  height: 14px;
-  margin-bottom: var(--sp-2);
-}
-
-.skeleton-line.sm { height: 10px; }
-.skeleton-line.lg { height: 20px; }
-
 /* ── Clipping phase ── */
 
 .clip-container {
@@ -881,21 +674,6 @@
   font-family: var(--font-mono);
 }
 
-/* ── Photo upload ── */
-
-.photo-upload-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.photo-upload-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-}
-
 /* Stronger text shadow when a cat photo is showing on the MEOW button */
 .meow-btn.has-photo .meow-btn-label,
 .meow-btn.has-photo .meow-btn-sub {
@@ -903,12 +681,6 @@
 }
 
 /* ── Photos view ── */
-
-.photos-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
 .photo-grid {
   display: grid;

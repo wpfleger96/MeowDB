@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import click
 
 from meowdb.cli.helpers import build_context, format_duration
@@ -13,7 +11,7 @@ from meowdb.display import console, print_info
 @db_path_option
 def stats(db_path: str | None) -> None:
     """Show library statistics."""
-    ctx = build_context(Path(db_path) if db_path else None)
+    ctx = build_context(db_path)
     data = ctx.db.get_stats()
     ctx.db.close()
 

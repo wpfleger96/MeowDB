@@ -69,7 +69,7 @@ test.describe('MeowDB views', () => {
       // Library list shifts to make room for the side panel
       await expect(page.locator('.library-view')).toHaveClass(/detail-open/);
       // Sheet fills full height (not a short bottom sheet)
-      const sheet = await page.locator('.modal-sheet').boundingBox();
+      const sheet = await page.locator('.modal-sheet:visible').boundingBox();
       expect(sheet!.height).toBeGreaterThan(vp.height / 2);
     }
   });

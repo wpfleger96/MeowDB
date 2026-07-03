@@ -77,10 +77,7 @@ function ingestView() {
 
     async _uploadFiles(files) {
       if (this._resetting) return;
-      if (this.authRequired && !this.authenticated) {
-        this.showLoginModal = true;
-        return;
-      }
+      if (!this.requireAuth()) return;
 
       this.phase = 'uploading';
       this.uploadProgress = { done: 0, total: files.length, errors: [] };
@@ -157,7 +154,7 @@ function ingestView() {
     ────────────────────────────────────────────────────── */
 
     async startRecording() {
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       try {
         this.isRecording = true;
         this.recordSeconds = 0;
@@ -326,10 +323,7 @@ function ingestView() {
     },
 
     async autoDetect(job) {
-      if (this.authRequired && !this.authenticated) {
-        this.showLoginModal = true;
-        return;
-      }
+      if (!this.requireAuth()) return;
       job.isAutoDetecting = true;
       try {
         const result = await detectRegions(job.jobId);
@@ -368,10 +362,7 @@ function ingestView() {
     },
 
     async saveClips(job) {
-      if (this.authRequired && !this.authenticated) {
-        this.showLoginModal = true;
-        return;
-      }
+      if (!this.requireAuth()) return;
       const entry = this._wavesurfers?.get(job.containerId);
       if (!entry) return;
       const regions = entry.regions.getRegions();
@@ -402,10 +393,7 @@ function ingestView() {
     },
 
     async saveAllClips() {
-      if (this.authRequired && !this.authenticated) {
-        this.showLoginModal = true;
-        return;
-      }
+      if (!this.requireAuth()) return;
       const clippingJobs = this.jobs.filter(j => j.phase === 'clipping');
       for (const job of clippingJobs) {
         const entry = this._wavesurfers?.get(job.containerId);
@@ -431,8 +419,6 @@ function ingestView() {
     /* ──────────────────────────────────────────────────────
        Formatting helpers
     ────────────────────────────────────────────────────── */
-
-    formatDuration(ms) { return MeowUtils.formatDuration(ms); },
 
     formatTimecode(s) {
       const m = Math.floor(s / 60);

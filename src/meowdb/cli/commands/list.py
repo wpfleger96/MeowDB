@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 
-from pathlib import Path
-
 import click
 
 from meowdb.cli.helpers import build_context, format_duration
@@ -46,7 +44,7 @@ _SORT_MAP = {
 @db_path_option
 def list_meows(output_format: str, limit: int, sort: str, db_path: str | None) -> None:
     """List meows in the library."""
-    ctx = build_context(Path(db_path) if db_path else None)
+    ctx = build_context(db_path)
 
     sort_key = _SORT_MAP.get(sort, "newest")
     meows = ctx.db.get_all(sort=sort_key, limit=limit)

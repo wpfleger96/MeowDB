@@ -159,6 +159,17 @@ function app() {
 }
 
 /* ──────────────────────────────────────────────────────────
+   DOM setup — runs before Alpine starts
+   Stamps the shared nav-auth-mobile template into each
+   [data-nav-auth] placeholder so the block is defined once.
+────────────────────────────────────────────────────────── */
+
+const navAuthTpl = document.getElementById('nav-auth-mobile');
+document.querySelectorAll('[data-nav-auth]').forEach((el) => {
+  el.replaceWith(navAuthTpl.content.cloneNode(true));
+});
+
+/* ──────────────────────────────────────────────────────────
    Alpine registrations — called after Alpine is ready
 ────────────────────────────────────────────────────────── */
 

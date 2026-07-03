@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from meowdb.cli.context import Context
-from meowdb.cli.helpers import build_context, format_duration, play_audio
+from meowdb.cli.helpers import build_context, die, format_duration, play_audio
 from meowdb.cli.options import db_path_option
 from meowdb.config import ALLOWED_MEDIA_SUFFIXES, MP3_DIR, STAGING_DIR, WAV_DIR
 from meowdb.display import console, print_error, print_hint, print_info, print_success
@@ -45,7 +45,7 @@ def ingest(
     db_path: str | None,
 ) -> None:
     """Ingest an audio or video file or directory into the meow library."""
-    ctx = build_context(Path(db_path) if db_path else None)
+    ctx = build_context(db_path)
 
     source = Path(path)
     if source.is_dir():
@@ -53,9 +53,7 @@ def ingest(
             f for f in source.iterdir() if f.suffix.lower() in ALLOWED_MEDIA_SUFFIXES
         )
         if not audio_files:
-            print_error(f"No audio files found in {source}")
-            ctx.db.close()
-            sys.exit(1)
+            die(ctx, f"No audio files found in {source}")
         for audio_file in audio_files:
             _ingest_file(audio_file, segment, review, dry_run, ctx)
     else:
@@ -95,17 +93,7 @@ def _ingest_file(
         ctx.db.delete_job(job_id)
         return
 
-    seg_dicts = [
-        {
-            "index": seg.index,
-            "duration_ms": seg.duration_ms,
-            "wav_path": str(seg.wav_path),
-            "waveform_data": seg.waveform_data,
-            "peak_dbfs": seg.peak_dbfs,
-            "cat_energy_ratio": seg.cat_energy_ratio,
-        }
-        for seg in result.segments
-    ]
+    seg_dicts = [seg.to_db_dict() for seg in result.segments]
     ctx.db.add_segments(job_id, seg_dicts)
     ctx.db.update_job_status(job_id, "ready")
 
@@ -116,7 +104,7 @@ def _ingest_file(
     segments = job["segments"]
 
     if review:
-        accepted_ids, rejected_ids = _review_loop(segments, result)
+        accepted_ids, rejected_ids = _review_loop(segments)
     else:
         accepted_ids = [s["id"] for s in segments]
         rejected_ids = []
@@ -165,7 +153,6 @@ def _dry_run_file(path: Path, segment: bool | None, ctx: Context) -> None:
 
 def _review_loop(
     segments: list[dict],  # type: ignore[type-arg]
-    result: object,
 ) -> tuple[list[str], list[str]]:
     accepted: list[str] = []
     rejected: list[str] = []

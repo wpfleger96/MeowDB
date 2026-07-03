@@ -11,17 +11,13 @@ router = APIRouter()
 async def get_stats(request: Request) -> StatsResponse:
     db = request.app.state.db
     data = db.get_stats()
-    return StatsResponse(
-        total_meows=data["total_meows"],
-        total_duration_ms=data["total_duration_ms"],
-        avg_duration_ms=data["avg_duration_ms"],
-        most_played=[MeowSummary(**m) for m in data["most_played"]],
-        recent=[MeowSummary(**m) for m in data["recent"]],
-        most_upvoted=[MeowSummary(**m) for m in data.get("most_upvoted", [])],
-        most_downvoted=[MeowSummary(**m) for m in data.get("most_downvoted", [])],
-        label_counts=data["label_counts"],
-        first_meow_at=data.get("first_meow_at"),
-    )
+    summary_lists = {
+        "most_played": [MeowSummary(**m) for m in data["most_played"]],
+        "recent": [MeowSummary(**m) for m in data["recent"]],
+        "most_upvoted": [MeowSummary(**m) for m in data.get("most_upvoted", [])],
+        "most_downvoted": [MeowSummary(**m) for m in data.get("most_downvoted", [])],
+    }
+    return StatsResponse(**{**data, **summary_lists})
 
 
 @router.get("/labels", response_model=list[LabelResponse])

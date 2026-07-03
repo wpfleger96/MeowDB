@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import uuid
 import zipfile
 
@@ -11,14 +10,12 @@ import click
 
 from pydub import AudioSegment
 
-from meowdb.cli.helpers import build_context
+from meowdb.cli.archive import AUDIO_PREFIX, MANIFEST_PATH, PHOTOS_PREFIX, SUPPORTED_FORMAT_VERSIONS
+from meowdb.cli.helpers import build_context, die
 from meowdb.cli.options import db_path_option
 from meowdb.config import MP3_DIR, PHOTOS_DIR, WAV_DIR
-from meowdb.display import print_error, print_info, print_success, print_warning
+from meowdb.display import print_info, print_success, print_warning
 from meowdb.similarity import update_library_uniqueness
-
-_MANIFEST_PATH = "meowdb-export/manifest.json"
-_SUPPORTED_FORMAT_VERSIONS = {1}
 
 
 @click.command(name="import")
@@ -36,27 +33,21 @@ _SUPPORTED_FORMAT_VERSIONS = {1}
 @db_path_option
 def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: str | None) -> None:
     """Import meows from an export archive."""
-    ctx = build_context(Path(db_path) if db_path else None)
+    ctx = build_context(db_path)
 
     try:
         zf = zipfile.ZipFile(archive, "r")
     except zipfile.BadZipFile:
-        print_error(f"Not a valid zip archive: {archive}")
-        ctx.db.close()
-        sys.exit(1)
+        die(ctx, f"Not a valid zip archive: {archive}")
 
     with zf:
         try:
-            manifest = json.loads(zf.read(_MANIFEST_PATH))
+            manifest = json.loads(zf.read(MANIFEST_PATH))
         except KeyError:
-            print_error("Archive is missing manifest.json — not a meowdb export.")
-            ctx.db.close()
-            sys.exit(1)
+            die(ctx, "Archive is missing manifest.json — not a meowdb export.")
 
-        if manifest.get("format_version") not in _SUPPORTED_FORMAT_VERSIONS:
-            print_error(f"Unsupported archive format version: {manifest.get('format_version')!r}")
-            ctx.db.close()
-            sys.exit(1)
+        if manifest.get("format_version") not in SUPPORTED_FORMAT_VERSIONS:
+            die(ctx, f"Unsupported archive format version: {manifest.get('format_version')!r}")
 
         WAV_DIR.mkdir(parents=True, exist_ok=True)
         MP3_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,7 +59,7 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
 
         for meow in manifest.get("meows", []):
             archive_id: str = meow["id"]
-            arc_wav = f"meowdb-export/audio/{archive_id}.wav"
+            arc_wav = f"{AUDIO_PREFIX}{archive_id}.wav"
 
             if arc_wav not in zf.namelist():
                 print_warning(f"WAV missing in archive for {archive_id[:8]}, skipping")
@@ -119,7 +110,7 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
                 for photo in archive_photos:
                     original_id: str = photo["id"]
                     original_filename: str = photo["filename"]
-                    arc_photo = f"meowdb-export/photos/{original_filename}"
+                    arc_photo = f"{PHOTOS_PREFIX}{original_filename}"
 
                     if arc_photo not in zf.namelist():
                         print_warning(

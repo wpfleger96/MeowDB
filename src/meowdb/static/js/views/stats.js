@@ -38,29 +38,18 @@ function statsView() {
       } catch {}
     },
 
-    /* ──────────────────────────────────────────────────────
-       Formatting helpers
-    ────────────────────────────────────────────────────── */
-
-    formatDuration(ms) { return MeowUtils.formatDuration(ms); },
-    formatDate(iso) { return MeowUtils.formatDate(iso); },
-    formatId(id) { return MeowUtils.formatId(id); },
-
     get totalDurationFormatted() {
-      return this.formatDuration(this.stats?.total_duration_ms ?? null);
+      return MeowUtils.formatDuration(this.stats?.total_duration_ms ?? null);
     },
 
     get avgDurationFormatted() {
-      return this.formatDuration(this.stats?.avg_duration_ms ?? null);
+      return MeowUtils.formatDuration(this.stats?.avg_duration_ms ?? null);
     },
 
     get firstMeowDate() {
       if (!this.stats?.recent?.length) return '—';
-      // Most-recent is first in the list; iterate to find oldest via created_at
-      // The API returns last 10, so we rely on the backend for "first" date
-      // If the backend exposes it directly, use it; otherwise fall back.
       return this.stats.first_meow_at
-        ? this.formatDate(this.stats.first_meow_at)
+        ? MeowUtils.formatDate(this.stats.first_meow_at)
         : '—';
     },
   };

@@ -15,7 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from meowdb.api.auth import require_auth
 from meowdb.api.models import PhotoEditRequest, PhotoListResponse, PhotoResponse
-from meowdb.api.streaming import safe_path, stream_file
+from meowdb.api.streaming import safe_path, save_upload, stream_file
 from meowdb.config import PHOTOS_DIR
 from meowdb.photos import optimize_photo
 
@@ -88,17 +88,11 @@ async def upload_photo(
     dest_filename = f"{photo_id}{suffix}"
     dest_path = PHOTOS_DIR / dest_filename
 
-    total = 0
-    with dest_path.open("wb") as dest:
-        while True:
-            chunk = await file.read(65536)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > _MAX_PHOTO_BYTES:
-                dest_path.unlink(missing_ok=True)
-                raise HTTPException(status_code=413, detail="Photo exceeds 20 MB limit")
-            dest.write(chunk)
+    try:
+        await save_upload(file, dest_path, _MAX_PHOTO_BYTES, "Photo exceeds 20 MB limit")
+    except HTTPException:
+        dest_path.unlink(missing_ok=True)
+        raise
 
     try:
         optimized_path = optimize_photo(dest_path)

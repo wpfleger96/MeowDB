@@ -84,7 +84,7 @@ function photosView() {
 
     async deletePhotoConfirmed() {
       if (!this.detailPhoto) return;
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       const id = this.detailPhoto.id;
       try {
         await deletePhoto(id);
@@ -100,10 +100,7 @@ function photosView() {
       const files = Array.from(event.target.files || []);
       event.target.value = '';
       if (files.length === 0) return;
-      if (this.authRequired && !this.authenticated) {
-        this.showLoginModal = true;
-        return;
-      }
+      if (!this.requireAuth()) return;
       await this._uploadPhotos(files);
     },
 
@@ -120,18 +117,13 @@ function photosView() {
     async onPhotoDrop(event) {
       event.preventDefault();
       this.isDragOver = false;
-      if (this.authRequired && !this.authenticated) {
-        this.showLoginModal = true;
-        return;
-      }
+      if (!this.requireAuth()) return;
       const files = Array.from(event.dataTransfer?.files || []).filter(
         f => f.type.startsWith('image/')
       );
       if (files.length === 0) return;
       await this._uploadPhotos(files);
     },
-
-    formatDate(iso) { return MeowUtils.formatDate(iso); },
 
     async doEdit(body) {
       if (!this.detailPhoto) return;
@@ -149,7 +141,7 @@ function photosView() {
     },
 
     async _runEdit(body) {
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       this.isEditing = true;
       try { await this.doEdit(body); } finally { this.isEditing = false; }
     },

@@ -110,3 +110,23 @@ function animateWaveform(canvas, data, color, getProgress) {
     drawWaveform(canvas, data, color, 1);
   };
 }
+
+/**
+ * Read the --accent CSS custom property from the document root.
+ * Falls back to #ff6b6b if the property is absent.
+ * @returns {string}
+ */
+function getAccentColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b6b';
+}
+
+/**
+ * Call a waveform cancel function if set, then return null so the caller
+ * can clear its reference in one expression.
+ * @param {(() => void) | null} fn
+ * @returns {null}
+ */
+function cancelDraw(fn) {
+  if (fn) fn();
+  return null;
+}

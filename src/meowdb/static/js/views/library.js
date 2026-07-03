@@ -86,11 +86,7 @@ function libraryView() {
     },
 
     async toggleLabelFilter(label) {
-      if (this.filterLabel === label) {
-        this.filterLabel = '';
-      } else {
-        this.filterLabel = label;
-      }
+      this.filterLabel = this.filterLabel === label ? '' : label;
       await this._loadMeows(true);
     },
 
@@ -170,28 +166,23 @@ function libraryView() {
       const canvas = this.$refs.detailWaveformCanvas;
       if (!canvas || !meow?.waveform_data?.length) return;
 
-      const color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ff6b6b';
-
       if (this._detailIsPlaying && progress === 0) {
         this._cancelDetailWaveform = animateWaveform(
           canvas,
           meow.waveform_data,
-          color,
+          getAccentColor(),
           () => {
             if (audioPlayer.duration === 0) return 0;
             return audioPlayer.currentTime / audioPlayer.duration;
           }
         );
       } else {
-        drawWaveform(canvas, meow.waveform_data, color, progress);
+        drawWaveform(canvas, meow.waveform_data, getAccentColor(), progress);
       }
     },
 
     _stopDetailWaveform() {
-      if (this._cancelDetailWaveform) {
-        this._cancelDetailWaveform();
-        this._cancelDetailWaveform = null;
-      }
+      this._cancelDetailWaveform = cancelDraw(this._cancelDetailWaveform);
     },
 
     playDetailMeow() {
@@ -231,7 +222,7 @@ function libraryView() {
 
     removeLabel(label) {
       if (!this.detailMeow) return;
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       this.detailMeow.labels = this.detailMeow.labels.filter((l) => l !== label);
       this._saveLabels();
     },
@@ -243,7 +234,7 @@ function libraryView() {
         this.labelInput = '';
         return;
       }
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       this.detailMeow.labels = [...this.detailMeow.labels, label];
       this.labelInput = '';
       await this._saveLabels();
@@ -251,9 +242,9 @@ function libraryView() {
 
     async _saveLabels() {
       if (!this.detailMeow) return;
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       try {
-        await updateLabels(this.detailMeow.id, this.detailMeow.labels);
+        await updateMeow(this.detailMeow.id, { labels: this.detailMeow.labels });
         // Update the row in the list too
         const idx = this.meows.findIndex((m) => m.id === this.detailMeow.id);
         if (idx !== -1) {
@@ -268,7 +259,7 @@ function libraryView() {
 
     async saveTitle() {
       if (!this.detailMeow) return;
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       try {
         const updated = await updateMeow(this.detailMeow.id, { title: this.detailTitle || null });
         this.detailMeow = { ...updated, labels: updated.labels || [] };
@@ -289,7 +280,7 @@ function libraryView() {
 
     async deleteMeowConfirmed() {
       if (!this.detailMeow) return;
-      if (this.authRequired && !this.authenticated) { this.showLoginModal = true; return; }
+      if (!this.requireAuth()) return;
       const id = this.detailMeow.id;
       try {
         await deleteMeow(id);
@@ -304,19 +295,5 @@ function libraryView() {
       }
     },
 
-    /* ──────────────────────────────────────────────────────
-       Formatting helpers
-    ────────────────────────────────────────────────────── */
-
-    formatDuration(ms) { return MeowUtils.formatDuration(ms); },
-    formatDate(iso) { return MeowUtils.formatDate(iso); },
-    formatId(id) { return MeowUtils.formatId(id); },
-
-    uniquenessBadgeClass(score) {
-      if (score == null) return 'badge-default';
-      if (score >= 67) return 'badge-green';
-      if (score >= 33) return 'badge-yellow';
-      return 'badge-red';
-    },
   };
 }
