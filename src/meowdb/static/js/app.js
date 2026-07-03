@@ -101,12 +101,18 @@ function app() {
         this.loginError = '';
       });
 
-      try {
-        const s = await getAuthStatus();
-        this.authenticated = s.authenticated;
-        this.authRequired = s.auth_required;
-      } catch (_) {
-        // auth status check is best-effort; if it fails, assume unauthenticated
+      const boot = window.__BOOTSTRAP__ || {};
+      if (boot.auth) {
+        this.authenticated = boot.auth.authenticated;
+        this.authRequired = boot.auth.auth_required;
+      } else {
+        try {
+          const s = await getAuthStatus();
+          this.authenticated = s.authenticated;
+          this.authRequired = s.auth_required;
+        } catch (_) {
+          // auth status check is best-effort; if it fails, assume unauthenticated
+        }
       }
 
       getVersion().then(data => { this.appVersion = data.version; }).catch(() => {});

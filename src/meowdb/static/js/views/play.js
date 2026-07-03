@@ -6,7 +6,10 @@ function playView() {
   return {
     meowCount: null,
     isPlaying: false,
-    isLoading: false,
+    // Must start true: Alpine evaluates the x-if wrapping the MEOW button
+    // against these initializers before init() runs, and a false start
+    // collapses the play area for one frame (layout shift).
+    isLoading: true,
     currentMeow: null,
     currentPhoto: null,
     feedbackGiven: null,
@@ -14,10 +17,12 @@ function playView() {
     _gen: 0,
 
     async init() {
-      this.isLoading = true;
-      await this._refreshCount();
+      const boot = window.__BOOTSTRAP__ || {};
+      if (boot.photo) this.currentPhoto = boot.photo;
+      else getRandomPhoto().then(photo => { this.currentPhoto = photo; }).catch(() => {});
+      if (typeof boot.meow_count === 'number') this.meowCount = boot.meow_count;
+      else await this._refreshCount();
       this.isLoading = false;
-      getRandomPhoto().then(photo => { this.currentPhoto = photo; }).catch(() => {});
     },
 
     async _refreshCount() {

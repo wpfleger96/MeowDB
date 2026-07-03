@@ -190,6 +190,8 @@ ol {
   border-width: 0;
 }
 
+.invisible { visibility: hidden; }
+
 .flex        { display: flex; }
 .flex-col    { flex-direction: column; }
 .items-center { align-items: center; }

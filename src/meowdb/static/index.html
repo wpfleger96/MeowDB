@@ -15,6 +15,7 @@
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 
   <!-- Stylesheets -->
+  <!-- {{PHOTO_PRELOAD}} -->
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="/static/css/layout.css">
   <link rel="stylesheet" href="/static/css/components.css">
@@ -23,6 +24,7 @@
   <style>[x-cloak] { display: none !important; }</style>
 
   <!-- App scripts — load in dependency order, all deferred -->
+  <script>window.__BOOTSTRAP__ = {{BOOTSTRAP_JSON}};</script>
   <script src="/static/js/api.js" defer></script>
   <script src="/static/js/audio.js" defer></script>
   <script src="/static/js/waveform.js" defer></script>
@@ -32,10 +34,8 @@
   <script src="/static/js/views/ingest.js" defer></script>
   <script src="/static/js/views/stats.js" defer></script>
   <script src="/static/js/views/photos.js" defer></script>
-  <!-- Algorithm page: vendored markdown + math renderers (no build step) -->
+  <!-- Algorithm page: MathJax config up-front; vendored renderers lazy-loaded by algorithm.js -->
   <script>window.MathJax = { startup: { typeset: false }, options: { enableMenu: false } };</script>
-  <script src="/static/vendor/tex-svg.js" defer></script>
-  <script src="/static/vendor/markdown-it.min.js" defer></script>
   <script src="/static/js/views/algorithm.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <!-- Alpine.js LAST — auto-starts on load, so all components must be defined first -->
@@ -66,6 +66,7 @@
       x-show="isView('play')"
       x-data="playView()"
       x-init="init()"
+      x-cloak
     >
       <div class="play-view">
 
@@ -173,15 +174,17 @@
               <span x-text="MeowUtils.formatDate(currentMeow?.created_at)"></span>
             </div>
 
-            <!-- Meow count -->
-            <p class="meow-counter" x-show="meowCount > 0">
+            <!-- Meow count. Counter + bio keep their layout box while hidden
+                 (visibility, not x-show/display) so appearing can't re-center
+                 the play stack — a layout shift. -->
+            <p class="meow-counter" :class="{ invisible: !(meowCount > 0) }">
               <strong x-text="meowCount"></strong>
               <span x-text="meowCount === 1 ? ' meow' : ' meows'"></span>
               in library
             </p>
 
             <!-- Squishy bio -->
-            <p class="cat-bio" x-show="meowCount > 0">
+            <p class="cat-bio" :class="{ invisible: !(meowCount > 0) }">
               Squishy is a very vocal cat. This is her personal meow archive.
             </p>
 
@@ -200,6 +203,7 @@
       x-show="isView('library')"
       x-data="libraryView()"
       x-init="init()"
+      x-cloak
     >
       <div class="library-view" :class="{ 'detail-open': showDetail }">
 
@@ -497,6 +501,7 @@
       x-show="isView('photos')"
       x-data="photosView()"
       x-init="init()"
+      x-cloak
     >
       <div class="photos-view" :class="{ 'detail-open': showDetail, 'drag-over': isDragOver }" @dragover.prevent="onPhotoDragOver($event)" @dragleave="onPhotoDragLeave()" @drop.prevent="onPhotoDrop($event)">
 
@@ -679,6 +684,7 @@
       x-show="isView('ingest')"
       x-data="ingestView()"
       x-init="init()"
+      x-cloak
     >
       <div class="ingest-view">
 
@@ -871,6 +877,7 @@
       x-show="isView('stats')"
       x-data="statsView()"
       x-init="init()"
+      x-cloak
     >
       <div class="stats-view">
 
@@ -1012,11 +1019,16 @@
     <!-- ══════════════════════════════════════════════════
          View: Algorithm (renders docs/algorithm.md)
     ══════════════════════════════════════════════════ -->
+    <!-- Vendor URLs live here (not in algorithm.js) so build.py content-hashes
+         them; loaded lazily on first visit to this view, not at startup. -->
     <div
       class="view-container"
       x-show="isView('algorithm')"
       x-data="algorithmView()"
-      x-init="init()"
+      x-effect="if (isView('algorithm')) load()"
+      x-cloak
+      data-tex-svg-src="/static/vendor/tex-svg.js"
+      data-markdown-it-src="/static/vendor/markdown-it.min.js"
     >
       <div class="algorithm-view">
 
@@ -1174,7 +1186,7 @@
     role="dialog"
     aria-modal="true"
     aria-label="Login"
-    x-effect="if (showLoginModal) $nextTick(() => $refs.loginPasswordInput?.focus())"
+    x-effect="if (showLoginModal && window.matchMedia('(pointer: fine)').matches) $nextTick(() => $refs.loginPasswordInput?.focus())"
   >
     <div class="modal-sheet" @click.stop>
       <div class="modal-body">

@@ -105,9 +105,13 @@ async def logout(request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/status")
-async def auth_status(request: Request) -> dict[str, bool]:
+def auth_status_payload(request: Request) -> dict[str, bool]:
     return {
         "authenticated": bool(request.session.get("authenticated", False)),
         "auth_required": bool(PASSWORD_HASH) or not IS_LOCALHOST,
     }
+
+
+@router.get("/status")
+async def auth_status(request: Request) -> dict[str, bool]:
+    return auth_status_payload(request)
