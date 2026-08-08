@@ -95,6 +95,8 @@ def update_library_uniqueness(
 
     ids_to_extract: list[str] = list(all_wav_paths) if force else new_sound_ids
 
+    # Collect newly extracted fingerprints for a single bulk write after the loop.
+    new_fingerprints: dict[str, list[float]] = {}
     for sound_id in ids_to_extract:
         if (force or sound_id not in fingerprints) and sound_id in all_wav_paths:
             try:
@@ -103,10 +105,13 @@ def update_library_uniqueness(
                     cfg = get_species_config(species)
                     extractors[species] = SoundSimilarity(fmin=cfg.fmin, fmax=cfg.fmax)
                 fp = extractors[species].extract_fingerprint(all_wav_paths[sound_id])
-                db.update_fingerprint(sound_id, fp)
+                new_fingerprints[sound_id] = fp
                 fingerprints[sound_id] = fp
             except Exception as exc:
                 _logger.warning("Failed to extract fingerprint for %s: %s", sound_id, exc)
+
+    if new_fingerprints:
+        db.update_fingerprints_bulk(new_fingerprints)
 
     if fingerprints:
         # Band choice doesn't affect scoring math; use a single default instance.

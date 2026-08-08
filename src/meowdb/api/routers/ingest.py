@@ -6,6 +6,7 @@ import shutil
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -116,6 +117,11 @@ async def create_ingest_job(
         shutil.rmtree(job_staging_dir, ignore_errors=True)
         db.delete_job(job_id)
         raise
+    except OSError as err:
+        temp_path.unlink(missing_ok=True)
+        shutil.rmtree(job_staging_dir, ignore_errors=True)
+        db.delete_job(job_id)
+        raise HTTPException(status_code=500, detail="Failed to store upload") from err
 
     db.update_job_status(job_id, "uploaded")
 
@@ -260,30 +266,35 @@ async def stream_source_audio(job_id: str, request: Request) -> StreamingRespons
     return stream_file(source_path, request, media_type)
 
 
-@router.post("/ingest/{job_id}/detect", response_model=DetectResponse)
-async def detect_regions(job_id: str, request: Request) -> DetectResponse:
+def _processor_for_job(db: Any, job: dict) -> Any:  # type: ignore[type-arg]
     from meowdb.processor import SoundProcessor
     from meowdb.species import DEFAULT_SPECIES, processor_config_for_species
 
+    animal = db.get_animal(job["animal_id"])
+    species = animal["species"] if animal else DEFAULT_SPECIES
+    return SoundProcessor(processor_config_for_species(species))
+
+
+@router.post("/ingest/{job_id}/detect", response_model=DetectResponse)
+async def detect_regions(job_id: str, request: Request) -> DetectResponse:
     db = request.app.state.db
     job = db.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    animal = db.get_animal(job["animal_id"])
-    species = animal["species"] if animal else DEFAULT_SPECIES
-    config = processor_config_for_species(species)
-
+    processor = _processor_for_job(db, job)
     source_path = _resolve_staging_path(job_id)
-    result = await run_in_threadpool(SoundProcessor(config).detect_only, source_path)
+    try:
+        result = await run_in_threadpool(processor.detect_only, source_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not process audio file") from exc
     return DetectResponse(regions=[ClipRegion(start_ms=s, end_ms=e) for s, e in result])
 
 
 @router.post("/ingest/{job_id}/clip", response_model=CommitResponse)
 async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> CommitResponse:
-    from meowdb.processor import SoundProcessor
-    from meowdb.species import DEFAULT_SPECIES, processor_config_for_species
-
     db = request.app.state.db
     job = db.get_job(job_id)
     if job is None:
@@ -292,10 +303,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     if not body.regions:
         raise HTTPException(status_code=400, detail="At least one region is required")
 
-    animal = db.get_animal(job["animal_id"])
-    species = animal["species"] if animal else DEFAULT_SPECIES
-    config = processor_config_for_species(species)
-
+    processor = _processor_for_job(db, job)
     source_path = _resolve_staging_path(job_id)
     try:
         mtime = os.path.getmtime(str(source_path))
@@ -305,9 +313,14 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     staging_dir = STAGING_DIR / job_id
 
     regions = [(r.start_ms, r.end_ms) for r in body.regions]
-    segments = await run_in_threadpool(
-        SoundProcessor(config).process_clips, source_path, regions, staging_dir
-    )
+    try:
+        segments = await run_in_threadpool(
+            processor.process_clips, source_path, regions, staging_dir
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not process audio file") from exc
 
     seg_dicts = [seg.to_db_dict() for seg in segments]
     db.add_segments(job_id, seg_dicts)

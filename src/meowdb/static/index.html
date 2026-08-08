@@ -98,7 +98,7 @@
               :class="{ playing: isPlaying, 'has-photo': currentPhoto }"
               :style="currentPhoto ? 'background-image: url(' + currentPhoto.image_url + '); background-size: cover; background-position: center;' : ''"
               @click="onMeowPress()"
-              aria-label="Play a random meow"
+              aria-label="Play a random sound"
             >
               <span class="meow-btn-label">MEOW</span>
               <span class="meow-btn-sub" x-show="isLoading">loading…</span>
@@ -819,7 +819,7 @@
       <div class="ingest-view">
 
         <div class="view-header">
-          <h1 class="view-title">Add Meows</h1>
+          <h1 class="view-title">Add Sounds</h1>
           <div class="flex items-center gap-2">
             <button
               class="btn btn-ghost"
@@ -929,7 +929,7 @@
                     <span class="clip-timecode-sep">/</span>
                     <span x-text="formatTimecode(job.duration)"></span>
                   </div>
-                  <p class="text-sm text-muted text-center">Click and drag on the waveform to mark meow regions</p>
+                  <p class="text-sm text-muted text-center">Click and drag on the waveform to mark sound regions</p>
                   <div class="clip-transport">
                     <button class="btn btn-ghost" @click="zoomOut(job)" :disabled="job.zoomLevel === 0" aria-label="Zoom out">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1001,7 +1001,7 @@
         <!-- ── done ── -->
         <div class="empty-state" x-show="phase === 'done'">
           <div class="empty-state-icon">🐱</div>
-          <div class="empty-state-title">Meows saved!</div>
+          <div class="empty-state-title">Sounds saved!</div>
           <div class="empty-state-body">They're now in your library.</div>
           <button class="btn btn-primary" @click="navigateTo('/library')">Go to library</button>
           <button class="btn btn-ghost" @click="reset()">Add more</button>
@@ -1081,14 +1081,14 @@
             <!-- Most played leaderboard -->
             <div class="stats-section" x-show="stats.most_played && stats.most_played.length > 0">
               <div class="stats-section-header">Most played</div>
-              <template x-for="(meow, index) in stats.most_played" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="(sound, index) in stats.most_played" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div class="leaderboard-rank" :class="{ top: index === 0 }" x-text="index + 1"></div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                   </div>
-                  <div class="leaderboard-plays" x-text="meow.play_count + ' plays'"></div>
+                  <div class="leaderboard-plays" x-text="sound.play_count + ' plays'"></div>
                 </div>
               </template>
             </div>
@@ -1096,8 +1096,8 @@
             <!-- Recent additions -->
             <div class="stats-section" x-show="stats.recent && stats.recent.length > 0">
               <div class="stats-section-header">Recent additions</div>
-              <template x-for="meow in stats.recent" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="sound in stats.recent" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div
                     style="width:32px;height:32px;border-radius:50%;background:var(--bg-elevated);display:flex;align-items:center;justify-content:center;flex-shrink:0;"
                   >
@@ -1106,10 +1106,10 @@
                     </svg>
                   </div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDate(meow.created_at)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDate(sound.created_at)"></div>
                   </div>
-                  <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                  <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                 </div>
               </template>
             </div>
@@ -1117,14 +1117,14 @@
             <!-- Most upvoted leaderboard -->
             <div class="stats-section" x-show="stats.most_upvoted && stats.most_upvoted.length > 0">
               <div class="stats-section-header">Most upvoted</div>
-              <template x-for="(meow, index) in stats.most_upvoted" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="(sound, index) in stats.most_upvoted" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div class="leaderboard-rank" :class="{ top: index === 0 }" x-text="index + 1"></div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                   </div>
-                  <div class="leaderboard-plays text-green" x-text="meow.upvote_count + ' ↑'"></div>
+                  <div class="leaderboard-plays text-green" x-text="sound.upvote_count + ' ↑'"></div>
                 </div>
               </template>
             </div>
@@ -1132,14 +1132,14 @@
             <!-- Most downvoted leaderboard -->
             <div class="stats-section" x-show="stats.most_downvoted && stats.most_downvoted.length > 0">
               <div class="stats-section-header">Most downvoted</div>
-              <template x-for="(meow, index) in stats.most_downvoted" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="(sound, index) in stats.most_downvoted" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div class="leaderboard-rank" :class="{ top: index === 0 }" x-text="index + 1"></div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                   </div>
-                  <div class="leaderboard-plays text-red" x-text="meow.downvote_count + ' ↓'"></div>
+                  <div class="leaderboard-plays text-red" x-text="sound.downvote_count + ' ↓'"></div>
                 </div>
               </template>
             </div>
@@ -1148,7 +1148,7 @@
             <div class="empty-state" x-show="stats.total_sounds === 0">
               <div class="empty-state-icon">📊</div>
               <div class="empty-state-title">No data yet</div>
-              <div class="empty-state-body">Add some meows to see your stats</div>
+              <div class="empty-state-body">Add some sounds to see your stats</div>
             </div>
 
             <!-- Footer link to the scoring-algorithm write-up -->
@@ -1194,8 +1194,8 @@
 
         <p class="algorithm-intro">
           <strong>How uniqueness scores are computed.</strong>
-          Every meow in your library is distilled into a 120-number acoustic fingerprint,
-          then compared against every other meow to measure how distinctive it sounds.
+          Every sound in your library is distilled into a 120-number acoustic fingerprint,
+          then compared against every other sound to measure how distinctive it sounds.
           Below is the full technical write-up of that pipeline — from the raw waveform
           through the spectral features to the final 0–100 percentile score.
           Skim the headings; the equations are there for the curious.

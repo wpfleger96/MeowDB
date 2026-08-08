@@ -1418,3 +1418,118 @@ def test_bootstrap_contains_sound_count_and_animals(seeded_client, tmp_dirs):
     assert isinstance(payload["animals"], list)
     squishy = next((a for a in payload["animals"] if a["name"] == "Squishy"), None)
     assert squishy is not None
+
+
+# ---------------------------------------------------------------------------
+# animal_name / animal_species on sound endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_list_sounds_include_animal_fields(seeded_client):
+    """List endpoint exposes animal_name and animal_species on each sound item."""
+    resp = seeded_client.get("/api/sounds")
+    assert resp.status_code == 200
+    item = resp.json()["items"][0]
+    assert item["animal_name"] == "Squishy"
+    assert item["animal_species"] == "cat"
+
+
+@pytest.mark.integration
+def test_random_sound_includes_animal_fields(seeded_client):
+    """Random endpoint exposes animal_name and animal_species."""
+    resp = seeded_client.get("/api/sounds/random")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["animal_name"] == "Squishy"
+    assert data["animal_species"] == "cat"
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/animals/{id} recomputes species uniqueness scores
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_delete_animal_recomputes_species_scores(seeded_client, tmp_dirs):
+    """Deleting one of two same-species animals nulls the surviving sound's species score."""
+    db = seeded_client.app.state.db
+    wav_file = next(tmp_dirs["wav"].glob("*.wav"))
+    mp3_file = next(tmp_dirs["mp3"].glob("*.mp3"))
+
+    # Squishy (cat) already has one sound from the fixture
+    sound_id_1 = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+
+    # Second cat animal with one sound — species pool = 2, animal pool = 1 each
+    mochi_id = db.add_animal("Mochi", "cat")
+    sound_id_2 = db.add(
+        {
+            "timestamp": "2026-01-02T00:00:00",
+            "duration_ms": 750,
+            "labels": [],
+            "wav_path": str(wav_file),
+            "mp3_path": str(mp3_file),
+            "waveform_data": [],
+            "peak_dbfs": -15.0,
+            "species_energy_ratio": 1.5,
+            "animal_id": mochi_id,
+        }
+    )
+
+    # Seed fingerprints so update_library_uniqueness has data to recompute
+    fingerprint = [0.1] * 120
+    db.update_fingerprint(sound_id_1, fingerprint)
+    db.update_fingerprint(sound_id_2, fingerprint)
+
+    # Pre-set non-null species scores to confirm they exist before deletion
+    db.update_uniqueness_scores_bulk(
+        animal_scores={},
+        species_scores={sound_id_1: 50.0, sound_id_2: 50.0},
+    )
+
+    # Delete Mochi → species pool shrinks to 1 → Squishy's sound score must become null
+    resp = seeded_client.delete(f"/api/animals/{mochi_id}")
+    assert resp.status_code == 204
+
+    items = seeded_client.get("/api/sounds").json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == sound_id_1
+    assert items[0]["species_uniqueness_score"] is None
+
+
+# ---------------------------------------------------------------------------
+# Stats leaderboard items include mp3_url
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_stats_leaderboard_items_include_mp3_url(seeded_client):
+    """Stats leaderboard items carry a non-null mp3_url for sounds that have an mp3."""
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+
+    resp = seeded_client.get("/api/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # The seeded sound appears in recent (newest 10 by created_at)
+    assert len(data["recent"]) >= 1
+    recent_item = next((s for s in data["recent"] if s["id"] == sound_id), None)
+    assert recent_item is not None
+    assert recent_item["mp3_url"] == f"/api/audio/{sound_id}"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/animals — species validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_create_animal_unknown_species_rejected(client):
+    """POST /api/animals with an unregistered species returns 400."""
+    resp = client.post("/api/animals", json={"name": "Kanga", "species": "kangaroo"})
+    assert resp.status_code == 400
+
+    # Mixed-case valid species succeeds and is stored/returned lowercase
+    resp = client.post("/api/animals", json={"name": "Rex", "species": "Cat"})
+    assert resp.status_code == 201
+    assert resp.json()["species"] == "cat"

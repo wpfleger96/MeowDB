@@ -27,14 +27,14 @@ function statsView() {
       }
     },
 
-    async playLeaderboardMeow(meow) {
-      if (!meow?.mp3_url) return;
+    async playLeaderboardSound(sound) {
+      if (!sound?.mp3_url) return;
       audioPlayer.stop();
-      recordPlay(meow.id).catch(() => {});
+      recordPlay(sound.id).catch(() => {});
       audioPlayer.onEnded = null;
       audioPlayer.onError = (err) => showToast('Playback error: ' + err.message, 'error');
       try {
-        await audioPlayer.play(meow.mp3_url);
+        await audioPlayer.play(sound.mp3_url);
       } catch {}
     },
 

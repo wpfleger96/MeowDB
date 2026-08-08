@@ -130,7 +130,7 @@ class FeedbackRequest(BaseModel):
 
 
 class SoundSummary(SoundBase):
-    pass
+    mp3_url: str | None = None
 
 
 class StatsResponse(BaseModel):

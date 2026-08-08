@@ -127,6 +127,10 @@ class MeowDB:
             "CREATE INDEX IF NOT EXISTS idx_sounds_animal_uniqueness ON sounds(animal_uniqueness_score DESC)"
         )
         self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sounds_animal_animal_uniqueness"
+            " ON sounds(animal_id, animal_uniqueness_score DESC)"
+        )
+        self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_animal_photos_animal_id ON animal_photos(animal_id)"
         )
 
@@ -175,7 +179,13 @@ class MeowDB:
 
         backup_path = Path(str(self._db_path) + ".pre-v2-backup")
         if not backup_path.exists():
-            shutil.copy2(str(self._db_path), str(backup_path))
+            tmp = backup_path.with_suffix(backup_path.suffix + ".tmp")
+            try:
+                shutil.copy2(str(self._db_path), str(tmp))
+                tmp.rename(backup_path)
+            finally:
+                # No-op on success (tmp was renamed); cleans up a partial copy on failure.
+                tmp.unlink(missing_ok=True)
 
         # Inspect which optional columns the old meows table actually has
         # (some were added via ALTER TABLE in later versions).
@@ -261,7 +271,8 @@ class MeowDB:
             def _col(name: str, default: str = "NULL") -> str:
                 return name if name in meows_cols else default
 
-            self._conn.execute(f"""
+            self._conn.execute(
+                f"""
                 INSERT INTO sounds
                     (id, animal_id, timestamp, duration_ms, labels, play_count, last_played,
                      created_at, wav_path, mp3_path, waveform_data, peak_dbfs,
@@ -269,7 +280,7 @@ class MeowDB:
                      sound_fingerprint, animal_uniqueness_score, species_uniqueness_score,
                      upvote_count, downvote_count)
                 SELECT
-                    id, '{squishy_id}', timestamp, duration_ms, labels,
+                    id, ?, timestamp, duration_ms, labels,
                     {_col("play_count", "0")}, {_col("last_played")},
                     created_at, wav_path, mp3_path, waveform_data, peak_dbfs,
                     cat_energy_ratio, {_col("ai_analysis")},
@@ -278,7 +289,9 @@ class MeowDB:
                     {_col("uniqueness_score")}, {_col("uniqueness_score")},
                     {_col("upvote_count", "0")}, {_col("downvote_count", "0")}
                 FROM meows
-            """)
+            """,
+                (squishy_id,),
+            )
             self._conn.execute("DROP TABLE meows")
 
             # Step 3: Create animal_photos, copy from cat_photos.
@@ -294,12 +307,15 @@ class MeowDB:
             """)
             if cat_photos_exists:
                 updated_at_expr = "updated_at" if "updated_at" in cat_photos_cols else "NULL"
-                self._conn.execute(f"""
+                self._conn.execute(
+                    f"""
                     INSERT INTO animal_photos
                         (id, animal_id, filename, created_at, updated_at, is_default)
-                    SELECT id, '{squishy_id}', filename, created_at, {updated_at_expr}, is_default
+                    SELECT id, ?, filename, created_at, {updated_at_expr}, is_default
                     FROM cat_photos
-                """)
+                """,
+                    (squishy_id,),
+                )
                 self._conn.execute("DROP TABLE cat_photos")
 
             # Step 4: Recreate ingest_jobs with animal_id column.
@@ -315,12 +331,15 @@ class MeowDB:
                         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
                     )
                 """)
-                self._conn.execute(f"""
+                self._conn.execute(
+                    """
                     INSERT INTO ingest_jobs_new
                         (id, source_filename, animal_id, status, error, created_at, updated_at)
-                    SELECT id, source_filename, '{squishy_id}', status, error, created_at, updated_at
+                    SELECT id, source_filename, ?, status, error, created_at, updated_at
                     FROM ingest_jobs
-                """)
+                """,
+                    (squishy_id,),
+                )
                 self._conn.execute("DROP TABLE ingest_jobs")
                 self._conn.execute("ALTER TABLE ingest_jobs_new RENAME TO ingest_jobs")
 
@@ -762,6 +781,22 @@ class MeowDB:
             )
             self._conn.commit()
 
+    def update_fingerprints_bulk(self, fingerprints: dict[str, list[float]]) -> None:
+        """Write multiple fingerprints in a single transaction.
+
+        Serializes each fingerprint exactly as update_fingerprint does, using one
+        executemany + commit under the lock (mirrors update_uniqueness_scores_bulk).
+        No-op when fingerprints is empty.
+        """
+        if not fingerprints:
+            return
+        with self._lock:
+            self._conn.executemany(
+                "UPDATE sounds SET sound_fingerprint = ? WHERE id = ?",
+                [(json.dumps(fp), sid) for sid, fp in fingerprints.items()],
+            )
+            self._conn.commit()
+
     def update_uniqueness_scores_bulk(
         self,
         animal_scores: dict[str, float | None],
@@ -1109,8 +1144,8 @@ class MeowDB:
 
                 placeholders = ",".join("?" * len(accepted_ids))
                 seg_rows = self._conn.execute(
-                    f"SELECT * FROM ingest_segments WHERE id IN ({placeholders})",
-                    accepted_ids,
+                    f"SELECT * FROM ingest_segments WHERE id IN ({placeholders}) AND job_id = ?",
+                    [*accepted_ids, job_id],
                 ).fetchall()
                 seg_by_id = {row["id"]: self._row_to_dict(row) for row in seg_rows}
 

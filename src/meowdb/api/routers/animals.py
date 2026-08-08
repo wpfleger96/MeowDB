@@ -24,6 +24,8 @@ from meowdb.api.models import (
 from meowdb.api.streaming import safe_path, save_upload
 from meowdb.config import MP3_DIR, PHOTOS_DIR, WAV_DIR
 from meowdb.photos import optimize_photo
+from meowdb.similarity import update_library_uniqueness
+from meowdb.species import SPECIES_REGISTRY
 
 _logger = logging.getLogger(__name__)
 
@@ -62,8 +64,16 @@ async def create_animal(
     if not body.species or not body.species.strip():
         raise HTTPException(status_code=400, detail="species must not be empty")
 
+    species = body.species.strip().lower()
+    if species not in SPECIES_REGISTRY:
+        valid = ", ".join(sorted(SPECIES_REGISTRY))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown species {species!r}; valid: {valid}",
+        )
+
     db = request.app.state.db
-    animal_id = db.add_animal(body.name.strip(), body.species.strip())
+    animal_id = db.add_animal(body.name.strip(), species)
     animal = db.get_animal(animal_id)
     return _animal_to_response(animal)
 
@@ -96,6 +106,8 @@ async def delete_animal(
             _logger.warning("Skipping out-of-bounds photo file %s", photo_filename)
         except OSError:
             _logger.warning("Failed to remove photo file %s", photo_filename)
+
+    await run_in_threadpool(update_library_uniqueness, db, [])
 
 
 @router.get("/{animal_id}/photos", response_model=PhotoListResponse)
@@ -133,6 +145,9 @@ async def upload_animal_photo(
     except HTTPException:
         dest_path.unlink(missing_ok=True)
         raise
+    except OSError as err:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Failed to store upload") from err
 
     try:
         optimized_path = optimize_photo(dest_path)
@@ -154,7 +169,7 @@ async def get_random_animal_photo(
     exclude: str | None = None,
 ) -> PhotoResponse:
     db = request.app.state.db
-    if db.get_animal(animal_id) is None:
+    if not db.animal_exists(animal_id):
         raise HTTPException(status_code=404, detail="Animal not found")
     photo = db.get_random_photo_for_animal(animal_id, exclude_id=exclude)
     if photo is None:

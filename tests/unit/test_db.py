@@ -900,3 +900,84 @@ def test_get_labels_sorted_alphabetically(tmp_db: MeowDB) -> None:
 def test_get_labels_unlabeled_sound_excluded(tmp_db: MeowDB) -> None:
     tmp_db.add(_sound(_aid(tmp_db), labels=[]))
     assert tmp_db.get_labels() == []
+
+
+# =============================================================================
+# Animal fields on sound queries
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_get_all_and_get_by_id_include_animal_fields(tmp_db: MeowDB) -> None:
+    """get_all() and get_by_id() rows include non-null animal_name and animal_species."""
+    sound_id = tmp_db.add(_sound(_aid(tmp_db)))
+
+    rows = tmp_db.get_all()
+    assert len(rows) == 1
+    assert rows[0]["animal_name"] == "Squishy"
+    assert rows[0]["animal_species"] == "cat"
+
+    result = tmp_db.get_by_id(sound_id)
+    assert result is not None
+    assert result["animal_name"] == "Squishy"
+    assert result["animal_species"] == "cat"
+
+
+# =============================================================================
+# commit_job — cross-job segment isolation
+# =============================================================================
+
+
+@pytest.mark.unit
+def test_commit_job_ignores_foreign_segment_ids(tmp_db: MeowDB, tmp_path: Path) -> None:
+    """Segment IDs that belong to a different job are silently ignored by commit_job."""
+    staging_a = tmp_path / "staging_a"
+    staging_b = tmp_path / "staging_b"
+    staging_a.mkdir(parents=True)
+    staging_b.mkdir(parents=True)
+
+    # Minimal WAV/MP3 stubs for each job's segment
+    (staging_a / "seg_0.wav").write_bytes(b"RIFF" + b"\x00" * 100)
+    (staging_a / "seg_0.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 100)
+    (staging_b / "seg_0.wav").write_bytes(b"RIFF" + b"\x00" * 100)
+    (staging_b / "seg_0.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 100)
+
+    aid = _aid(tmp_db)
+    job_a_id = tmp_db.create_job("a.m4a", aid)
+    job_b_id = tmp_db.create_job("b.m4a", aid)
+
+    tmp_db.add_segments(
+        job_a_id, [_segment(0, wav_path=str(staging_a / "seg_0.wav"), duration_ms=600)]
+    )
+    tmp_db.add_segments(
+        job_b_id, [_segment(0, wav_path=str(staging_b / "seg_0.wav"), duration_ms=700)]
+    )
+    tmp_db.update_job_status(job_a_id, "ready")
+    tmp_db.update_job_status(job_b_id, "ready")
+
+    job_a = tmp_db.get_job(job_a_id)
+    job_b = tmp_db.get_job(job_b_id)
+    assert job_a is not None and job_b is not None
+    seg_a_id = job_a["segments"][0]["id"]
+    seg_b_id = job_b["segments"][0]["id"]
+
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
+
+    # Commit job A, passing seg_b_id as an accepted ID — it belongs to job B and must be ignored
+    new_ids = tmp_db.commit_job(
+        job_a_id,
+        accepted_ids=[seg_a_id, seg_b_id],
+        rejected_ids=[],
+        wav_dir=wav_dir,
+        mp3_dir=mp3_dir,
+    )
+
+    # Only job A's segment produces a sound record
+    assert len(new_ids) == 1
+    assert tmp_db.get_count() == 1
+
+    # Job B's segment remains in "pending" state — completely untouched
+    job_b_after = tmp_db.get_job(job_b_id)
+    assert job_b_after is not None
+    assert job_b_after["segments"][0]["status"] == "pending"
