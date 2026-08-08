@@ -7,13 +7,13 @@ from pydantic import BaseModel
 
 
 class SegmentationConfig(BaseModel):
-    cat_band_low_hz: float = 250.0
-    cat_band_high_hz: float = 8000.0
+    band_low_hz: float = 250.0
+    band_high_hz: float = 8000.0
     silence_threshold_dbfs: float = -40.0
     min_silence_ms: int = 150
     min_segment_ms: int = 80
     max_segment_ms: int = 5000
-    min_cat_energy_ratio: float = 3.0
+    min_species_energy_ratio: float = 3.0
     pre_pad_ms: int = 200
     post_pad_ms: int = 200
     adaptive_threshold: bool = True
@@ -54,7 +54,7 @@ class MeowSegment:
     start_ms: int
     end_ms: int
     duration_ms: int
-    cat_energy_ratio: float
+    species_energy_ratio: float
     peak_dbfs: float
     wav_path: Path | None = None
     mp3_path: Path | None = None
@@ -67,7 +67,7 @@ class MeowSegment:
             "wav_path": str(self.wav_path) if self.wav_path else "",
             "waveform_data": self.waveform_data,
             "peak_dbfs": self.peak_dbfs,
-            "cat_energy_ratio": self.cat_energy_ratio,
+            "species_energy_ratio": self.species_energy_ratio,
         }
 
 

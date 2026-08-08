@@ -131,4 +131,51 @@ test.describe('MeowDB views', () => {
       expect(boxes[2]!.x).toBeLessThan(boxes[3]!.x);
     }
   });
+
+  test('profiles list', async ({ page }, testInfo) => {
+    await page.goto('/profiles', GOTO_OPTS);
+    // Scope to the profiles view: other views stay in the DOM (x-show) and the
+    // hidden play-view bio also contains "Squishy".
+    const view = page.locator('.profiles-view');
+    await expect(view.getByText('Squishy')).toBeVisible();
+    await screenshot(page, testInfo, '07-profiles.png');
+
+    // All three seeded animals render with names.
+    await expect(view.getByText('Thrasher')).toBeVisible();
+    await expect(view.getByText('Slushie')).toBeVisible();
+
+    // Species labels are visible alongside animal names.
+    await expect(view.getByText('Cat').first()).toBeVisible();
+    await expect(view.getByText('Dog').first()).toBeVisible();
+
+    // Clicking an animal opens a photo pane with a back button.
+    await view.getByText('Squishy').first().click();
+    await expect(view.getByRole('button', { name: /back/i })).toBeVisible();
+    await screenshot(page, testInfo, '07b-profiles-detail.png');
+  });
+
+  test('ingest animal selector', async ({ page }) => {
+    await page.goto('/upload', GOTO_OPTS);
+    await page.waitForSelector('.upload-zone', { state: 'visible' });
+
+    // Animal selector is present and populated with all seeded animals.
+    const select = page.locator('select[x-model="selectedAnimalId"]');
+    await expect(select).toBeVisible();
+    await expect(select.locator('option', { hasText: 'Squishy' })).toHaveCount(1);
+    await expect(select.locator('option', { hasText: 'Thrasher' })).toHaveCount(1);
+    await expect(select.locator('option', { hasText: 'Slushie' })).toHaveCount(1);
+  });
+
+  test('library animal filter chips', async ({ page }) => {
+    await page.goto('/library', GOTO_OPTS);
+    await page.waitForSelector('.list-row', { state: 'visible' });
+
+    // Filter chips render for All + each seeded animal (scoped: the hidden
+    // play-view bio also contains "Squishy").
+    const chips = page.locator('.library-filters');
+    await expect(chips.getByText('All')).toBeVisible();
+    await expect(chips.getByText('Squishy')).toBeVisible();
+    await expect(chips.getByText('Thrasher')).toBeVisible();
+    await expect(chips.getByText('Slushie')).toBeVisible();
+  });
 });

@@ -16,6 +16,7 @@ from meowdb.display import print_success, print_warning
 
 _PORTABLE_FIELDS = {
     "id",
+    "animal_id",
     "timestamp",
     "duration_ms",
     "labels",
@@ -24,7 +25,7 @@ _PORTABLE_FIELDS = {
     "created_at",
     "waveform_data",
     "peak_dbfs",
-    "cat_energy_ratio",
+    "species_energy_ratio",
     "recorded_at",
     "title",
     "upvote_count",
@@ -35,35 +36,38 @@ _PORTABLE_FIELDS = {
 @click.command(name="export")
 @click.argument("output", type=click.Path(dir_okay=False), default=None, required=False)
 @click.option(
-    "--include-photos", is_flag=True, default=False, help="Include cat photos in the archive."
+    "--include-photos", is_flag=True, default=False, help="Include animal photos in the archive."
 )
 @db_path_option
-def export_meows(output: str | None, include_photos: bool, db_path: str | None) -> None:
-    """Export the meow library to a portable zip archive."""
+def export_sounds(output: str | None, include_photos: bool, db_path: str | None) -> None:
+    """Export the sound library to a portable zip archive."""
     ctx = build_context(db_path)
-    meows = ctx.db.get_all_for_export()
+    sounds = ctx.db.get_all_for_export()
+    animals = ctx.db.get_animals()
     photos = ctx.db.get_photos() if include_photos else []
     ctx.db.close()
 
     out_path = Path(output) if output else DATA_DIR / f"meowdb-export-{date.today()}.zip"
 
-    exported_meows = 0
-    skipped_meows = 0
+    exported_sounds = 0
+    skipped_sounds = 0
     exported_photos = 0
     skipped_photos = 0
-    manifest_meows = []
+    manifest_sounds = []
     manifest_photos = []
 
     with zipfile.ZipFile(out_path, "w") as zf:
-        for meow in meows:
-            wav_path = Path(meow.get("wav_path") or "")
+        for sound in sounds:
+            wav_path = Path(sound.get("wav_path") or "")
             if not wav_path.exists():
-                print_warning(f"Missing WAV for {meow['id'][:8]}, skipping")
-                skipped_meows += 1
+                print_warning(f"Missing WAV for {sound['id'][:8]}, skipping")
+                skipped_sounds += 1
                 continue
-            zf.write(wav_path, AUDIO_PREFIX + meow["id"] + ".wav", compress_type=zipfile.ZIP_STORED)
-            manifest_meows.append({k: v for k, v in meow.items() if k in _PORTABLE_FIELDS})
-            exported_meows += 1
+            zf.write(
+                wav_path, AUDIO_PREFIX + sound["id"] + ".wav", compress_type=zipfile.ZIP_STORED
+            )
+            manifest_sounds.append({k: v for k, v in sound.items() if k in _PORTABLE_FIELDS})
+            exported_sounds += 1
 
         for photo in photos:
             photo_path = PHOTOS_DIR / photo["filename"]
@@ -77,6 +81,7 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
             manifest_photos.append(
                 {
                     "id": photo["id"],
+                    "animal_id": photo["animal_id"],
                     "filename": photo["filename"],
                     "created_at": photo.get("created_at"),
                     "is_default": bool(photo.get("is_default")),
@@ -85,10 +90,21 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
             )
             exported_photos += 1
 
+        manifest_animals = [
+            {
+                "id": a["id"],
+                "name": a["name"],
+                "species": a["species"],
+                "created_at": a["created_at"],
+            }
+            for a in animals
+        ]
+
         manifest: dict[str, object] = {
             "format_version": FORMAT_VERSION,
-            "meow_count": exported_meows,
-            "meows": manifest_meows,
+            "animals": manifest_animals,
+            "sound_count": exported_sounds,
+            "sounds": manifest_sounds,
         }
         if include_photos:
             manifest["photos"] = manifest_photos
@@ -99,11 +115,11 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
             compress_type=zipfile.ZIP_DEFLATED,
         )
 
-    if skipped_meows:
-        print_warning(f"Skipped {skipped_meows} meow(s) with missing WAV files")
+    if skipped_sounds:
+        print_warning(f"Skipped {skipped_sounds} sound(s) with missing WAV files")
     if skipped_photos:
         print_warning(f"Skipped {skipped_photos} photo(s) with missing files")
-    msg = f"Exported {exported_meows} meow(s)"
+    msg = f"Exported {exported_sounds} sound(s)"
     if include_photos:
         msg += f", {exported_photos} photo(s)"
     msg += f" to {out_path}"

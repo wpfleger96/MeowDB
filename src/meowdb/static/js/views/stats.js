@@ -46,10 +46,10 @@ function statsView() {
       return MeowUtils.formatDuration(this.stats?.avg_duration_ms ?? null);
     },
 
-    get firstMeowDate() {
+    get firstSoundDate() {
       if (!this.stats?.recent?.length) return '—';
-      return this.stats.first_meow_at
-        ? MeowUtils.formatDate(this.stats.first_meow_at)
+      return this.stats.first_sound_at
+        ? MeowUtils.formatDate(this.stats.first_sound_at)
         : '—';
     },
   };

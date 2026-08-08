@@ -144,7 +144,7 @@ class TestClassification:
         candidates = [(0, len(samples))]
         classified = processor._classify_segments(candidates, cat_band, low_band, audio.frame_rate)
         assert len(classified) == 1
-        assert classified[0][2] >= processor.config.segmentation.min_cat_energy_ratio
+        assert classified[0][2] >= processor.config.segmentation.min_species_energy_ratio
 
     def test_rejects_speech_frequency_segment(self):
         """150Hz lives in low band; ratio < 1.2 → rejected."""
@@ -467,3 +467,28 @@ class TestShortMeowDetection:
         cat_band, _ = processor._build_discriminator_signals(samples, rate)
         candidates = processor._detect_segments(cat_band, rate)
         assert len(candidates) == 0
+
+
+@pytest.mark.unit
+class TestSpeciesConfig:
+    def test_processor_config_for_species_dog_has_dog_band(self):
+        """processor_config_for_species('dog') builds a SegmentationConfig with the dog
+        frequency band (60–3500 Hz) and MeowProcessor accepts it without error."""
+        from meowdb.species import processor_config_for_species
+
+        config = processor_config_for_species("dog")
+        assert config.segmentation.band_low_hz == pytest.approx(60.0)
+        assert config.segmentation.band_high_hz == pytest.approx(3500.0)
+
+        processor = MeowProcessor(config=config)
+        assert processor.config.segmentation.band_low_hz == pytest.approx(60.0)
+        assert processor.config.segmentation.band_high_hz == pytest.approx(3500.0)
+
+    def test_get_species_config_unknown_falls_back_to_cat(self):
+        """get_species_config with an unrecognised species name returns cat defaults."""
+        from meowdb.species import SPECIES_REGISTRY, get_species_config
+
+        cat_cfg = SPECIES_REGISTRY["cat"]
+        unk_cfg = get_species_config("unknown_species")
+        assert unk_cfg.fmin == pytest.approx(cat_cfg.fmin)
+        assert unk_cfg.fmax == pytest.approx(cat_cfg.fmax)

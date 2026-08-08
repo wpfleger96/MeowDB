@@ -10,7 +10,9 @@ function libraryView() {
     limit: 50,
     sort: 'newest',
     filterLabel: '',
+    filterAnimal: '',
     allLabels: [],
+    animals: [],
     activeLabels: [],
     isLoading: false,
     isLoadingMore: false,
@@ -29,6 +31,7 @@ function libraryView() {
       await Promise.all([
         this._loadMeows(true),
         this._loadLabels(),
+        this._loadAnimals(),
       ]);
     },
 
@@ -47,9 +50,10 @@ function libraryView() {
           limit: this.limit,
           offset: this.offset,
         };
-        if (this.filterLabel) params.label = this.filterLabel;
+        if (this.filterLabel)  params.label     = this.filterLabel;
+        if (this.filterAnimal) params.animal_id = this.filterAnimal;
 
-        const res = await getMeows(params);
+        const res = await getSounds(params);
         this.meows = reset ? res.items : [...this.meows, ...res.items];
         this.total = res.total;
         this.offset = this.meows.length;
@@ -70,6 +74,25 @@ function libraryView() {
       }
     },
 
+    async _loadAnimals() {
+      const boot = window.__BOOTSTRAP__ || {};
+      if (boot.animals) {
+        this.animals = boot.animals;
+        return;
+      }
+      try {
+        const res = await getAnimals();
+        this.animals = res.items;
+      } catch {
+        this.animals = [];
+      }
+    },
+
+    animalName(animalId) {
+      const animal = this.animals.find(a => a.id === animalId);
+      return animal ? animal.name : '';
+    },
+
     async changeSort(newSort) {
       this.sort = newSort;
       await this._loadMeows(true);
@@ -87,6 +110,11 @@ function libraryView() {
 
     async toggleLabelFilter(label) {
       this.filterLabel = this.filterLabel === label ? '' : label;
+      await this._loadMeows(true);
+    },
+
+    async setAnimalFilter(id) {
+      this.filterAnimal = id;
       await this._loadMeows(true);
     },
 
@@ -244,7 +272,7 @@ function libraryView() {
       if (!this.detailMeow) return;
       if (!this.requireAuth()) return;
       try {
-        await updateMeow(this.detailMeow.id, { labels: this.detailMeow.labels });
+        await updateSound(this.detailMeow.id, { labels: this.detailMeow.labels });
         // Update the row in the list too
         const idx = this.meows.findIndex((m) => m.id === this.detailMeow.id);
         if (idx !== -1) {
@@ -261,7 +289,7 @@ function libraryView() {
       if (!this.detailMeow) return;
       if (!this.requireAuth()) return;
       try {
-        const updated = await updateMeow(this.detailMeow.id, { title: this.detailTitle || null });
+        const updated = await updateSound(this.detailMeow.id, { title: this.detailTitle || null });
         this.detailMeow = { ...updated, labels: updated.labels || [] };
         const idx = this.meows.findIndex((m) => m.id === this.detailMeow.id);
         if (idx !== -1) this.meows[idx] = { ...this.meows[idx], title: updated.title };
@@ -283,11 +311,11 @@ function libraryView() {
       if (!this.requireAuth()) return;
       const id = this.detailMeow.id;
       try {
-        await deleteMeow(id);
+        await deleteSound(id);
         this.meows = this.meows.filter((m) => m.id !== id);
         this.total = Math.max(0, this.total - 1);
         this.closeDetail();
-        showToast('Meow deleted', 'success');
+        showToast('Sound deleted', 'success');
         // Refresh label counts
         await this._loadLabels();
       } catch (err) {

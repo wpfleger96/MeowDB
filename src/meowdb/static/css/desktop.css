@@ -160,6 +160,11 @@
     padding: 0 var(--sp-4);
   }
 
+  /* Animal selector spans both columns above the upload/record pair */
+  .ingest-idle .ingest-animal-field {
+    grid-column: 1 / -1;
+  }
+
   .ingest-idle .upload-zone {
     margin: var(--sp-4) 0 0;
   }

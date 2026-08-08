@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from meowdb import __version__
 from meowdb.api import auth
-from meowdb.api.routers import audio, ingest, meows, photos, stats, uniqueness
+from meowdb.api.routers import animals, audio, ingest, photos, sounds, stats, uniqueness
 from meowdb.config import (
     _DEFAULT_SESSION_SECRET,
     CORS_ORIGINS,
@@ -38,27 +38,6 @@ _STATIC_DIR = Path(__file__).parent.parent / "static"
 _INDEX_HTML = _STATIC_DIR / "index.html"
 _logger = logging.getLogger(__name__)
 _HASHED_ASSET_RE = re.compile(r"\.[0-9a-f]{8}\.(js|css)$")
-
-
-def _migrate_photos(db: Any, logger: logging.Logger) -> None:
-    from meowdb.photos import optimize_photo
-
-    photos = db.get_photos()
-    migrated = 0
-    for photo in photos:
-        if photo["filename"].endswith(".webp"):
-            continue
-        orig_path = PHOTOS_DIR / photo["filename"]
-        if not orig_path.exists():
-            logger.warning("Migration: photo file missing, skipping: %s", orig_path)
-            continue
-        optimized_path = optimize_photo(orig_path)
-        db.update_photo_filename(photo["id"], optimized_path.name)
-        orig_path.unlink(missing_ok=True)
-        logger.info("Migration: converted %s → %s", orig_path.name, optimized_path.name)
-        migrated += 1
-    if migrated == 0:
-        logger.info("Migration: no photos needed conversion")
 
 
 @asynccontextmanager
@@ -81,7 +60,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         directory.mkdir(parents=True, exist_ok=True)
 
     app.state.db = MeowDB(DB_PATH)
-    _migrate_photos(app.state.db, _logger)
     yield
     app.state.db.close()
 
@@ -121,7 +99,8 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     app.include_router(auth.router, prefix="/api")
-    app.include_router(meows.router, prefix="/api")
+    app.include_router(sounds.router, prefix="/api")
+    app.include_router(animals.router, prefix="/api")
     app.include_router(ingest.router, prefix="/api")
     app.include_router(audio.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
@@ -147,9 +126,13 @@ def create_app() -> FastAPI:
             photo = db.get_random_photo()
             photo_payload = photos.photo_to_response(photo).model_dump() if photo else None
             payload = {
-                "meow_count": db.get_count(),
+                "sound_count": db.get_count(),
                 "auth": auth.auth_status_payload(request),
                 "photo": photo_payload,
+                "animals": [
+                    {"id": a["id"], "name": a["name"], "species": a["species"]}
+                    for a in db.get_animals()
+                ],
             }
             bootstrap_json = json.dumps(payload).replace("<", "\\u003c")
             if full_path == "" and photo_payload:  # full_path is "" for the root "/" request

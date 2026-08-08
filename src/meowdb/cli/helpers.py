@@ -25,6 +25,29 @@ def die(ctx: Context, message: str) -> Never:
     sys.exit(1)
 
 
+def resolve_animal(ctx: Context, name_or_id: str | None) -> dict:  # type: ignore[type-arg]
+    """Resolve an --animal name/ID to an animal dict.
+
+    None → first animal (by created_at). Exits with an error if the database
+    has no animals. Otherwise matches by exact id first, then case-insensitive name.
+    """
+    animals = ctx.db.get_animals()
+    if not animals:
+        die(ctx, "No animals in the database. Run `meowdb db init` to set one up.")
+
+    if name_or_id is None:
+        return animals[0]
+
+    for animal in animals:
+        if animal["id"] == name_or_id:
+            return animal
+    for animal in animals:
+        if animal["name"].lower() == name_or_id.lower():
+            return animal
+
+    die(ctx, f"Animal not found: {name_or_id!r}")
+
+
 def play_audio(path: Path) -> None:
     subprocess.run(
         ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],

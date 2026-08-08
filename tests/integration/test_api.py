@@ -53,8 +53,8 @@ def client(tmp_dirs):
         patch("meowdb.api.routers.ingest.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
-        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
-        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.sounds.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.sounds.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
@@ -91,8 +91,8 @@ def seeded_client(tmp_dirs, silent_wav_bytes):
         patch("meowdb.api.routers.ingest.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.ingest.MP3_DIR", mp3_dir),
         patch("meowdb.api.routers.audio.MP3_DIR", mp3_dir),
-        patch("meowdb.api.routers.meows.WAV_DIR", wav_dir),
-        patch("meowdb.api.routers.meows.MP3_DIR", mp3_dir),
+        patch("meowdb.api.routers.sounds.WAV_DIR", wav_dir),
+        patch("meowdb.api.routers.sounds.MP3_DIR", mp3_dir),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
@@ -102,6 +102,7 @@ def seeded_client(tmp_dirs, silent_wav_bytes):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         app = create_app()
         with TestClient(app, raise_server_exceptions=True) as tc:
+            animal_id = app.state.db.get_animals()[0]["id"]
             app.state.db.add(
                 {
                     "timestamp": "2026-01-01T00:00:00",
@@ -111,15 +112,16 @@ def seeded_client(tmp_dirs, silent_wav_bytes):
                     "mp3_path": str(mp3_file),
                     "waveform_data": [0.1, 0.2, 0.3],
                     "peak_dbfs": -10.0,
-                    "cat_energy_ratio": 2.5,
+                    "species_energy_ratio": 2.5,
+                    "animal_id": animal_id,
                 }
             )
             yield tc
 
 
 @pytest.mark.integration
-def test_list_meows_empty(client):
-    resp = client.get("/api/meows")
+def test_list_sounds_empty(client):
+    resp = client.get("/api/sounds")
     assert resp.status_code == 200
     data = resp.json()
     assert data["items"] == []
@@ -129,14 +131,14 @@ def test_list_meows_empty(client):
 
 
 @pytest.mark.integration
-def test_random_meow_empty_returns_404(client):
-    resp = client.get("/api/meows/random")
+def test_random_sound_empty_returns_404(client):
+    resp = client.get("/api/sounds/random")
     assert resp.status_code == 404
 
 
 @pytest.mark.integration
-def test_random_meow_with_data(seeded_client):
-    resp = seeded_client.get("/api/meows/random")
+def test_random_sound_with_data(seeded_client):
+    resp = seeded_client.get("/api/sounds/random")
     assert resp.status_code == 200
     data = resp.json()
     assert "id" in data
@@ -144,8 +146,8 @@ def test_random_meow_with_data(seeded_client):
 
 
 @pytest.mark.integration
-def test_list_meows_with_data(seeded_client):
-    resp = seeded_client.get("/api/meows")
+def test_list_sounds_with_data(seeded_client):
+    resp = seeded_client.get("/api/sounds")
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
@@ -154,12 +156,12 @@ def test_list_meows_with_data(seeded_client):
 
 
 @pytest.mark.integration
-def test_patch_meow_labels(seeded_client):
-    list_resp = seeded_client.get("/api/meows")
-    meow_id = list_resp.json()["items"][0]["id"]
+def test_patch_sound_labels(seeded_client):
+    list_resp = seeded_client.get("/api/sounds")
+    sound_id = list_resp.json()["items"][0]["id"]
 
     resp = seeded_client.patch(
-        f"/api/meows/{meow_id}",
+        f"/api/sounds/{sound_id}",
         json={"labels": ["cute", "loud"]},
     )
     assert resp.status_code == 200
@@ -167,49 +169,49 @@ def test_patch_meow_labels(seeded_client):
 
 
 @pytest.mark.integration
-def test_patch_meow_not_found(client):
+def test_patch_sound_not_found(client):
     resp = client.patch(
-        "/api/meows/nonexistent-id",
+        "/api/sounds/nonexistent-id",
         json={"labels": ["test"]},
     )
     assert resp.status_code == 404
 
 
 @pytest.mark.integration
-def test_delete_meow(seeded_client):
-    list_resp = seeded_client.get("/api/meows")
-    meow_id = list_resp.json()["items"][0]["id"]
+def test_delete_sound(seeded_client):
+    list_resp = seeded_client.get("/api/sounds")
+    sound_id = list_resp.json()["items"][0]["id"]
 
-    resp = seeded_client.delete(f"/api/meows/{meow_id}")
+    resp = seeded_client.delete(f"/api/sounds/{sound_id}")
     assert resp.status_code == 204
 
-    list_resp2 = seeded_client.get("/api/meows")
+    list_resp2 = seeded_client.get("/api/sounds")
     assert list_resp2.json()["total"] == 0
 
 
 @pytest.mark.integration
-def test_delete_meow_not_found(client):
-    resp = client.delete("/api/meows/nonexistent-id")
+def test_delete_sound_not_found(client):
+    resp = client.delete("/api/sounds/nonexistent-id")
     assert resp.status_code == 404
 
 
 @pytest.mark.integration
-def test_play_meow(seeded_client):
-    list_resp = seeded_client.get("/api/meows")
+def test_play_sound(seeded_client):
+    list_resp = seeded_client.get("/api/sounds")
     initial_play_count = list_resp.json()["items"][0]["play_count"]
-    meow_id = list_resp.json()["items"][0]["id"]
+    sound_id = list_resp.json()["items"][0]["id"]
 
-    resp = seeded_client.post(f"/api/meows/{meow_id}/play")
+    resp = seeded_client.post(f"/api/sounds/{sound_id}/play")
     assert resp.status_code == 204
 
-    list_resp2 = seeded_client.get("/api/meows")
+    list_resp2 = seeded_client.get("/api/sounds")
     new_play_count = list_resp2.json()["items"][0]["play_count"]
     assert new_play_count == initial_play_count + 1
 
 
 @pytest.mark.integration
-def test_play_meow_not_found(client):
-    response = client.post("/api/meows/nonexistent-id/play")
+def test_play_sound_not_found(client):
+    response = client.post("/api/sounds/nonexistent-id/play")
     assert response.status_code == 404
 
 
@@ -218,7 +220,7 @@ def test_get_stats_empty(client):
     resp = client.get("/api/stats")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_meows"] == 0
+    assert data["total_sounds"] == 0
     assert data["total_duration_ms"] == 0
     assert data["label_counts"] == {}
 
@@ -228,7 +230,7 @@ def test_get_stats_with_data(seeded_client):
     resp = seeded_client.get("/api/stats")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_meows"] == 1
+    assert data["total_sounds"] == 1
     assert data["total_duration_ms"] == 1000
 
 
@@ -241,9 +243,9 @@ def test_get_labels_empty(client):
 
 @pytest.mark.integration
 def test_get_labels_with_data(seeded_client):
-    list_resp = seeded_client.get("/api/meows")
-    meow_id = list_resp.json()["items"][0]["id"]
-    seeded_client.patch(f"/api/meows/{meow_id}", json={"labels": ["happy"]})
+    list_resp = seeded_client.get("/api/sounds")
+    sound_id = list_resp.json()["items"][0]["id"]
+    seeded_client.patch(f"/api/sounds/{sound_id}", json={"labels": ["happy"]})
 
     resp = seeded_client.get("/api/labels")
     assert resp.status_code == 200
@@ -268,67 +270,67 @@ def test_audio_stream_not_found(client):
 
 @pytest.mark.integration
 def test_audio_stream_with_data(seeded_client):
-    list_resp = seeded_client.get("/api/meows")
-    meow_id = list_resp.json()["items"][0]["id"]
+    list_resp = seeded_client.get("/api/sounds")
+    sound_id = list_resp.json()["items"][0]["id"]
 
-    resp = seeded_client.get(f"/api/audio/{meow_id}")
+    resp = seeded_client.get(f"/api/audio/{sound_id}")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "audio/mpeg"
 
 
 @pytest.mark.integration
 def test_feedback_upvote(seeded_client):
-    meow_id = seeded_client.get("/api/meows").json()["items"][0]["id"]
-    resp = seeded_client.post(f"/api/meows/{meow_id}/feedback", json={"vote": "up"})
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+    resp = seeded_client.post(f"/api/sounds/{sound_id}/feedback", json={"vote": "up"})
     assert resp.status_code == 204
-    data = seeded_client.get("/api/meows").json()["items"][0]
+    data = seeded_client.get("/api/sounds").json()["items"][0]
     assert data["upvote_count"] == 1
     assert data["downvote_count"] == 0
 
 
 @pytest.mark.integration
 def test_feedback_downvote(seeded_client):
-    meow_id = seeded_client.get("/api/meows").json()["items"][0]["id"]
-    resp = seeded_client.post(f"/api/meows/{meow_id}/feedback", json={"vote": "down"})
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+    resp = seeded_client.post(f"/api/sounds/{sound_id}/feedback", json={"vote": "down"})
     assert resp.status_code == 204
-    data = seeded_client.get("/api/meows").json()["items"][0]
+    data = seeded_client.get("/api/sounds").json()["items"][0]
     assert data["downvote_count"] == 1
     assert data["upvote_count"] == 0
 
 
 @pytest.mark.integration
 def test_feedback_invalid_vote(seeded_client):
-    meow_id = seeded_client.get("/api/meows").json()["items"][0]["id"]
-    resp = seeded_client.post(f"/api/meows/{meow_id}/feedback", json={"vote": "sideways"})
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+    resp = seeded_client.post(f"/api/sounds/{sound_id}/feedback", json={"vote": "sideways"})
     assert resp.status_code == 422
 
 
 @pytest.mark.integration
 def test_feedback_not_found(client):
-    resp = client.post("/api/meows/nonexistent-id/feedback", json={"vote": "up"})
+    resp = client.post("/api/sounds/nonexistent-id/feedback", json={"vote": "up"})
     assert resp.status_code == 404
 
 
 @pytest.mark.integration
 def test_feedback_switch_vote(seeded_client):
-    meow_id = seeded_client.get("/api/meows").json()["items"][0]["id"]
-    seeded_client.post(f"/api/meows/{meow_id}/feedback", json={"vote": "up"})
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+    seeded_client.post(f"/api/sounds/{sound_id}/feedback", json={"vote": "up"})
     resp = seeded_client.post(
-        f"/api/meows/{meow_id}/feedback", json={"vote": "down", "previous": "up"}
+        f"/api/sounds/{sound_id}/feedback", json={"vote": "down", "previous": "up"}
     )
     assert resp.status_code == 204
-    data = seeded_client.get("/api/meows").json()["items"][0]
+    data = seeded_client.get("/api/sounds").json()["items"][0]
     assert data["upvote_count"] == 0
     assert data["downvote_count"] == 1
 
 
 @pytest.mark.integration
-def test_list_meows_sort_most_downvoted(seeded_client, tmp_dirs):
-    # Add a second meow with more downvotes
+def test_list_sounds_sort_most_downvoted(seeded_client, tmp_dirs):
     wav_file = next(tmp_dirs["wav"].glob("*.wav"))
     mp3_file = next(tmp_dirs["mp3"].glob("*.mp3"))
-    meow_id_1 = seeded_client.get("/api/meows").json()["items"][0]["id"]
-    meow_id_2 = seeded_client.app.state.db.add(
+    animal_id = seeded_client.app.state.db.get_animals()[0]["id"]
+    sound_id_1 = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+    sound_id_2 = seeded_client.app.state.db.add(
         {
             "timestamp": "2026-01-02T00:00:00",
             "duration_ms": 500,
@@ -337,26 +339,28 @@ def test_list_meows_sort_most_downvoted(seeded_client, tmp_dirs):
             "mp3_path": str(mp3_file),
             "waveform_data": [],
             "peak_dbfs": -10.0,
-            "cat_energy_ratio": 2.5,
+            "species_energy_ratio": 2.5,
+            "animal_id": animal_id,
         }
     )
-    seeded_client.post(f"/api/meows/{meow_id_1}/feedback", json={"vote": "down"})
-    seeded_client.post(f"/api/meows/{meow_id_2}/feedback", json={"vote": "down"})
-    seeded_client.post(f"/api/meows/{meow_id_2}/feedback", json={"vote": "down"})
+    seeded_client.post(f"/api/sounds/{sound_id_1}/feedback", json={"vote": "down"})
+    seeded_client.post(f"/api/sounds/{sound_id_2}/feedback", json={"vote": "down"})
+    seeded_client.post(f"/api/sounds/{sound_id_2}/feedback", json={"vote": "down"})
 
-    resp = seeded_client.get("/api/meows?sort=most_downvoted")
+    resp = seeded_client.get("/api/sounds?sort=most_downvoted")
     assert resp.status_code == 200
     items = resp.json()["items"]
-    assert items[0]["id"] == meow_id_2
+    assert items[0]["id"] == sound_id_2
     assert items[0]["downvote_count"] == 2
 
 
 @pytest.mark.integration
-def test_list_meows_sort_most_upvoted(seeded_client, tmp_dirs):
+def test_list_sounds_sort_most_upvoted(seeded_client, tmp_dirs):
     wav_file = next(tmp_dirs["wav"].glob("*.wav"))
     mp3_file = next(tmp_dirs["mp3"].glob("*.mp3"))
-    meow_id_1 = seeded_client.get("/api/meows").json()["items"][0]["id"]
-    meow_id_2 = seeded_client.app.state.db.add(
+    animal_id = seeded_client.app.state.db.get_animals()[0]["id"]
+    sound_id_1 = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+    sound_id_2 = seeded_client.app.state.db.add(
         {
             "timestamp": "2026-01-02T00:00:00",
             "duration_ms": 500,
@@ -365,17 +369,18 @@ def test_list_meows_sort_most_upvoted(seeded_client, tmp_dirs):
             "mp3_path": str(mp3_file),
             "waveform_data": [],
             "peak_dbfs": -10.0,
-            "cat_energy_ratio": 2.5,
+            "species_energy_ratio": 2.5,
+            "animal_id": animal_id,
         }
     )
-    seeded_client.post(f"/api/meows/{meow_id_1}/feedback", json={"vote": "up"})
-    seeded_client.post(f"/api/meows/{meow_id_1}/feedback", json={"vote": "up"})
-    seeded_client.post(f"/api/meows/{meow_id_2}/feedback", json={"vote": "up"})
+    seeded_client.post(f"/api/sounds/{sound_id_1}/feedback", json={"vote": "up"})
+    seeded_client.post(f"/api/sounds/{sound_id_1}/feedback", json={"vote": "up"})
+    seeded_client.post(f"/api/sounds/{sound_id_2}/feedback", json={"vote": "up"})
 
-    resp = seeded_client.get("/api/meows?sort=most_upvoted")
+    resp = seeded_client.get("/api/sounds?sort=most_upvoted")
     assert resp.status_code == 200
     items = resp.json()["items"]
-    assert items[0]["id"] == meow_id_1
+    assert items[0]["id"] == sound_id_1
     assert items[0]["upvote_count"] == 2
 
 
@@ -405,8 +410,8 @@ def test_ingest_flow_post_and_poll(tmp_dirs, silent_wav_bytes):
         patch("meowdb.api.routers.ingest.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
-        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
-        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.sounds.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.sounds.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
@@ -416,10 +421,12 @@ def test_ingest_flow_post_and_poll(tmp_dirs, silent_wav_bytes):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         app = create_app()
         with TestClient(app, raise_server_exceptions=True) as tc:
+            animal_id = app.state.db.get_animals()[0]["id"]
             wav_bytes = silent_wav_bytes
             resp = tc.post(
                 "/api/ingest",
                 files={"file": ("test.wav", wav_bytes, "audio/wav")},
+                data={"animal_id": animal_id},
             )
             assert resp.status_code == 202
             data = resp.json()
@@ -453,8 +460,8 @@ def test_ingest_commit(tmp_dirs, silent_wav_bytes):
         patch("meowdb.api.routers.ingest.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.ingest.MP3_DIR", mp3_dir),
         patch("meowdb.api.routers.audio.MP3_DIR", mp3_dir),
-        patch("meowdb.api.routers.meows.WAV_DIR", wav_dir),
-        patch("meowdb.api.routers.meows.MP3_DIR", mp3_dir),
+        patch("meowdb.api.routers.sounds.WAV_DIR", wav_dir),
+        patch("meowdb.api.routers.sounds.MP3_DIR", mp3_dir),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
@@ -465,7 +472,8 @@ def test_ingest_commit(tmp_dirs, silent_wav_bytes):
         app = create_app()
         with TestClient(app, raise_server_exceptions=True) as tc:
             db = app.state.db
-            job_id = db.create_job("test.wav")
+            animal_id = db.get_animals()[0]["id"]
+            job_id = db.create_job("test.wav", animal_id)
             job_staging = staging_dir / job_id
             job_staging.mkdir(parents=True)
             seg_wav = job_staging / "seg_000.wav"
@@ -482,7 +490,7 @@ def test_ingest_commit(tmp_dirs, silent_wav_bytes):
                         "wav_path": str(seg_wav),
                         "waveform_data": [0.1, 0.2],
                         "peak_dbfs": -12.0,
-                        "cat_energy_ratio": 2.0,
+                        "species_energy_ratio": 2.0,
                     }
                 ],
             )
@@ -498,16 +506,18 @@ def test_ingest_commit(tmp_dirs, silent_wav_bytes):
             )
             assert commit_resp.status_code == 200
             data = commit_resp.json()
-            assert len(data["meow_ids"]) == 1
+            assert len(data["sound_ids"]) == 1
             assert data["rejected_count"] == 0
 
 
 @pytest.mark.integration
 def test_stream_source_audio(client, silent_wav_bytes):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
     wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
 
@@ -528,10 +538,12 @@ def test_ingest_source_traversal_job_id_denied(client):
 
 @pytest.mark.integration
 def test_detect_regions(client, silent_wav_bytes):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
     wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
 
@@ -546,10 +558,12 @@ def test_detect_regions(client, silent_wav_bytes):
 @pytest.mark.integration
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 def test_clip_and_commit(client, silent_wav_bytes):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
     wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
 
@@ -560,16 +574,18 @@ def test_clip_and_commit(client, silent_wav_bytes):
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["meow_ids"]) == 1
+    assert len(data["sound_ids"]) == 1
     assert data["rejected_count"] == 0
 
 
 @pytest.mark.integration
 def test_clip_empty_regions_rejected(client, silent_wav_bytes):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
     wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
 
@@ -582,10 +598,12 @@ def test_clip_empty_regions_rejected(client, silent_wav_bytes):
 
 @pytest.mark.integration
 def test_clip_inverted_region_rejected(client, silent_wav_bytes):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
     wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
 
@@ -598,10 +616,12 @@ def test_clip_inverted_region_rejected(client, silent_wav_bytes):
 
 @pytest.mark.integration
 def test_clip_negative_region_rejected(client, silent_wav_bytes):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
     wav_bytes = silent_wav_bytes
     resp = client.post(
         "/api/ingest",
         files={"file": ("test.wav", io.BytesIO(wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
 
@@ -641,8 +661,8 @@ def auth_client(tmp_dirs):
         patch("meowdb.api.routers.ingest.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
-        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
-        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.sounds.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.sounds.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.IS_LOCALHOST", False),
@@ -685,8 +705,8 @@ def test_login_no_password_configured(tmp_dirs):
         patch("meowdb.api.routers.ingest.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
-        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
-        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.sounds.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.sounds.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
@@ -710,14 +730,14 @@ def test_login_success_and_auth_status(auth_client):
 
 
 @pytest.mark.integration
-def test_delete_meow_requires_auth(auth_client):
-    resp = auth_client.delete("/api/meows/nonexistent-id")
+def test_delete_sound_requires_auth(auth_client):
+    resp = auth_client.delete("/api/sounds/nonexistent-id")
     assert resp.status_code == 401
 
 
 @pytest.mark.integration
 def test_public_endpoint_without_auth(auth_client):
-    resp = auth_client.get("/api/meows")
+    resp = auth_client.get("/api/sounds")
     assert resp.status_code == 200
 
 
@@ -728,7 +748,7 @@ def test_logout(auth_client):
     resp = auth_client.post("/api/auth/logout")
     assert resp.status_code == 200
 
-    resp = auth_client.delete("/api/meows/nonexistent-id")
+    resp = auth_client.delete("/api/sounds/nonexistent-id")
     assert resp.status_code == 401
 
 
@@ -748,15 +768,15 @@ def test_brute_force_lockout(auth_client):
 
 
 @pytest.mark.integration
-def test_patch_meow_requires_auth(auth_client):
-    resp = auth_client.patch("/api/meows/nonexistent-id", json={"labels": ["test"]})
+def test_patch_sound_requires_auth(auth_client):
+    resp = auth_client.patch("/api/sounds/nonexistent-id", json={"labels": ["test"]})
     assert resp.status_code == 401
 
 
 @pytest.mark.integration
 def test_login_grants_access_to_protected_endpoint(auth_client):
     auth_client.post("/api/auth/login", json={"password": _TEST_PASSWORD})
-    resp = auth_client.patch("/api/meows/nonexistent-id", json={"labels": ["test"]})
+    resp = auth_client.patch("/api/sounds/nonexistent-id", json={"labels": ["test"]})
     assert resp.status_code == 404  # 404 not found, not 401 unauthorized
 
 
@@ -785,8 +805,8 @@ def test_auth_bypass_requires_localhost(tmp_dirs):
         patch("meowdb.api.routers.ingest.WAV_DIR", tmp_dirs["wav"]),
         patch("meowdb.api.routers.ingest.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.routers.audio.MP3_DIR", tmp_dirs["mp3"]),
-        patch("meowdb.api.routers.meows.WAV_DIR", tmp_dirs["wav"]),
-        patch("meowdb.api.routers.meows.MP3_DIR", tmp_dirs["mp3"]),
+        patch("meowdb.api.routers.sounds.WAV_DIR", tmp_dirs["wav"]),
+        patch("meowdb.api.routers.sounds.MP3_DIR", tmp_dirs["mp3"]),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
         patch("meowdb.api.app.IS_LOCALHOST", True),
         patch("meowdb.api.auth.PASSWORD_HASH", ""),
@@ -796,7 +816,7 @@ def test_auth_bypass_requires_localhost(tmp_dirs):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         app = create_app()
         with TestClient(app, raise_server_exceptions=True) as tc:
-            resp = tc.delete("/api/meows/nonexistent-id")
+            resp = tc.delete("/api/sounds/nonexistent-id")
             assert resp.status_code == 401
 
 
@@ -838,7 +858,7 @@ def test_auth_status_no_password_localhost(client):
 
 @pytest.mark.integration
 def test_no_password_localhost_allows_writes(client):
-    resp = client.delete("/api/meows/nonexistent-id")
+    resp = client.delete("/api/sounds/nonexistent-id")
     assert resp.status_code == 404  # not 401 — write endpoint accessible without auth
 
 
@@ -878,7 +898,7 @@ def test_index_bootstrap_injected(seeded_client, tmp_dirs):
 
     assert "window.__BOOTSTRAP__ = {" in body
     payload = _bootstrap_from(body)
-    assert isinstance(payload["meow_count"], int)
+    assert isinstance(payload["sound_count"], int)
     assert payload["auth"] == auth_payload
     assert "{{BOOTSTRAP_JSON}}" not in body
     assert "{{PHOTO_PRELOAD}}" not in body
@@ -912,9 +932,13 @@ def test_index_photo_preload_only_on_root(client, tmp_dirs):
     photos_dir = tmp_dirs["data"] / "photos"
     photos_dir.mkdir(parents=True, exist_ok=True)
 
-    with patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
         upload_resp = client.post(
-            "/api/photos",
+            f"/api/animals/{animal_id}/photos",
             files={"file": ("cat.png", _png_bytes(), "image/png")},
         )
     assert upload_resp.status_code == 201
@@ -934,3 +958,419 @@ def test_index_photo_preload_only_on_root(client, tmp_dirs):
 
     assert '<link rel="preload"' not in stats_body
     assert stats_payload["photo"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Animals CRUD tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_list_animals_includes_squishy(client):
+    resp = client.get("/api/animals")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"]) >= 1
+    squishy = next((a for a in data["items"] if a["name"] == "Squishy"), None)
+    assert squishy is not None
+    assert squishy["species"] == "cat"
+    assert "sound_count" in squishy
+    assert "photo_count" in squishy
+
+
+@pytest.mark.integration
+def test_create_animal_requires_auth(auth_client):
+    resp = auth_client.post("/api/animals", json={"name": "Rex", "species": "dog"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.integration
+def test_create_animal(client):
+    resp = client.post("/api/animals", json={"name": "Rex", "species": "dog"})
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["name"] == "Rex"
+    assert data["species"] == "dog"
+    assert data["sound_count"] == 0
+    assert data["photo_count"] == 0
+    assert "id" in data
+
+
+@pytest.mark.integration
+def test_created_animal_appears_in_list(client):
+    client.post("/api/animals", json={"name": "Buddy", "species": "dog"})
+    resp = client.get("/api/animals")
+    names = [a["name"] for a in resp.json()["items"]]
+    assert "Buddy" in names
+
+
+@pytest.mark.integration
+def test_delete_animal_cascades_sounds(seeded_client):
+    animal_id = seeded_client.app.state.db.get_animals()[0]["id"]
+    # Squishy already has 1 sound from the seeded_client fixture
+    assert seeded_client.get("/api/sounds").json()["total"] == 1
+
+    resp = seeded_client.delete(f"/api/animals/{animal_id}")
+    assert resp.status_code == 204
+
+    # Animal is gone
+    assert seeded_client.get("/api/animals").json()["items"] == []
+    # Sound cascaded away
+    assert seeded_client.get("/api/sounds").json()["total"] == 0
+
+
+@pytest.mark.integration
+def test_delete_animal_not_found(client):
+    resp = client.delete("/api/animals/nonexistent-id")
+    assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_delete_animal_returns_404_after(client):
+    resp = client.post("/api/animals", json={"name": "Temp", "species": "cat"})
+    animal_id = resp.json()["id"]
+
+    client.delete(f"/api/animals/{animal_id}")
+    resp2 = client.delete(f"/api/animals/{animal_id}")
+    assert resp2.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /sounds/random — photo embedding and cross-animal isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_random_sound_photo_null_when_no_photos(seeded_client):
+    # Squishy has a sound but no photos — photo field must be null
+    resp = seeded_client.get("/api/sounds/random")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["photo"] is None
+
+
+@pytest.mark.integration
+def test_random_sound_embeds_photo_from_own_animal(seeded_client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = seeded_client.app.state.db.get_animals()[0]["id"]
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        upload_resp = seeded_client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+    assert upload_resp.status_code == 201
+
+    resp = seeded_client.get("/api/sounds/random")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["photo"] is not None
+    assert data["photo"]["animal_id"] == animal_id
+
+
+@pytest.mark.integration
+def test_random_sound_no_cross_animal_photo_fallback(seeded_client, tmp_dirs):
+    # Squishy has a sound (seeded) but no photos.
+    # Rex has a photo but no sounds.
+    # Random sound belongs to Squishy → photo must be null, not Rex's photo.
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+
+    db = seeded_client.app.state.db
+    rex_id = db.add_animal("Rex", "dog")
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        seeded_client.post(
+            f"/api/animals/{rex_id}/photos",
+            files={"file": ("dog.png", _png_bytes(), "image/png")},
+        )
+
+    resp = seeded_client.get("/api/sounds/random")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Photo is null — no cross-animal fallback to Rex's photo
+    assert data["photo"] is None
+
+
+# ---------------------------------------------------------------------------
+# animal_id filter on GET /sounds
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_list_sounds_filter_by_animal_id(seeded_client, tmp_dirs):
+    db = seeded_client.app.state.db
+    squishy_id = db.get_animals()[0]["id"]
+    wav_file = next(tmp_dirs["wav"].glob("*.wav"))
+    mp3_file = next(tmp_dirs["mp3"].glob("*.mp3"))
+
+    # Add a second animal with its own sound
+    rex_id = db.add_animal("Rex", "dog")
+    db.add(
+        {
+            "timestamp": "2026-01-02T00:00:00",
+            "duration_ms": 500,
+            "labels": [],
+            "wav_path": str(wav_file),
+            "mp3_path": str(mp3_file),
+            "waveform_data": [],
+            "peak_dbfs": -10.0,
+            "species_energy_ratio": 2.5,
+            "animal_id": rex_id,
+        }
+    )
+
+    squishy_resp = seeded_client.get(f"/api/sounds?animal_id={squishy_id}")
+    assert squishy_resp.status_code == 200
+    squishy_data = squishy_resp.json()
+    assert squishy_data["total"] == 1
+    assert squishy_data["items"][0]["animal_id"] == squishy_id
+
+    rex_resp = seeded_client.get(f"/api/sounds?animal_id={rex_id}")
+    assert rex_resp.json()["total"] == 1
+    assert rex_resp.json()["items"][0]["animal_id"] == rex_id
+
+
+# ---------------------------------------------------------------------------
+# Ingest animal_id validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_ingest_requires_animal_id_field(client, silent_wav_bytes):
+    # Missing animal_id form field → 422 Unprocessable Entity
+    resp = client.post(
+        "/api/ingest",
+        files={"file": ("test.wav", io.BytesIO(silent_wav_bytes), "audio/wav")},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.integration
+def test_ingest_unknown_animal_id_returns_404(client, silent_wav_bytes):
+    resp = client.post(
+        "/api/ingest",
+        files={"file": ("test.wav", io.BytesIO(silent_wav_bytes), "audio/wav")},
+        data={"animal_id": "nonexistent-animal-id"},
+    )
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Animal-scoped photo endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_animal_photo_upload_and_list(client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        upload_resp = client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+        assert upload_resp.status_code == 201
+        photo_data = upload_resp.json()
+        assert photo_data["animal_id"] == animal_id
+
+        list_resp = client.get(f"/api/animals/{animal_id}/photos")
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()["items"]) == 1
+    assert list_resp.json()["items"][0]["id"] == photo_data["id"]
+
+
+@pytest.mark.integration
+def test_animal_photo_upload_requires_auth(auth_client, tmp_dirs):
+    animal_id = auth_client.app.state.db.get_animals()[0]["id"]
+    resp = auth_client.post(
+        f"/api/animals/{animal_id}/photos",
+        files={"file": ("cat.png", _png_bytes(), "image/png")},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.integration
+def test_animal_photo_random_empty_returns_404(client):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+    resp = client.get(f"/api/animals/{animal_id}/photos/random")
+    assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_animal_photo_random_with_photo(client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+        resp = client.get(f"/api/animals/{animal_id}/photos/random")
+    assert resp.status_code == 200
+    assert resp.json()["animal_id"] == animal_id
+
+
+@pytest.mark.integration
+def test_animal_photo_delete(client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        upload_resp = client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+        photo_id = upload_resp.json()["id"]
+
+        del_resp = client.delete(f"/api/animals/{animal_id}/photos/{photo_id}")
+    assert del_resp.status_code == 204
+
+    list_resp = client.get(f"/api/animals/{animal_id}/photos")
+    assert list_resp.json()["items"] == []
+
+
+@pytest.mark.integration
+def test_animal_photo_edit_rotate(client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        upload_resp = client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+        assert upload_resp.status_code == 201
+        photo_id = upload_resp.json()["id"]
+
+        edit_resp = client.post(
+            f"/api/animals/{animal_id}/photos/{photo_id}/edit",
+            json={"action": "rotate", "direction": "cw"},
+        )
+    assert edit_resp.status_code == 200
+    assert edit_resp.json()["animal_id"] == animal_id
+
+
+# ---------------------------------------------------------------------------
+# Global /photos/random
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_global_random_photo_returns_404_when_empty(client):
+    resp = client.get("/api/photos/random")
+    assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_global_random_photo_includes_animal_id(client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("cat.png", _png_bytes(), "image/png")},
+        )
+        resp = client.get("/api/photos/random")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "animal_id" in data
+    assert data["animal_id"] == animal_id
+
+
+# ---------------------------------------------------------------------------
+# Stats — renamed keys and species_counts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_stats_has_renamed_keys(client):
+    resp = client.get("/api/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Renamed from total_meows
+    assert "total_sounds" in data
+    assert "total_duration_ms" in data
+    assert "first_sound_at" in data
+    assert "species_counts" in data
+    # Removed key must not be present
+    assert "total_meows" not in data
+
+
+@pytest.mark.integration
+def test_stats_species_counts(seeded_client, tmp_dirs):
+    db = seeded_client.app.state.db
+    rex_id = db.add_animal("Rex", "dog")
+    wav_file = next(tmp_dirs["wav"].glob("*.wav"))
+    mp3_file = next(tmp_dirs["mp3"].glob("*.mp3"))
+    db.add(
+        {
+            "timestamp": "2026-01-02T00:00:00",
+            "duration_ms": 500,
+            "labels": [],
+            "wav_path": str(wav_file),
+            "mp3_path": str(mp3_file),
+            "waveform_data": [],
+            "peak_dbfs": -10.0,
+            "species_energy_ratio": 2.5,
+            "animal_id": rex_id,
+        }
+    )
+
+    resp = seeded_client.get("/api/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_sounds"] == 2
+    assert data["species_counts"]["cat"] == 1
+    assert data["species_counts"]["dog"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap — sound_count and animals list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_bootstrap_contains_sound_count_and_animals(seeded_client, tmp_dirs):
+    (tmp_dirs["static"] / "index.html").write_text(_PLACEHOLDER_HTML)
+
+    resp = seeded_client.get("/")
+    assert resp.status_code == 200
+    payload = _bootstrap_from(resp.text)
+
+    assert "sound_count" in payload
+    assert isinstance(payload["sound_count"], int)
+    assert "animals" in payload
+    assert isinstance(payload["animals"], list)
+    squishy = next((a for a in payload["animals"] if a["name"] == "Squishy"), None)
+    assert squishy is not None
