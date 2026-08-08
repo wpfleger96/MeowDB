@@ -91,6 +91,18 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
             audio.export(str(mp3_path), format="mp3", bitrate="192k")
 
             ctx.db.import_meow(meow_id, meow, str(wav_path), str(mp3_path))
+
+            from meowdb.storage import is_s3_enabled, mp3_key, upload_to_s3_sync, wav_key
+
+            if is_s3_enabled():
+                wk = wav_key(meow_id)
+                mk = mp3_key(meow_id)
+                upload_to_s3_sync(wav_path, wk)
+                upload_to_s3_sync(mp3_path, mk)
+                ctx.db.update_meow_paths(meow_id, wk, mk)
+                wav_path.unlink(missing_ok=True)
+                mp3_path.unlink(missing_ok=True)
+
             new_ids.append(meow_id)
             imported_meows += 1
 
@@ -149,6 +161,13 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
                         bool(photo.get("is_default")),
                         photo.get("updated_at"),
                     )
+
+                    from meowdb.storage import is_s3_enabled, photo_key, upload_to_s3_sync
+
+                    if is_s3_enabled():
+                        upload_to_s3_sync(dest, photo_key(filename))
+                        dest.unlink(missing_ok=True)
+
                     imported_photos += 1
 
     if new_ids:

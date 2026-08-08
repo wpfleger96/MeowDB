@@ -1,0 +1,208 @@
+from __future__ import annotations
+
+import sys
+
+from pathlib import Path
+
+import click
+
+from meowdb.cli.helpers import build_context
+from meowdb.cli.options import db_path_option
+from meowdb.config import MP3_DIR, PHOTOS_DIR, WAV_DIR
+from meowdb.display import print_error, print_info, print_success
+
+
+@click.group()
+def storage() -> None:
+    """S3 storage management."""
+
+
+@storage.command(name="migrate-to-s3")
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Print what would be done without doing it."
+)
+@click.option(
+    "--delete-local", is_flag=True, default=False, help="Delete local files after uploading."
+)
+@db_path_option
+def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> None:
+    """Upload local media to S3 and update path records."""
+    from meowdb.storage import is_s3_enabled, mp3_key, photo_key, upload_to_s3_sync, wav_key
+
+    if not is_s3_enabled():
+        print_error("S3 is not configured. Set MEOWDB_S3_BUCKET to enable S3 mode.")
+        sys.exit(1)
+
+    ctx = build_context(db_path)
+    meows = ctx.db.get_all_for_export()
+    photos = ctx.db.get_photos()
+
+    meows_migrated = 0
+    meows_skipped = 0
+    photos_migrated = 0
+    photos_skipped = 0
+
+    for meow in meows:
+        meow_id: str = meow["id"]
+        wav_path: str | None = meow.get("wav_path")
+        mp3_path: str | None = meow.get("mp3_path")
+
+        if not wav_path or not wav_path.startswith("/"):
+            print_info(f"Meow {meow_id[:8]}: already migrated, skipping")
+            meows_skipped += 1
+            continue
+
+        wk = wav_key(meow_id)
+        mk = mp3_key(meow_id)
+
+        if dry_run:
+            print_info(f"Meow {meow_id[:8]}: would upload {wav_path} → {wk}")
+            if mp3_path:
+                print_info(f"Meow {meow_id[:8]}: would upload {mp3_path} → {mk}")
+            meows_migrated += 1
+            continue
+
+        upload_to_s3_sync(Path(wav_path), wk)
+        if mp3_path:
+            upload_to_s3_sync(Path(mp3_path), mk)
+        ctx.db.update_meow_paths(meow_id, wk, mk if mp3_path else (mp3_path or ""))
+
+        if delete_local:
+            Path(wav_path).unlink(missing_ok=True)
+            if mp3_path:
+                Path(mp3_path).unlink(missing_ok=True)
+
+        print_info(f"Meow {meow_id[:8]}: migrated")
+        meows_migrated += 1
+
+    for photo in photos:
+        filename: str = photo["filename"]
+        local_file = PHOTOS_DIR / filename
+
+        if not local_file.exists():
+            print_info(f"Photo {filename}: local file missing, skipping")
+            photos_skipped += 1
+            continue
+
+        pk = photo_key(filename)
+
+        if dry_run:
+            print_info(f"Photo {filename}: would upload → {pk}")
+            photos_migrated += 1
+            continue
+
+        upload_to_s3_sync(local_file, pk)
+
+        if delete_local:
+            local_file.unlink(missing_ok=True)
+
+        print_info(f"Photo {filename}: migrated")
+        photos_migrated += 1
+
+    ctx.db.close()
+
+    action = "would migrate" if dry_run else "migrated"
+    print_success(
+        f"{meows_migrated} meow(s) {action}, {meows_skipped} skipped"
+        f" | {photos_migrated} photo(s) {action}, {photos_skipped} skipped"
+    )
+
+
+@storage.command(name="restore-from-s3")
+@db_path_option
+def restore_from_s3(db_path: str | None) -> None:
+    """Download S3 media to local storage and restore path records."""
+    from meowdb.storage import (
+        S3NotFoundError,
+        download_from_s3_sync,
+        is_s3_enabled,
+        mp3_key,
+        photo_key,
+        wav_key,
+    )
+
+    if not is_s3_enabled():
+        print_error("S3 is not configured. Set MEOWDB_S3_BUCKET to enable S3 mode.")
+        sys.exit(1)
+
+    ctx = build_context(db_path)
+    meows = ctx.db.get_all_for_export()
+    photos = ctx.db.get_photos()
+
+    meows_restored = 0
+    meows_failed = 0
+    photos_restored = 0
+    photos_failed = 0
+
+    WAV_DIR.mkdir(parents=True, exist_ok=True)
+    MP3_DIR.mkdir(parents=True, exist_ok=True)
+
+    for meow in meows:
+        meow_id: str = meow["id"]
+        wav_path: str | None = meow.get("wav_path")
+        mp3_path: str | None = meow.get("mp3_path")
+
+        wav_is_s3 = bool(wav_path and not wav_path.startswith("/"))
+        mp3_is_s3 = bool(mp3_path and not mp3_path.startswith("/"))
+
+        if not wav_is_s3 and not mp3_is_s3:
+            continue
+
+        failed = False
+        new_wav = wav_path or ""
+        new_mp3 = mp3_path or ""
+
+        if wav_is_s3:
+            local_wav = WAV_DIR / f"{meow_id}.wav"
+            try:
+                download_from_s3_sync(wav_key(meow_id), local_wav)
+                new_wav = str(local_wav)
+            except S3NotFoundError as exc:
+                print_error(f"Meow {meow_id[:8]}: WAV not found in S3: {exc}")
+                failed = True
+
+        if mp3_is_s3:
+            local_mp3 = MP3_DIR / f"{meow_id}.mp3"
+            try:
+                download_from_s3_sync(mp3_key(meow_id), local_mp3)
+                new_mp3 = str(local_mp3)
+            except S3NotFoundError as exc:
+                print_error(f"Meow {meow_id[:8]}: MP3 not found in S3: {exc}")
+                failed = True
+
+        if failed:
+            meows_failed += 1
+            continue
+
+        ctx.db.update_meow_paths(meow_id, new_wav, new_mp3)
+        print_info(f"Meow {meow_id[:8]}: restored")
+        meows_restored += 1
+
+    PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+
+    for photo in photos:
+        filename: str = photo["filename"]
+        local_file = PHOTOS_DIR / filename
+
+        if local_file.exists():
+            continue
+
+        try:
+            download_from_s3_sync(photo_key(filename), local_file)
+        except S3NotFoundError as exc:
+            print_error(f"Photo {filename}: not found in S3: {exc}")
+            photos_failed += 1
+            continue
+
+        print_info(f"Photo {filename}: restored")
+        photos_restored += 1
+
+    ctx.db.close()
+
+    print_success(
+        f"{meows_restored} meow(s) restored, {meows_failed} failed"
+        f" | {photos_restored} photo(s) restored, {photos_failed} failed"
+    )
+
+    if meows_failed or photos_failed:
+        sys.exit(1)

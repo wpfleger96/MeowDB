@@ -15,9 +15,18 @@ from starlette.concurrency import run_in_threadpool
 
 from meowdb.api.auth import require_auth
 from meowdb.api.models import PhotoEditRequest, PhotoListResponse, PhotoResponse
-from meowdb.api.streaming import safe_path, save_upload, stream_file
+from meowdb.api.streaming import safe_path, save_upload, stream_file, stream_s3_object
 from meowdb.config import PHOTOS_DIR
 from meowdb.photos import optimize_photo
+from meowdb.storage import (
+    S3NotFoundError,
+    delete_from_s3,
+    download_from_s3,
+    is_s3_enabled,
+    photo_key,
+    s3_head_object,
+    upload_to_s3,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -102,6 +111,11 @@ async def upload_photo(
     except Exception:
         _logger.warning("Photo optimization failed for %s, using original", dest_filename)
 
+    if is_s3_enabled():
+        final_path = PHOTOS_DIR / dest_filename
+        await upload_to_s3(final_path, photo_key(dest_filename))
+        final_path.unlink(missing_ok=True)
+
     db.add_photo(dest_filename, photo_id=photo_id)
     photo = db.get_photo(photo_id)
     return photo_to_response(photo)
@@ -114,7 +128,37 @@ async def serve_photo(photo_id: str, request: Request) -> StreamingResponse:
     if photo is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    path = PHOTOS_DIR / photo["filename"]
+    filename = photo["filename"]
+    media_type = _MEDIA_TYPES.get(Path(filename).suffix.lower(), "application/octet-stream")
+
+    if is_s3_enabled():
+        local_path = PHOTOS_DIR / filename
+        if local_path.exists():
+            try:
+                local_path = safe_path(local_path, PHOTOS_DIR)
+            except ValueError:
+                raise HTTPException(status_code=403, detail="Access denied") from None
+            stat = local_path.stat()
+            etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
+            return stream_file(
+                local_path,
+                request,
+                media_type,
+                extra_headers={"Cache-Control": "public, max-age=86400", "ETag": etag},
+            )
+        key = photo_key(filename)
+        try:
+            head = await s3_head_object(key)
+        except S3NotFoundError:
+            raise HTTPException(status_code=404, detail="Photo file not found") from None
+        return await stream_s3_object(
+            key,
+            request,
+            media_type,
+            extra_headers={"Cache-Control": "public, max-age=86400", "ETag": str(head["etag"])},
+        )
+
+    path = PHOTOS_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="Photo file not found on disk")
 
@@ -123,7 +167,6 @@ async def serve_photo(photo_id: str, request: Request) -> StreamingResponse:
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied") from None
 
-    media_type = _MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
     stat = path.stat()
     etag = f'"{stat.st_mtime_ns}-{stat.st_size}"'
     return stream_file(
@@ -145,13 +188,23 @@ async def delete_photo(
     if photo is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    path = PHOTOS_DIR / photo["filename"]
-    if path.exists():
-        try:
-            safe_path(path, PHOTOS_DIR)
-            path.unlink(missing_ok=True)
-        except ValueError:
-            pass
+    if is_s3_enabled():
+        path = PHOTOS_DIR / photo["filename"]
+        if path.exists():
+            try:
+                safe_path(path, PHOTOS_DIR)
+                path.unlink(missing_ok=True)
+            except ValueError:
+                pass
+        await delete_from_s3(photo_key(photo["filename"]))
+    else:
+        path = PHOTOS_DIR / photo["filename"]
+        if path.exists():
+            try:
+                safe_path(path, PHOTOS_DIR)
+                path.unlink(missing_ok=True)
+            except ValueError:
+                pass
 
     db.delete_photo(photo_id)
 
@@ -205,20 +258,51 @@ async def edit_photo(
     if photo is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    path = PHOTOS_DIR / photo["filename"]
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Photo file not found on disk")
+    new_filename: str | None = None
 
-    try:
-        path = safe_path(path, PHOTOS_DIR)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied") from None
+    if is_s3_enabled():
+        orig_suffix = Path(photo["filename"]).suffix.lower()
+        if orig_suffix not in _ALLOWED_SUFFIXES:
+            orig_suffix = ".webp"
+        PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+        tmp_path = PHOTOS_DIR / f"_edit_{uuid.uuid4().hex}{orig_suffix}"
+        edited_path: Path | None = None
+        try:
+            try:
+                await download_from_s3(photo_key(photo["filename"]), tmp_path)
+            except S3NotFoundError:
+                raise HTTPException(status_code=404, detail="Photo file not found") from None
+            try:
+                edit_result, tmp_new_filename = await run_in_threadpool(_apply_edit, tmp_path, body)
+            except (OSError, ValueError) as exc:
+                _logger.warning("Photo edit failed for %s: %s", photo_id, exc)
+                raise HTTPException(status_code=500, detail="Failed to edit photo") from exc
+            edited_path = edit_result
+            if tmp_new_filename is not None:
+                new_filename = f"{Path(photo['filename']).stem}.webp"
+            target_filename = new_filename or photo["filename"]
+            await upload_to_s3(edit_result, photo_key(target_filename))
+            if new_filename is not None:
+                await delete_from_s3(photo_key(photo["filename"]))
+        finally:
+            tmp_path.unlink(missing_ok=True)
+            if edited_path is not None and edited_path != tmp_path:
+                edited_path.unlink(missing_ok=True)
+    else:
+        path = PHOTOS_DIR / photo["filename"]
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Photo file not found on disk")
 
-    try:
-        _final_path, new_filename = await run_in_threadpool(_apply_edit, path, body)
-    except (OSError, ValueError) as exc:
-        _logger.warning("Photo edit failed for %s: %s", photo_id, exc)
-        raise HTTPException(status_code=500, detail="Failed to edit photo") from exc
+        try:
+            path = safe_path(path, PHOTOS_DIR)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Access denied") from None
+
+        try:
+            _final_path, new_filename = await run_in_threadpool(_apply_edit, path, body)
+        except (OSError, ValueError) as exc:
+            _logger.warning("Photo edit failed for %s: %s", photo_id, exc)
+            raise HTTPException(status_code=500, detail="Failed to edit photo") from exc
 
     if new_filename is not None:
         db.update_photo_filename(photo_id, new_filename)

@@ -8,6 +8,9 @@ from pathlib import Path
 from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from meowdb import storage
+from meowdb.storage import S3NotFoundError
+
 logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 65536
@@ -46,6 +49,43 @@ async def _stream_range(path: Path, start: int, end: int) -> AsyncGenerator[byte
             yield chunk
 
 
+def _parse_range(
+    range_header: str | None,
+    file_size: int,
+) -> tuple[int, int, bool]:
+    """Parse a Range header and return (start, end, is_range_request).
+
+    Raises HTTPException(416) on invalid or unsatisfiable ranges.
+    """
+    if not range_header:
+        return 0, file_size - 1, False
+
+    range_val = range_header.strip().removeprefix("bytes=")
+    parts = range_val.split("-", maxsplit=1)
+    try:
+        suffix_only = len(parts) > 1 and not parts[0] and parts[1]
+        if suffix_only:
+            # RFC 9110 suffix-range: bytes=-N means last N bytes
+            n = int(parts[1])
+            if n == 0:
+                raise HTTPException(status_code=416, detail="Range not satisfiable")
+            start = max(0, file_size - n)
+            end = file_size - 1
+        else:
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=416, detail="Invalid Range header") from None
+
+    end = min(end, file_size - 1)
+    if start < 0 or start > end:
+        raise HTTPException(status_code=416, detail="Range not satisfiable")
+
+    return start, end, True
+
+
 def stream_file(
     path: Path,
     request: Request,
@@ -53,43 +93,54 @@ def stream_file(
     extra_headers: dict[str, str] | None = None,
 ) -> StreamingResponse:
     file_size = path.stat().st_size
-    range_header = request.headers.get("range")
+    start, end, is_range = _parse_range(request.headers.get("range"), file_size)
+    content_length = end - start + 1
 
-    if range_header:
-        range_val = range_header.strip().removeprefix("bytes=")
-        parts = range_val.split("-", maxsplit=1)
-        try:
-            start = int(parts[0]) if parts[0] else 0
-            end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
-        except ValueError:
-            raise HTTPException(status_code=416, detail="Invalid Range header") from None
-        end = min(end, file_size - 1)
-        if start < 0 or start > end:
-            raise HTTPException(status_code=416, detail="Range not satisfiable")
-        content_length = end - start + 1
-        headers = {
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(content_length),
-        }
-        if extra_headers:
-            headers.update(extra_headers)
-        return StreamingResponse(
-            _stream_range(path, start, end),
-            status_code=206,
-            media_type=media_type,
-            headers=headers,
-        )
-
-    headers = {
+    headers: dict[str, str] = {
         "Accept-Ranges": "bytes",
-        "Content-Length": str(file_size),
+        "Content-Length": str(content_length),
     }
+    if is_range:
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
     if extra_headers:
         headers.update(extra_headers)
+
     return StreamingResponse(
-        _stream_range(path, 0, file_size - 1),
-        status_code=200,
+        _stream_range(path, start, end),
+        status_code=206 if is_range else 200,
+        media_type=media_type,
+        headers=headers,
+    )
+
+
+async def stream_s3_object(
+    key: str,
+    request: Request,
+    media_type: str,
+    extra_headers: dict[str, str] | None = None,
+) -> StreamingResponse:
+    """Stream an S3 object, honouring Range requests identically to stream_file."""
+    try:
+        meta = await storage.s3_head_object(key)
+    except S3NotFoundError:
+        raise HTTPException(status_code=404, detail="File not found") from None
+
+    file_size = int(meta["size"])
+    start, end, is_range = _parse_range(request.headers.get("range"), file_size)
+    content_length = end - start + 1
+
+    headers: dict[str, str] = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(content_length),
+    }
+    if is_range:
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    if extra_headers:
+        headers.update(extra_headers)
+
+    return StreamingResponse(
+        storage.stream_s3_range(key, start, end),
+        status_code=206 if is_range else 200,
         media_type=media_type,
         headers=headers,
     )

@@ -36,3 +36,10 @@ VIDEO_SUFFIXES = {".mov", ".mp4", ".avi", ".mkv", ".3gp"}
 ALLOWED_MEDIA_SUFFIXES = AUDIO_SUFFIXES | VIDEO_SUFFIXES
 # Comma-joined form the server injects into the upload picker's `accept` attribute.
 UPLOAD_ACCEPT = ",".join(sorted(ALLOWED_MEDIA_SUFFIXES))
+
+# S3 media storage — set MEOWDB_S3_BUCKET to activate S3 mode; unset means local filesystem.
+S3_BUCKET: str | None = os.environ.get("MEOWDB_S3_BUCKET")
+S3_REGION: str = os.environ.get("MEOWDB_S3_REGION", "us-west-2")
+S3_ACCESS_KEY_ID: str | None = os.environ.get("MEOWDB_S3_ACCESS_KEY_ID")
+S3_SECRET_ACCESS_KEY: str | None = os.environ.get("MEOWDB_S3_SECRET_ACCESS_KEY")
+S3_ENDPOINT_URL: str | None = os.environ.get("MEOWDB_S3_ENDPOINT_URL")
