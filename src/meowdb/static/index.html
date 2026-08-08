@@ -78,7 +78,7 @@
 
         <!-- Empty state (0 sounds in library) -->
         <div class="empty-state" x-show="soundCount === 0 && soundCount !== null">
-          <div class="empty-state-icon">🐱</div>
+          <div class="empty-state-icon">🐾</div>
           <div class="empty-state-title">No sounds yet</div>
           <div class="empty-state-body">Add your first sound to get started</div>
           <button class="btn btn-primary" @click="goTo('/upload')">
@@ -280,63 +280,63 @@
         <!-- Loading state -->
         <div class="upload-progress" x-show="isLoading">
           <div class="spinner spinner-lg"></div>
-          <p class="text-secondary">Loading meows…</p>
+          <p class="text-secondary">Loading sounds…</p>
         </div>
 
         <!-- Empty state -->
-        <div class="empty-state" x-show="!isLoading && meows.length === 0">
+        <div class="empty-state" x-show="!isLoading && sounds.length === 0">
           <div class="empty-state-icon">🎙️</div>
           <div class="empty-state-title">
-            <span x-text="filterLabel ? 'No meows with this label' : 'Library is empty'"></span>
+            <span x-text="filterLabel ? 'No sounds with this label' : 'Library is empty'"></span>
           </div>
           <div class="empty-state-body" x-show="!filterLabel">
-            Upload or record a meow to get started
+            Upload or record a sound to get started
           </div>
           <button
             class="btn btn-primary"
             x-show="!filterLabel"
             @click="navigateTo('/upload')"
           >
-            Add a meow
+            Add a sound
           </button>
         </div>
 
-        <!-- Meow list rows -->
-        <div class="library-list" x-show="!isLoading && meows.length > 0">
-          <template x-for="meow in meows" :key="meow.id">
-            <div class="list-row" @click="openDetail(meow)">
+        <!-- Sound list rows -->
+        <div class="library-list" x-show="!isLoading && sounds.length > 0">
+          <template x-for="sound in sounds" :key="sound.id">
+            <div class="list-row" @click="openDetail(sound)">
               <!-- Play/pause icon button -->
               <button
                 class="list-row-icon"
-                :class="{ playing: playingId === meow.id }"
-                @click.stop="togglePlay(meow, $event)"
-                :aria-label="playingId === meow.id ? 'Pause' : 'Play'"
+                :class="{ playing: playingId === sound.id }"
+                @click.stop="togglePlay(sound, $event)"
+                :aria-label="playingId === sound.id ? 'Pause' : 'Play'"
               >
-                <svg x-show="playingId !== meow.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <svg x-show="playingId !== sound.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z"/>
                 </svg>
-                <svg x-show="playingId === meow.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <svg x-show="playingId === sound.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                 </svg>
               </button>
 
               <!-- Row content -->
               <div class="list-row-main">
-                <div class="list-row-title" x-text="'Meow ' + MeowUtils.formatId(meow.id)"></div>
+                <div class="list-row-title" x-text="'Sound ' + MeowUtils.formatId(sound.id)"></div>
                 <div class="list-row-meta">
-                  <span class="badge badge-default" x-text="MeowUtils.formatDuration(meow.duration_ms)"></span>
+                  <span class="badge badge-default" x-text="MeowUtils.formatDuration(sound.duration_ms)"></span>
                   <span
                     class="badge"
-                    :class="MeowUtils.uniquenessBadgeClass(meow.species_uniqueness_score)"
-                    x-show="meow.species_uniqueness_score != null"
-                    x-text="Math.round(meow.species_uniqueness_score) + '% unique'"
+                    :class="MeowUtils.uniquenessBadgeClass(sound.species_uniqueness_score)"
+                    x-show="sound.species_uniqueness_score != null"
+                    x-text="Math.round(sound.species_uniqueness_score) + '% unique'"
                   ></span>
-                  <span x-show="animalName(meow.animal_id)" x-text="animalName(meow.animal_id)"></span>
-                  <span x-text="MeowUtils.formatDate(meow.created_at)"></span>
-                  <span x-show="meow.play_count > 0" x-text="meow.play_count + ' plays'"></span>
-                  <span class="badge badge-green" x-show="meow.upvote_count > 0" x-text="meow.upvote_count + (meow.upvote_count === 1 ? ' upvote' : ' upvotes')"></span>
-                  <span class="badge badge-red" x-show="meow.downvote_count > 0" x-text="meow.downvote_count + (meow.downvote_count === 1 ? ' downvote' : ' downvotes')"></span>
-                  <template x-for="label in (meow.labels || []).slice(0, 2)" :key="label">
+                  <span x-show="animalName(sound.animal_id)" x-text="animalName(sound.animal_id)"></span>
+                  <span x-text="MeowUtils.formatDate(sound.created_at)"></span>
+                  <span x-show="sound.play_count > 0" x-text="sound.play_count + ' plays'"></span>
+                  <span class="badge badge-green" x-show="sound.upvote_count > 0" x-text="sound.upvote_count + (sound.upvote_count === 1 ? ' upvote' : ' upvotes')"></span>
+                  <span class="badge badge-red" x-show="sound.downvote_count > 0" x-text="sound.downvote_count + (sound.downvote_count === 1 ? ' downvote' : ' downvotes')"></span>
+                  <template x-for="label in (sound.labels || []).slice(0, 2)" :key="label">
                     <span class="badge badge-accent" x-text="label"></span>
                   </template>
                 </div>
@@ -384,16 +384,16 @@
               x-show="canWrite"
               type="text"
               class="modal-title-input"
-              :placeholder="'Meow ' + MeowUtils.formatId(detailMeow?.id || '')"
+              :placeholder="'Sound ' + MeowUtils.formatId(detailSound?.id || '')"
               x-model="detailTitle"
               @blur="saveTitle()"
               @keydown.enter="saveTitle(); $event.target.blur()"
-              aria-label="Meow title"
+              aria-label="Sound title"
             >
             <span
               x-show="authRequired && !authenticated"
               class="modal-title-input"
-              x-text="detailTitle || ('Meow ' + MeowUtils.formatId(detailMeow?.id || ''))"
+              x-text="detailTitle || ('Sound ' + MeowUtils.formatId(detailSound?.id || ''))"
             ></span>
             <button class="btn-icon" @click="closeDetail()" aria-label="Close">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -402,7 +402,7 @@
             </button>
           </div>
 
-          <div class="modal-body" x-show="detailMeow">
+          <div class="modal-body" x-show="detailSound">
             <!-- Waveform canvas -->
             <div class="detail-waveform">
               <canvas x-ref="detailWaveformCanvas" style="display:block;width:100%;height:80px;" aria-hidden="true"></canvas>
@@ -410,7 +410,7 @@
 
             <!-- Play button -->
             <div class="flex justify-center" style="margin-bottom: var(--sp-4);">
-              <button class="btn btn-primary" @click="playDetailMeow()">
+              <button class="btn btn-primary" @click="playDetailSound()">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z"/>
                 </svg>
@@ -422,51 +422,51 @@
             <div class="detail-meta-grid">
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Duration</span>
-                <span class="detail-meta-value" x-text="MeowUtils.formatDuration(detailMeow?.duration_ms)"></span>
+                <span class="detail-meta-value" x-text="MeowUtils.formatDuration(detailSound?.duration_ms)"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Date Added</span>
-                <span class="detail-meta-value" x-text="MeowUtils.formatDate(detailMeow?.created_at)"></span>
+                <span class="detail-meta-value" x-text="MeowUtils.formatDate(detailSound?.created_at)"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Recorded</span>
-                <span class="detail-meta-value" x-text="detailMeow?.recorded_at ? MeowUtils.formatDate(detailMeow.recorded_at) : '—'"></span>
+                <span class="detail-meta-value" x-text="detailSound?.recorded_at ? MeowUtils.formatDate(detailSound.recorded_at) : '—'"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Plays</span>
-                <span class="detail-meta-value" x-text="detailMeow?.play_count ?? 0"></span>
+                <span class="detail-meta-value" x-text="detailSound?.play_count ?? 0"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Votes</span>
                 <span class="detail-meta-value" style="display:flex;gap:var(--sp-3);">
-                  <span class="text-green" x-text="(detailMeow?.upvote_count ?? 0) + ' ↑'"></span>
-                  <span class="text-red" x-text="(detailMeow?.downvote_count ?? 0) + ' ↓'"></span>
+                  <span class="text-green" x-text="(detailSound?.upvote_count ?? 0) + ' ↑'"></span>
+                  <span class="text-red" x-text="(detailSound?.downvote_count ?? 0) + ' ↓'"></span>
                 </span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Species unique</span>
                 <span
                   class="detail-meta-value"
-                  x-text="detailMeow?.species_uniqueness_score != null ? Math.round(detailMeow.species_uniqueness_score) + '%' : '—'"
+                  x-text="detailSound?.species_uniqueness_score != null ? Math.round(detailSound.species_uniqueness_score) + '%' : '—'"
                 ></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Animal unique</span>
                 <span
                   class="detail-meta-value"
-                  x-text="detailMeow?.animal_uniqueness_score != null ? Math.round(detailMeow.animal_uniqueness_score) + '%' : '—'"
+                  x-text="detailSound?.animal_uniqueness_score != null ? Math.round(detailSound.animal_uniqueness_score) + '%' : '—'"
                 ></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Animal</span>
-                <span class="detail-meta-value" x-text="animalName(detailMeow?.animal_id) || '—'"></span>
+                <span class="detail-meta-value" x-text="animalName(detailSound?.animal_id) || '—'"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">ID</span>
                 <span
                   class="detail-meta-value"
                   style="font-family:var(--font-mono);font-size:var(--text-sm);"
-                  x-text="MeowUtils.formatId(detailMeow?.id || '')"
+                  x-text="MeowUtils.formatId(detailSound?.id || '')"
                 ></span>
               </div>
             </div>
@@ -475,7 +475,7 @@
             <div class="label-editor">
               <div class="label-editor-title">Labels</div>
               <div class="label-chips">
-                <template x-for="label in (detailMeow?.labels || [])" :key="label">
+                <template x-for="label in (detailSound?.labels || [])" :key="label">
                   <div class="chip">
                     <span x-text="label"></span>
                     <button class="chip-remove" x-show="canWrite" @click="removeLabel(label)" aria-label="Remove label">×</button>
@@ -503,7 +503,7 @@
 
             <!-- Delete -->
             <button class="btn btn-danger btn-full" x-show="canWrite" @click="confirmDelete()">
-              Delete meow
+              Delete sound
             </button>
           </div>
         </div>
@@ -514,13 +514,13 @@
           x-show="showDeleteConfirm"
         >
           <div class="modal-confirm-card">
-            <h2 class="modal-title">Delete this meow?</h2>
+            <h2 class="modal-title">Delete this sound?</h2>
             <p class="text-secondary">
               This cannot be undone. The audio files will be permanently deleted.
             </p>
             <div class="flex gap-3">
               <button class="btn btn-ghost" @click="showDeleteConfirm = false">Cancel</button>
-              <button class="btn btn-danger" @click="deleteMeowConfirmed()">Delete</button>
+              <button class="btn btn-danger" @click="deleteSoundConfirmed()">Delete</button>
             </div>
           </div>
         </div>

@@ -19,7 +19,7 @@ _logger = logging.getLogger(__name__)
 
 
 def _compute_group_scores(
-    sim_scorer: MeowSimilarity,
+    sim_scorer: SoundSimilarity,
     fingerprints: dict[str, list[float]],
     group_map: dict[str, str],
 ) -> dict[str, float | None]:
@@ -30,7 +30,7 @@ def _compute_group_scores(
     DB scores are left untouched by the caller.
 
     Args:
-        sim_scorer: Any MeowSimilarity instance — scoring is band-independent.
+        sim_scorer: Any SoundSimilarity instance — scoring is band-independent.
         fingerprints: {sound_id: feature_vector} for all sounds with fingerprints.
         group_map: {sound_id: group_key} defining the pools (e.g. animal_id or species).
 
@@ -55,6 +55,7 @@ def update_library_uniqueness(
     new_sound_ids: list[str],
     *,
     force: bool = False,
+    fingerprints: dict[str, list[float]] | None = None,
 ) -> None:
     """Extract fingerprints for new sounds, then recompute both uniqueness scores.
 
@@ -65,6 +66,11 @@ def update_library_uniqueness(
         force: When True, re-extract fingerprints for **all** sounds in the DB
             using their species-appropriate frequency bands (useful after band
             config changes or file fixes).  ``new_sound_ids`` is ignored.
+        fingerprints: Pre-loaded fingerprint dict {sound_id: feature_vector}.
+            When provided and ``force`` is False, skips the DB fetch for the
+            existing fingerprint set (avoids a redundant round-trip when the
+            caller already holds the dict).  Ignored when ``force`` is True
+            because force re-extracts all fingerprints from scratch.
 
     Each sound receives two percentile scores:
     - ``animal_uniqueness_score``: rank within the same animal's sound pool.
@@ -76,11 +82,16 @@ def update_library_uniqueness(
     """
     species_map = db.get_sound_species_groups()
     all_wav_paths = {r["id"]: r["wav_path"] for r in db.get_all_wav_paths()}
-    fingerprints = db.get_all_fingerprints()
+    # Re-use caller-supplied fingerprints when available and not force (avoids a
+    # redundant DB round-trip when the caller already fetched the full dict).
+    if fingerprints is not None and not force:
+        fingerprints = dict(fingerprints)  # copy — extraction loop mutates this
+    else:
+        fingerprints = db.get_all_fingerprints()
 
-    # Cache one MeowSimilarity extractor per species so we pay the filterbank
+    # Cache one SoundSimilarity extractor per species so we pay the filterbank
     # build cost at most once per species per call.
-    extractors: dict[str, MeowSimilarity] = {}
+    extractors: dict[str, SoundSimilarity] = {}
 
     ids_to_extract: list[str] = list(all_wav_paths) if force else new_sound_ids
 
@@ -90,7 +101,7 @@ def update_library_uniqueness(
                 species = species_map.get(sound_id, DEFAULT_SPECIES)
                 if species not in extractors:
                     cfg = get_species_config(species)
-                    extractors[species] = MeowSimilarity(fmin=cfg.fmin, fmax=cfg.fmax)
+                    extractors[species] = SoundSimilarity(fmin=cfg.fmin, fmax=cfg.fmax)
                 fp = extractors[species].extract_fingerprint(all_wav_paths[sound_id])
                 db.update_fingerprint(sound_id, fp)
                 fingerprints[sound_id] = fp
@@ -99,13 +110,13 @@ def update_library_uniqueness(
 
     if fingerprints:
         # Band choice doesn't affect scoring math; use a single default instance.
-        scorer = MeowSimilarity()
+        scorer = SoundSimilarity()
         animal_scores = _compute_group_scores(scorer, fingerprints, db.get_sound_animal_groups())
         species_scores = _compute_group_scores(scorer, fingerprints, species_map)
         db.update_uniqueness_scores_bulk(animal_scores, species_scores)
 
 
-class MeowSimilarity:
+class SoundSimilarity:
     """MFCC-based audio fingerprinting and uniqueness scoring for sound comparison."""
 
     def __init__(

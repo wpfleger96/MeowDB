@@ -374,3 +374,123 @@ def test_fresh_db_no_backup_file(tmp_path: Path) -> None:
     db.close()
 
     assert not Path(str(db_path) + ".pre-v2-backup").exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests: missing optional tables (cat_photos_exists == False, ingest absent)
+# ---------------------------------------------------------------------------
+
+
+def _build_v0_db_no_cat_photos(path: Path) -> dict[str, str]:
+    """Create a v0 DB with meows + ingest tables but NO cat_photos table.
+
+    Returns a dict mapping logical name → inserted row id.
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute(_V0_MEOWS_FULL)
+        conn.execute(_V0_INGEST_JOBS)
+        conn.execute(_V0_INGEST_SEGMENTS)
+
+        ids = {k: str(uuid.uuid4()) for k in ("meow1", "job1", "seg1")}
+
+        conn.execute(
+            "INSERT INTO meows (id, timestamp, duration_ms, labels, wav_path, mp3_path, waveform_data)"
+            " VALUES (?, '2026-01-01T00:00:00', 1000, '[]', '/wav/m1.wav', '/mp3/m1.mp3', '[]')",
+            (ids["meow1"],),
+        )
+        conn.execute(
+            "INSERT INTO ingest_jobs (id, source_filename) VALUES (?, 'recording.m4a')",
+            (ids["job1"],),
+        )
+        conn.execute(
+            "INSERT INTO ingest_segments"
+            " (id, job_id, index_in_job, duration_ms, wav_path, cat_energy_ratio)"
+            " VALUES (?, ?, 0, 800, '/wav/seg.wav', 1.8)",
+            (ids["seg1"], ids["job1"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return ids
+
+
+def _build_v0_db_no_ingest(path: Path) -> dict[str, str]:
+    """Create a v0 DB with meows + cat_photos but NO ingest_jobs or ingest_segments tables.
+
+    Returns a dict mapping logical name → inserted row id.
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute(_V0_MEOWS_FULL)
+        conn.execute(_V0_CAT_PHOTOS_FULL)
+
+        ids = {k: str(uuid.uuid4()) for k in ("meow1", "photo1")}
+
+        conn.execute(
+            "INSERT INTO meows (id, timestamp, duration_ms, labels, wav_path, mp3_path, waveform_data)"
+            " VALUES (?, '2026-01-01T00:00:00', 1000, '[]', '/wav/m1.wav', '/mp3/m1.mp3', '[]')",
+            (ids["meow1"],),
+        )
+        conn.execute(
+            "INSERT INTO cat_photos (id, filename) VALUES (?, 'kitty.jpg')",
+            (ids["photo1"],),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return ids
+
+
+@pytest.mark.unit
+def test_migration_no_cat_photos_succeeds(tmp_path: Path) -> None:
+    """Migration succeeds when cat_photos table is absent; sounds preserved, photos empty."""
+    db_path = tmp_path / "test.sqlite"
+    ids = _build_v0_db_no_cat_photos(db_path)
+
+    db = MeowDB(db_path)
+    try:
+        # Exactly one animal created: Squishy
+        animals = db.get_animals()
+        assert len(animals) == 1
+        squishy_id = animals[0]["id"]
+        assert animals[0]["name"] == "Squishy"
+
+        # The meow row migrated to sounds, ID preserved
+        sound = db.get_by_id(ids["meow1"])
+        assert sound is not None
+        assert sound["animal_id"] == squishy_id
+        assert db.get_count() == 1
+
+        # No cat_photos existed → photo list is empty
+        assert db.get_photos() == []
+    finally:
+        db.close()
+
+
+@pytest.mark.unit
+def test_migration_no_ingest_tables_succeeds(tmp_path: Path) -> None:
+    """Migration succeeds when ingest_jobs and ingest_segments are absent; data preserved."""
+    db_path = tmp_path / "test.sqlite"
+    ids = _build_v0_db_no_ingest(db_path)
+
+    db = MeowDB(db_path)
+    try:
+        # Migration did not crash — exactly one animal
+        animals = db.get_animals()
+        assert len(animals) == 1
+        squishy_id = animals[0]["id"]
+
+        # Sound migrated with preserved ID and animal assignment
+        sound = db.get_by_id(ids["meow1"])
+        assert sound is not None
+        assert sound["animal_id"] == squishy_id
+
+        # Photo migrated with preserved ID and animal assignment
+        photos = db.get_photos()
+        assert len(photos) == 1
+        assert photos[0]["id"] == ids["photo1"]
+        assert photos[0]["animal_id"] == squishy_id
+        assert photos[0]["filename"] == "kitty.jpg"
+    finally:
+        db.close()

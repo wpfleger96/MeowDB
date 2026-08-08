@@ -12,7 +12,7 @@ from meowdb.cli.options import db_path_option
 from meowdb.config import ALLOWED_MEDIA_SUFFIXES, MP3_DIR, STAGING_DIR, WAV_DIR
 from meowdb.display import console, print_error, print_hint, print_info, print_success
 from meowdb.models import ProcessingResult
-from meowdb.processor import MeowProcessor
+from meowdb.processor import SoundProcessor
 from meowdb.species import processor_config_for_species
 
 # Files shorter than this are treated as single-sound clips
@@ -56,7 +56,7 @@ def ingest(
     """Ingest an audio or video file or directory into the sound library."""
     ctx = build_context(db_path)
     animal = resolve_animal(ctx, animal_name_or_id)
-    processor = MeowProcessor(processor_config_for_species(animal["species"]))
+    processor = SoundProcessor(processor_config_for_species(animal["species"]))
 
     source = Path(path)
     if source.is_dir():
@@ -80,7 +80,7 @@ def _ingest_file(
     dry_run: bool,
     ctx: Context,
     animal: dict,  # type: ignore[type-arg]
-    processor: MeowProcessor,
+    processor: SoundProcessor,
 ) -> None:
 
     print_info(f"Processing {path.name} …")
@@ -138,7 +138,7 @@ def _detect_mode(path: Path, segment: bool | None) -> tuple[bool, int]:
     return use_single, duration_ms
 
 
-def _run_processor(path: Path, segment: bool | None, processor: MeowProcessor) -> ProcessingResult:
+def _run_processor(path: Path, segment: bool | None, processor: SoundProcessor) -> ProcessingResult:
     use_single, _ = _detect_mode(path, segment)
 
     if use_single:
@@ -153,7 +153,7 @@ def _run_processor(path: Path, segment: bool | None, processor: MeowProcessor) -
     return processor.process_file(path, staging_dir=STAGING_DIR)
 
 
-def _dry_run_file(path: Path, segment: bool | None, processor: MeowProcessor) -> None:
+def _dry_run_file(path: Path, segment: bool | None, processor: SoundProcessor) -> None:
     use_single, duration_ms = _detect_mode(path, segment)
 
     mode = "single sound" if use_single else "multi-segment"

@@ -48,7 +48,7 @@ class ProcessorConfig(BaseModel):
 
 
 @dataclass
-class MeowSegment:
+class SoundSegment:
     index: int
     source_path: Path
     start_ms: int
@@ -74,7 +74,7 @@ class MeowSegment:
 @dataclass
 class ProcessingResult:
     source_path: Path
-    segments: list[MeowSegment]
+    segments: list[SoundSegment]
     rejected_count: int
     total_candidates: int
     elapsed_seconds: float

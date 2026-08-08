@@ -113,7 +113,6 @@ function playView() {
         this.isPlaying = false;
         this._stopWaveform();
         this._drawWaveform(sound, 1);
-        this._refreshCount();
       };
 
       audioPlayer.onError = (err) => {

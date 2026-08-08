@@ -10,12 +10,12 @@ from meowdb.cli.context import Context
 from meowdb.config import DB_PATH
 from meowdb.db import MeowDB
 from meowdb.display import print_error
-from meowdb.processor import MeowProcessor
+from meowdb.processor import SoundProcessor
 
 
 def build_context(db_path: str | Path | None = None) -> Context:
     db = MeowDB(Path(db_path) if db_path else DB_PATH)
-    processor = MeowProcessor()
+    processor = SoundProcessor()
     return Context(db=db, processor=processor)
 
 

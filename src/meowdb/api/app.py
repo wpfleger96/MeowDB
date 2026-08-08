@@ -19,6 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from meowdb import __version__
 from meowdb.api import auth
+from meowdb.api.converters import photo_to_response
 from meowdb.api.routers import animals, audio, ingest, photos, sounds, stats, uniqueness
 from meowdb.config import (
     _DEFAULT_SESSION_SECRET,
@@ -124,7 +125,7 @@ def create_app() -> FastAPI:
         try:
             db = request.app.state.db
             photo = db.get_random_photo()
-            photo_payload = photos.photo_to_response(photo).model_dump() if photo else None
+            photo_payload = photo_to_response(photo).model_dump() if photo else None
             payload = {
                 "sound_count": db.get_count(),
                 "auth": auth.auth_status_payload(request),

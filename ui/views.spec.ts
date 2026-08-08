@@ -154,6 +154,32 @@ test.describe('MeowDB views', () => {
     await screenshot(page, testInfo, '07b-profiles-detail.png');
   });
 
+  test('play view null-photo state after MEOW press', async ({ page }, testInfo) => {
+    // Seed has no photos for any animal, so pressing MEOW always yields a null photo
+    // regardless of which random sound is selected.
+    await page.goto('/', GOTO_OPTS);
+
+    // Scope all selectors to the play view so hidden views (x-show) are not matched.
+    const playView = page.locator('.play-view');
+    await playView.waitFor({ state: 'visible' });
+
+    const meowBtn = playView.locator('.meow-btn');
+    await meowBtn.waitFor({ state: 'visible' });
+
+    await meowBtn.click();
+
+    // The replay button (x-show="currentSound") becomes visible once the sound
+    // response is processed — at that point currentPhoto is already settled.
+    await expect(playView.locator('.replay-btn')).toBeVisible({ timeout: 10000 });
+
+    // Null-photo state: no has-photo class and no background-image inline style.
+    await expect(meowBtn).not.toHaveClass(/has-photo/);
+    const style = await meowBtn.getAttribute('style');
+    expect(style ?? '').not.toContain('background-image');
+
+    await screenshot(page, testInfo, '08-play-null-photo.png');
+  });
+
   test('ingest animal selector', async ({ page }) => {
     await page.goto('/upload', GOTO_OPTS);
     await page.waitForSelector('.upload-zone', { state: 'visible' });

@@ -196,6 +196,48 @@ def test_delete_sound_not_found(client):
 
 
 @pytest.mark.integration
+def test_delete_leaving_single_sound_pool_nulls_score(seeded_client, tmp_dirs):
+    """Deleting one of two fingerprinted sounds leaves the remaining with null animal score."""
+    db = seeded_client.app.state.db
+    wav_file = next(tmp_dirs["wav"].glob("*.wav"))
+    mp3_file = next(tmp_dirs["mp3"].glob("*.mp3"))
+    animal_id = db.get_animals()[0]["id"]
+
+    # Existing sound from the seeded_client fixture
+    sound_id_1 = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+
+    # Add a second sound to the same animal to form a 2-sound pool
+    sound_id_2 = db.add(
+        {
+            "timestamp": "2026-01-02T00:00:00",
+            "duration_ms": 750,
+            "labels": [],
+            "wav_path": str(wav_file),
+            "mp3_path": str(mp3_file),
+            "waveform_data": [],
+            "peak_dbfs": -15.0,
+            "species_energy_ratio": 1.5,
+            "animal_id": animal_id,
+        }
+    )
+
+    # Seed fingerprints so update_library_uniqueness has scores to recompute on delete
+    fingerprint = [0.1] * 120
+    db.update_fingerprint(sound_id_1, fingerprint)
+    db.update_fingerprint(sound_id_2, fingerprint)
+
+    # Delete the first sound — the router calls update_library_uniqueness(db, [])
+    resp = seeded_client.delete(f"/api/sounds/{sound_id_1}")
+    assert resp.status_code == 204
+
+    # Single-sound pool: the remaining sound's animal_uniqueness_score must be null
+    items = seeded_client.get("/api/sounds").json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == sound_id_2
+    assert items[0]["animal_uniqueness_score"] is None
+
+
+@pytest.mark.integration
 def test_play_sound(seeded_client):
     list_resp = seeded_client.get("/api/sounds")
     initial_play_count = list_resp.json()["items"][0]["play_count"]
@@ -433,6 +475,8 @@ def test_ingest_flow_post_and_poll(tmp_dirs, silent_wav_bytes):
             assert data["status"] == "uploaded"
             job_id = data["job_id"]
             assert job_id
+
+            assert data["animal_id"] == animal_id
 
             poll_resp = tc.get(f"/api/ingest/{job_id}")
             assert poll_resp.status_code == 200

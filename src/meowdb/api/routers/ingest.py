@@ -262,8 +262,8 @@ async def stream_source_audio(job_id: str, request: Request) -> StreamingRespons
 
 @router.post("/ingest/{job_id}/detect", response_model=DetectResponse)
 async def detect_regions(job_id: str, request: Request) -> DetectResponse:
-    from meowdb.processor import MeowProcessor
-    from meowdb.species import processor_config_for_species
+    from meowdb.processor import SoundProcessor
+    from meowdb.species import DEFAULT_SPECIES, processor_config_for_species
 
     db = request.app.state.db
     job = db.get_job(job_id)
@@ -271,18 +271,18 @@ async def detect_regions(job_id: str, request: Request) -> DetectResponse:
         raise HTTPException(status_code=404, detail="Job not found")
 
     animal = db.get_animal(job["animal_id"])
-    species = animal["species"] if animal else "cat"
+    species = animal["species"] if animal else DEFAULT_SPECIES
     config = processor_config_for_species(species)
 
     source_path = _resolve_staging_path(job_id)
-    result = await run_in_threadpool(MeowProcessor(config).detect_only, source_path)
+    result = await run_in_threadpool(SoundProcessor(config).detect_only, source_path)
     return DetectResponse(regions=[ClipRegion(start_ms=s, end_ms=e) for s, e in result])
 
 
 @router.post("/ingest/{job_id}/clip", response_model=CommitResponse)
 async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> CommitResponse:
-    from meowdb.processor import MeowProcessor
-    from meowdb.species import processor_config_for_species
+    from meowdb.processor import SoundProcessor
+    from meowdb.species import DEFAULT_SPECIES, processor_config_for_species
 
     db = request.app.state.db
     job = db.get_job(job_id)
@@ -293,7 +293,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
         raise HTTPException(status_code=400, detail="At least one region is required")
 
     animal = db.get_animal(job["animal_id"])
-    species = animal["species"] if animal else "cat"
+    species = animal["species"] if animal else DEFAULT_SPECIES
     config = processor_config_for_species(species)
 
     source_path = _resolve_staging_path(job_id)
@@ -306,7 +306,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
 
     regions = [(r.start_ms, r.end_ms) for r in body.regions]
     segments = await run_in_threadpool(
-        MeowProcessor(config).process_clips, source_path, regions, staging_dir
+        SoundProcessor(config).process_clips, source_path, regions, staging_dir
     )
 
     seg_dicts = [seg.to_db_dict() for seg in segments]

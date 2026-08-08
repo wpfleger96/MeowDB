@@ -6,6 +6,7 @@ import zipfile
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import IO
 
 import click
 
@@ -17,6 +18,44 @@ from meowdb.cli.options import db_path_option
 from meowdb.config import MP3_DIR, PHOTOS_DIR, WAV_DIR
 from meowdb.display import print_info, print_success, print_warning
 from meowdb.similarity import update_library_uniqueness
+
+_MAX_EXTRACT_BYTES = 500 * 1024 * 1024  # 500 MB — matches API upload cap
+_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
+
+def _safe_name(value: str) -> bool:
+    """Return True iff value is a plain filename with no path components."""
+    return bool(value) and value not in (".", "..") and Path(value).name == value
+
+
+def _stream_extract(
+    src_file: IO[bytes], dst_path: Path, max_bytes: int = _MAX_EXTRACT_BYTES
+) -> bool:
+    """Stream-copy src_file to dst_path in chunks, enforcing a byte cap.
+
+    Returns True on success. On cap exceeded or I/O error, deletes any partial
+    file and returns False.
+    """
+    total = 0
+    cap_exceeded = False
+    try:
+        with dst_path.open("wb") as dst:
+            while True:
+                chunk = src_file.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    cap_exceeded = True
+                    break
+                dst.write(chunk)
+    except Exception:
+        dst_path.unlink(missing_ok=True)
+        return False
+    if cap_exceeded:
+        dst_path.unlink(missing_ok=True)
+        return False
+    return True
 
 
 @click.command(name="import")
@@ -120,6 +159,10 @@ def import_sounds(
 
         for sound in sounds:
             archive_id = sound["id"]
+            if not _safe_name(archive_id):
+                print_warning(f"Manifest entry has unsafe ID {archive_id!r}, skipping")
+                skipped_sounds += 1
+                continue
             arc_wav = f"{AUDIO_PREFIX}{archive_id}.wav"
 
             if arc_wav not in zf.namelist():
@@ -145,11 +188,22 @@ def import_sounds(
             wav_path = WAV_DIR / f"{sound_id}.wav"
             mp3_path = MP3_DIR / f"{sound_id}.mp3"
 
-            with zf.open(arc_wav) as src, wav_path.open("wb") as dst:
-                dst.write(src.read())
+            with zf.open(arc_wav) as src:
+                if not _stream_extract(src, wav_path):
+                    print_warning(
+                        f"WAV for {archive_id[:8]} exceeds size cap or could not be extracted, skipping"
+                    )
+                    skipped_sounds += 1
+                    continue
 
-            audio = AudioSegment.from_wav(str(wav_path))
-            audio.export(str(mp3_path), format="mp3", bitrate="192k")
+            try:
+                audio = AudioSegment.from_wav(str(wav_path))
+                audio.export(str(mp3_path), format="mp3", bitrate="192k")
+            except Exception:
+                print_warning(f"WAV for {archive_id[:8]} is corrupt or unreadable, skipping")
+                wav_path.unlink(missing_ok=True)
+                skipped_sounds += 1
+                continue
 
             resolved_animal_id = resolve_animal_id(sound.get("animal_id"))
             ctx.db.import_sound(sound_id, sound, str(wav_path), str(mp3_path), resolved_animal_id)
@@ -172,6 +226,12 @@ def import_sounds(
                 for photo in archive_photos:
                     original_id: str = photo["id"]
                     original_filename: str = photo["filename"]
+                    if not _safe_name(original_filename):
+                        print_warning(
+                            f"Manifest photo has unsafe filename {original_filename!r}, skipping"
+                        )
+                        skipped_photos += 1
+                        continue
                     arc_photo = f"{PHOTOS_PREFIX}{original_filename}"
 
                     if arc_photo not in zf.namelist():
@@ -201,8 +261,13 @@ def import_sounds(
                         filename = original_filename
 
                     dest = PHOTOS_DIR / filename
-                    with zf.open(arc_photo) as src, dest.open("wb") as dst:
-                        dst.write(src.read())
+                    with zf.open(arc_photo) as src:
+                        if not _stream_extract(src, dest):
+                            print_warning(
+                                f"Photo for {original_id[:8]} exceeds size cap or could not be extracted, skipping"
+                            )
+                            skipped_photos += 1
+                            continue
 
                     resolved_photo_animal_id = resolve_animal_id(photo.get("animal_id"))
                     ctx.db.import_photo(

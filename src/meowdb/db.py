@@ -81,14 +81,14 @@ CREATE TABLE IF NOT EXISTS ingest_segments (
 """
 
 _SORT_MAP = {
-    "newest": "created_at DESC, rowid DESC",
-    "oldest": "created_at ASC, rowid ASC",
-    "most_played": "play_count DESC, rowid DESC",
-    "duration_asc": "duration_ms ASC, rowid ASC",
-    "duration_desc": "duration_ms DESC, rowid DESC",
-    "most_unique": "animal_uniqueness_score DESC, rowid DESC",
-    "most_upvoted": "upvote_count DESC, rowid DESC",
-    "most_downvoted": "downvote_count DESC, rowid DESC",
+    "newest": "s.created_at DESC, s.rowid DESC",
+    "oldest": "s.created_at ASC, s.rowid ASC",
+    "most_played": "s.play_count DESC, s.rowid DESC",
+    "duration_asc": "s.duration_ms ASC, s.rowid ASC",
+    "duration_desc": "s.duration_ms DESC, s.rowid DESC",
+    "most_unique": "s.animal_uniqueness_score DESC, s.rowid DESC",
+    "most_upvoted": "s.upvote_count DESC, s.rowid DESC",
+    "most_downvoted": "s.downvote_count DESC, s.rowid DESC",
 }
 
 
@@ -123,6 +123,9 @@ class MeowDB:
             "CREATE INDEX IF NOT EXISTS idx_sounds_play_count ON sounds(play_count DESC)"
         )
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_sounds_animal_id ON sounds(animal_id)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sounds_animal_uniqueness ON sounds(animal_uniqueness_score DESC)"
+        )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_animal_photos_animal_id ON animal_photos(animal_id)"
         )
@@ -163,7 +166,12 @@ class MeowDB:
             return  # Fresh DB — no migration needed.
 
         # Checkpoint WAL before backup (must be outside any transaction).
-        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        busy, _log, _checkpointed = self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if busy != 0:
+            raise RuntimeError(
+                f"WAL checkpoint busy before migration backup ({busy} writer(s) still active). "
+                "Close all other connections to this database and retry."
+            )
 
         backup_path = Path(str(self._db_path) + ".pre-v2-backup")
         if not backup_path.exists():
@@ -462,12 +470,9 @@ class MeowDB:
             rows = self._conn.execute(
                 """
                 SELECT a.id, a.name, a.species, a.created_at,
-                    COUNT(DISTINCT s.id) AS sound_count,
-                    COUNT(DISTINCT p.id) AS photo_count
+                    (SELECT COUNT(*) FROM sounds s WHERE s.animal_id = a.id) AS sound_count,
+                    (SELECT COUNT(*) FROM animal_photos p WHERE p.animal_id = a.id) AS photo_count
                 FROM animals a
-                LEFT JOIN sounds s ON s.animal_id = a.id
-                LEFT JOIN animal_photos p ON p.animal_id = a.id
-                GROUP BY a.id, a.name, a.species, a.created_at
                 ORDER BY a.created_at
                 """
             ).fetchall()
@@ -478,17 +483,20 @@ class MeowDB:
             row = self._conn.execute(
                 """
                 SELECT a.id, a.name, a.species, a.created_at,
-                    COUNT(DISTINCT s.id) AS sound_count,
-                    COUNT(DISTINCT p.id) AS photo_count
+                    (SELECT COUNT(*) FROM sounds s WHERE s.animal_id = a.id) AS sound_count,
+                    (SELECT COUNT(*) FROM animal_photos p WHERE p.animal_id = a.id) AS photo_count
                 FROM animals a
-                LEFT JOIN sounds s ON s.animal_id = a.id
-                LEFT JOIN animal_photos p ON p.animal_id = a.id
                 WHERE a.id = ?
-                GROUP BY a.id
                 """,
                 (animal_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def animal_exists(self, animal_id: str) -> bool:
+        """Return True if an animal with the given id exists."""
+        with self._lock:
+            row = self._conn.execute("SELECT 1 FROM animals WHERE id = ?", (animal_id,)).fetchone()
+        return row is not None
 
     def delete_animal(self, animal_id: str) -> dict[str, list[str]] | None:
         """Delete an animal and return file paths to remove from disk.
@@ -627,16 +635,20 @@ class MeowDB:
             where_parts: list[str] = []
             params: list[object] = []
             if label_filter:
-                where_parts.append("labels LIKE ?")
+                where_parts.append("s.labels LIKE ?")
                 params.append(f'%"{label_filter}"%')
             if animal_id:
-                where_parts.append("animal_id = ?")
+                where_parts.append("s.animal_id = ?")
                 params.append(animal_id)
             where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
             params.extend([limit, offset])
 
             rows = self._conn.execute(
-                f"SELECT * FROM sounds {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                f"""
+                SELECT s.*, a.name AS animal_name, a.species AS animal_species
+                FROM sounds s JOIN animals a ON a.id = s.animal_id
+                {where} ORDER BY {order} LIMIT ? OFFSET ?
+                """,
                 params,
             ).fetchall()
 
@@ -644,7 +656,14 @@ class MeowDB:
 
     def get_by_id(self, sound_id: str) -> dict | None:  # type: ignore[type-arg]
         with self._lock:
-            row = self._conn.execute("SELECT * FROM sounds WHERE id = ?", (sound_id,)).fetchone()
+            row = self._conn.execute(
+                """
+                SELECT s.*, a.name AS animal_name, a.species AS animal_species
+                FROM sounds s JOIN animals a ON a.id = s.animal_id
+                WHERE s.id = ?
+                """,
+                (sound_id,),
+            ).fetchone()
         return self._row_to_dict(row) if row else None
 
     def update_sound(self, sound_id: str, updates: dict) -> bool:  # type: ignore[type-arg]
@@ -687,6 +706,7 @@ class MeowDB:
         return cursor.rowcount > 0
 
     def record_feedback(self, sound_id: str, is_upvote: bool) -> bool:
+        # col is always one of the two hardcoded column names below, never user input.
         col = "upvote_count" if is_upvote else "downvote_count"
         with self._lock:
             cursor = self._conn.execute(
@@ -697,6 +717,7 @@ class MeowDB:
         return cursor.rowcount > 0
 
     def switch_feedback(self, sound_id: str, is_upvote: bool) -> bool:
+        # inc/dec are always one of the two hardcoded column names below, never user input.
         inc = "upvote_count" if is_upvote else "downvote_count"
         dec = "downvote_count" if is_upvote else "upvote_count"
         with self._lock:
@@ -746,24 +767,21 @@ class MeowDB:
         animal_scores: dict[str, float | None],
         species_scores: dict[str, float | None],
     ) -> None:
-        """Update animal_uniqueness_score and/or species_uniqueness_score per sound."""
-        all_ids = set(animal_scores) | set(species_scores)
+        """Update animal_uniqueness_score and/or species_uniqueness_score per sound.
+
+        None values are written as NULL to clear stale scores for single-sound pools.
+        """
         with self._lock:
-            for sound_id in all_ids:
-                sets: list[str] = []
-                params: list[object] = []
-                if sound_id in animal_scores:
-                    sets.append("animal_uniqueness_score = ?")
-                    params.append(animal_scores[sound_id])
-                if sound_id in species_scores:
-                    sets.append("species_uniqueness_score = ?")
-                    params.append(species_scores[sound_id])
-                if sets:
-                    params.append(sound_id)
-                    self._conn.execute(
-                        f"UPDATE sounds SET {', '.join(sets)} WHERE id = ?",
-                        params,
-                    )
+            if animal_scores:
+                self._conn.executemany(
+                    "UPDATE sounds SET animal_uniqueness_score = ? WHERE id = ?",
+                    [(v, k) for k, v in animal_scores.items()],
+                )
+            if species_scores:
+                self._conn.executemany(
+                    "UPDATE sounds SET species_uniqueness_score = ? WHERE id = ?",
+                    [(v, k) for k, v in species_scores.items()],
+                )
             self._conn.commit()
 
     def get_all_fingerprints(self) -> dict[str, list[float]]:
@@ -1112,42 +1130,58 @@ class MeowDB:
 
         # All DB writes in a single lock acquisition to preserve transaction atomicity.
         with self._lock:
-            for seg_id, sound_id, seg, dst_wav, dst_mp3 in committed:
-                self._conn.execute(
-                    """
-                    INSERT INTO sounds
-                        (id, animal_id, timestamp, duration_ms, labels, wav_path, mp3_path,
-                         waveform_data, peak_dbfs, species_energy_ratio, recorded_at)
-                    VALUES
-                        (:id, :animal_id, datetime('now'), :duration_ms, '[]', :wav_path,
-                         :mp3_path, :waveform_data, :peak_dbfs, :species_energy_ratio, :recorded_at)
-                    """,
-                    {
-                        "id": sound_id,
-                        "animal_id": animal_id,
-                        "duration_ms": seg["duration_ms"],
-                        "wav_path": str(dst_wav),
-                        "mp3_path": str(dst_mp3),
-                        "waveform_data": json.dumps(seg.get("waveform_data", [])),
-                        "peak_dbfs": seg.get("peak_dbfs"),
-                        "species_energy_ratio": seg.get("species_energy_ratio"),
-                        "recorded_at": recorded_at,
-                    },
-                )
-                self._conn.execute(
-                    "UPDATE ingest_segments SET status = 'accepted' WHERE id = ?", (seg_id,)
-                )
+            try:
+                for seg_id, sound_id, seg, dst_wav, dst_mp3 in committed:
+                    self._conn.execute(
+                        """
+                        INSERT INTO sounds
+                            (id, animal_id, timestamp, duration_ms, labels, wav_path, mp3_path,
+                             waveform_data, peak_dbfs, species_energy_ratio, recorded_at)
+                        VALUES
+                            (:id, :animal_id, datetime('now'), :duration_ms, '[]', :wav_path,
+                             :mp3_path, :waveform_data, :peak_dbfs, :species_energy_ratio, :recorded_at)
+                        """,
+                        {
+                            "id": sound_id,
+                            "animal_id": animal_id,
+                            "duration_ms": seg["duration_ms"],
+                            "wav_path": str(dst_wav),
+                            "mp3_path": str(dst_mp3),
+                            "waveform_data": json.dumps(seg.get("waveform_data", [])),
+                            "peak_dbfs": seg.get("peak_dbfs"),
+                            "species_energy_ratio": seg.get("species_energy_ratio"),
+                            "recorded_at": recorded_at,
+                        },
+                    )
+                    self._conn.execute(
+                        "UPDATE ingest_segments SET status = 'accepted' WHERE id = ?", (seg_id,)
+                    )
 
-            for seg_id in rejected_ids:
-                self._conn.execute(
-                    "UPDATE ingest_segments SET status = 'rejected' WHERE id = ?", (seg_id,)
-                )
+                for seg_id in rejected_ids:
+                    self._conn.execute(
+                        "UPDATE ingest_segments SET status = 'rejected' WHERE id = ?", (seg_id,)
+                    )
 
-            self._conn.execute(
-                "UPDATE ingest_jobs SET status = 'committed', updated_at = datetime('now') WHERE id = ?",
-                (job_id,),
-            )
-            self._conn.commit()
+                self._conn.execute(
+                    "UPDATE ingest_jobs SET status = 'committed', updated_at = datetime('now') WHERE id = ?",
+                    (job_id,),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                # Animal was deleted concurrently — FK constraint violated. Roll back DB
+                # writes and clean up the WAV/MP3 files that were already moved to permanent
+                # storage so they don't become orphans on disk.
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+                for _, _, _, dst_wav, dst_mp3 in committed:
+                    dst_wav.unlink(missing_ok=True)
+                    dst_mp3.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"Job {job_id!r}: animal {animal_id!r} no longer exists (deleted concurrently). "
+                    "Moved audio files have been removed."
+                ) from exc
         return new_sound_ids
 
     def delete_job(self, job_id: str) -> None:

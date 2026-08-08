@@ -90,7 +90,7 @@ class UpdateLabelsRequest(BaseModel):
     labels: list[str]
 
 
-class UpdateMeowRequest(BaseModel):
+class UpdateSoundRequest(BaseModel):
     labels: list[str] | None = None
     title: str | None = None
     recorded_at: str | None = None

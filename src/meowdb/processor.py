@@ -12,10 +12,10 @@ from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from scipy.signal import butter, sosfilt
 
-from meowdb.models import MeowSegment, ProcessingResult, ProcessorConfig
+from meowdb.models import ProcessingResult, ProcessorConfig, SoundSegment
 
 
-class MeowProcessor:
+class SoundProcessor:
     def __init__(self, config: ProcessorConfig | None = None) -> None:
         self.config = config or ProcessorConfig()
 
@@ -35,7 +35,7 @@ class MeowProcessor:
         output_dir = staging_dir or Path(f"/tmp/meowdb_{uuid.uuid4().hex}")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        segments: list[MeowSegment] = []
+        segments: list[SoundSegment] = []
         for i, (start_sample, end_sample, ratio) in enumerate(padded):
             start_ms = int(start_sample / sr * 1000)
             end_ms = int(end_sample / sr * 1000)
@@ -62,7 +62,7 @@ class MeowProcessor:
             elapsed_seconds=elapsed,
         )
 
-    def process_single(self, path: Path, staging_dir: Path | None = None) -> MeowSegment:
+    def process_single(self, path: Path, staging_dir: Path | None = None) -> SoundSegment:
         audio, samples, sr = self._load(path)
         species_band, low_band = self._build_discriminator_signals(samples, sr)
 
@@ -80,7 +80,7 @@ class MeowProcessor:
         waveform = self._compute_waveform(processed)
 
         duration_ms = len(processed)
-        return MeowSegment(
+        return SoundSegment(
             index=0,
             source_path=path,
             start_ms=0,
@@ -103,11 +103,11 @@ class MeowProcessor:
 
     def process_clips(
         self, path: Path, regions: list[tuple[int, int]], staging_dir: Path
-    ) -> list[MeowSegment]:
+    ) -> list[SoundSegment]:
         audio, samples, sr = self._load(path)
         species_band, low_band = self._build_discriminator_signals(samples, sr)
         staging_dir.mkdir(parents=True, exist_ok=True)
-        segments: list[MeowSegment] = []
+        segments: list[SoundSegment] = []
         for i, (start_ms, end_ms) in enumerate(regions):
             start_sample = int(start_ms / 1000 * sr)
             end_sample = int(end_ms / 1000 * sr)
@@ -141,12 +141,12 @@ class MeowProcessor:
         stem: str,
         species_energy_ratio: float,
         skip_processing: bool = False,
-    ) -> MeowSegment:
+    ) -> SoundSegment:
         processed = audio_slice if skip_processing else self._process_segment(audio_slice)
         peak_dbfs = max(float(processed.dBFS), -100.0)
         wav_path, mp3_path = self._export_segment(processed, staging_dir, stem)
         waveform = self._compute_waveform(processed)
-        return MeowSegment(
+        return SoundSegment(
             index=index,
             source_path=source_path,
             start_ms=start_ms,

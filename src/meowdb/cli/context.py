@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from meowdb.db import MeowDB
-    from meowdb.processor import MeowProcessor
+    from meowdb.processor import SoundProcessor
 
 
 @dataclass(frozen=True)
 class Context:
     db: MeowDB
-    processor: MeowProcessor
+    processor: SoundProcessor

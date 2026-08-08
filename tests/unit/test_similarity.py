@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from meowdb.db import MeowDB
-from meowdb.similarity import MeowSimilarity, update_library_uniqueness
+from meowdb.similarity import SoundSimilarity, update_library_uniqueness
 
 
 def _make_sine_wav(freq_hz: float, duration_s: float = 1.0, sr: int = 44100) -> bytes:
@@ -28,7 +28,7 @@ def _make_sine_wav(freq_hz: float, duration_s: float = 1.0, sr: int = 44100) -> 
 def test_fingerprint_dimension(tmp_path: Path) -> None:
     wav_path = tmp_path / "test.wav"
     wav_path.write_bytes(_make_sine_wav(500.0))
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     fingerprint = sim.extract_fingerprint(wav_path)
     assert len(fingerprint) == 120
 
@@ -36,7 +36,7 @@ def test_fingerprint_dimension(tmp_path: Path) -> None:
 def test_fingerprint_deterministic(tmp_path: Path) -> None:
     wav_path = tmp_path / "test.wav"
     wav_path.write_bytes(_make_sine_wav(500.0))
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     fp1 = sim.extract_fingerprint(wav_path)
     fp2 = sim.extract_fingerprint(wav_path)
     assert fp1 == fp2
@@ -46,24 +46,24 @@ def test_fingerprint_short_audio(tmp_path: Path) -> None:
     # 0.02s ≈ 880 samples — fewer than n_fft=2048, so delta features fall back to zeros
     wav_path = tmp_path / "short.wav"
     wav_path.write_bytes(_make_sine_wav(500.0, duration_s=0.02))
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     fingerprint = sim.extract_fingerprint(wav_path)
     assert len(fingerprint) == 120
 
 
 def test_scores_empty() -> None:
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     assert sim.compute_uniqueness_scores({}) == {}
 
 
 def test_scores_single() -> None:
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     result = sim.compute_uniqueness_scores({"a": [0.0] * 120})
     assert result == {"a": None}
 
 
 def test_scores_two_identical() -> None:
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     fingerprints = {
         "a": [0.0] * 120,
         "b": [0.0] * 120,
@@ -74,7 +74,7 @@ def test_scores_two_identical() -> None:
 
 
 def test_scores_percentile_range() -> None:
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     # 4 identical cluster vectors + 1 antiparallel outlier guarantees the outlier
     # scores 100.0 (most unique) and the cluster members score 0.0 (least unique),
     # covering the full range. Constant-magnitude vectors like [5]*120 vs [10]*120
@@ -95,7 +95,7 @@ def test_scores_percentile_range() -> None:
 
 
 def test_scores_knn_degrades_gracefully() -> None:
-    sim = MeowSimilarity(k_neighbors=5)
+    sim = SoundSimilarity(k_neighbors=5)
     fingerprints = {
         "a": [0.0] * 120,
         "b": [1.0] * 120,
@@ -111,7 +111,7 @@ def test_fingerprint_different_audio(tmp_path: Path) -> None:
     high_path = tmp_path / "high.wav"
     low_path.write_bytes(_make_sine_wav(500.0))
     high_path.write_bytes(_make_sine_wav(3000.0))
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     fp_low = sim.extract_fingerprint(low_path)
     fp_high = sim.extract_fingerprint(high_path)
     assert fp_low != fp_high
@@ -176,7 +176,7 @@ def test_update_library_two_score_flow(tmp_path: Path) -> None:
         assert row["species_uniqueness_score"] is not None
 
     # Each animal's stored scores must match a solo compute_uniqueness_scores call.
-    sim = MeowSimilarity()
+    sim = SoundSimilarity()
     fps = db.get_all_fingerprints()
     for pool_ids in (squishy_ids, fluffy_ids):
         pool = {sid: fps[sid] for sid in pool_ids}
@@ -217,7 +217,7 @@ def test_cross_species_isolation(tmp_path: Path) -> None:
     # Dog species scores must equal solo-pool recompute (cat sounds were not mixed in).
     fps = db.get_all_fingerprints()
     dog_pool = {sid: fps[sid] for sid in dog_ids}
-    expected = MeowSimilarity().compute_uniqueness_scores(dog_pool)
+    expected = SoundSimilarity().compute_uniqueness_scores(dog_pool)
 
     for sid in dog_ids:
         row = db.get_by_id(sid)

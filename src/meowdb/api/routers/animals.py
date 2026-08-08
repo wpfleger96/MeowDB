@@ -12,6 +12,7 @@ from PIL import Image, ImageOps
 from starlette.concurrency import run_in_threadpool
 
 from meowdb.api.auth import require_auth
+from meowdb.api.converters import photo_to_response
 from meowdb.api.models import (
     AnimalListResponse,
     AnimalResponse,
@@ -20,9 +21,8 @@ from meowdb.api.models import (
     PhotoListResponse,
     PhotoResponse,
 )
-from meowdb.api.routers.photos import photo_to_response
 from meowdb.api.streaming import safe_path, save_upload
-from meowdb.config import PHOTOS_DIR
+from meowdb.config import MP3_DIR, PHOTOS_DIR, WAV_DIR
 from meowdb.photos import optimize_photo
 
 _logger = logging.getLogger(__name__)
@@ -80,23 +80,28 @@ async def delete_animal(
         raise HTTPException(status_code=404, detail="Animal not found")
 
     for audio_path in result.get("audio_paths", []):
+        p = Path(audio_path)
+        base = MP3_DIR if p.suffix.lower() == ".mp3" else WAV_DIR
         try:
-            Path(audio_path).unlink(missing_ok=True)
+            safe_path(p, base).unlink(missing_ok=True)
+        except ValueError:
+            _logger.warning("Skipping out-of-bounds audio file %s", audio_path)
         except OSError:
             _logger.warning("Failed to remove audio file %s", audio_path)
 
     for photo_filename in result.get("photo_filenames", []):
-        photo_path = PHOTOS_DIR / photo_filename
         try:
-            photo_path.unlink(missing_ok=True)
+            safe_path(PHOTOS_DIR / photo_filename, PHOTOS_DIR).unlink(missing_ok=True)
+        except ValueError:
+            _logger.warning("Skipping out-of-bounds photo file %s", photo_filename)
         except OSError:
-            _logger.warning("Failed to remove photo file %s", photo_path)
+            _logger.warning("Failed to remove photo file %s", photo_filename)
 
 
 @router.get("/{animal_id}/photos", response_model=PhotoListResponse)
 async def list_animal_photos(animal_id: str, request: Request) -> PhotoListResponse:
     db = request.app.state.db
-    if db.get_animal(animal_id) is None:
+    if not db.animal_exists(animal_id):
         raise HTTPException(status_code=404, detail="Animal not found")
     photos = db.get_photos(animal_id=animal_id)
     return PhotoListResponse(items=[photo_to_response(p) for p in photos])
@@ -110,7 +115,7 @@ async def upload_animal_photo(
     _: None = Depends(require_auth),
 ) -> PhotoResponse:
     db = request.app.state.db
-    if db.get_animal(animal_id) is None:
+    if not db.animal_exists(animal_id):
         raise HTTPException(status_code=404, detail="Animal not found")
 
     source_filename = file.filename or "photo"

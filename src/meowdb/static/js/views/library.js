@@ -4,7 +4,7 @@
 
 function libraryView() {
   return {
-    meows: [],
+    sounds: [],
     total: 0,
     offset: 0,
     limit: 50,
@@ -20,7 +20,7 @@ function libraryView() {
 
     // Detail modal state
     showDetail: false,
-    detailMeow: null,
+    detailSound: null,
     showDeleteConfirm: false,
     labelInput: '',
     detailTitle: '',
@@ -29,16 +29,16 @@ function libraryView() {
 
     async init() {
       await Promise.all([
-        this._loadMeows(true),
+        this._loadSounds(true),
         this._loadLabels(),
         this._loadAnimals(),
       ]);
     },
 
-    async _loadMeows(reset = false) {
+    async _loadSounds(reset = false) {
       if (reset) {
         this.offset = 0;
-        this.meows = [];
+        this.sounds = [];
         this.isLoading = true;
       } else {
         this.isLoadingMore = true;
@@ -54,9 +54,9 @@ function libraryView() {
         if (this.filterAnimal) params.animal_id = this.filterAnimal;
 
         const res = await getSounds(params);
-        this.meows = reset ? res.items : [...this.meows, ...res.items];
+        this.sounds = reset ? res.items : [...this.sounds, ...res.items];
         this.total = res.total;
-        this.offset = this.meows.length;
+        this.offset = this.sounds.length;
       } catch (err) {
         showToast(err.message || 'Failed to load library', 'error');
       } finally {
@@ -95,14 +95,14 @@ function libraryView() {
 
     async changeSort(newSort) {
       this.sort = newSort;
-      await this._loadMeows(true);
+      await this._loadSounds(true);
     },
 
     async recalculate() {
       try {
         const result = await recalculateUniqueness({ force: true });
         showToast(`Uniqueness updated (${result.updated_count} fingerprints computed)`, 'success');
-        await this._loadMeows(true);
+        await this._loadSounds(true);
       } catch (err) {
         showToast(err.message || 'Recalculation failed', 'error');
       }
@@ -110,51 +110,51 @@ function libraryView() {
 
     async toggleLabelFilter(label) {
       this.filterLabel = this.filterLabel === label ? '' : label;
-      await this._loadMeows(true);
+      await this._loadSounds(true);
     },
 
     async setAnimalFilter(id) {
       this.filterAnimal = id;
-      await this._loadMeows(true);
+      await this._loadSounds(true);
     },
 
     async loadMore() {
-      if (this.isLoadingMore || this.meows.length >= this.total) return;
-      await this._loadMeows(false);
+      if (this.isLoadingMore || this.sounds.length >= this.total) return;
+      await this._loadSounds(false);
     },
 
     get hasMore() {
-      return this.meows.length < this.total;
+      return this.sounds.length < this.total;
     },
 
     /* ──────────────────────────────────────────────────────
        Inline playback
     ────────────────────────────────────────────────────── */
 
-    async togglePlay(meow, event) {
+    async togglePlay(sound, event) {
       event.stopPropagation();
 
-      if (this.playingId === meow.id) {
+      if (this.playingId === sound.id) {
         audioPlayer.stop();
         this.playingId = null;
         return;
       }
 
       audioPlayer.stop();
-      this.playingId = meow.id;
+      this.playingId = sound.id;
 
       // Record play (fire-and-forget)
-      recordPlay(meow.id).catch(() => {});
+      recordPlay(sound.id).catch(() => {});
 
       audioPlayer.onEnded = () => {
-        if (this.playingId === meow.id) this.playingId = null;
+        if (this.playingId === sound.id) this.playingId = null;
       };
       audioPlayer.onError = () => {
-        if (this.playingId === meow.id) this.playingId = null;
+        if (this.playingId === sound.id) this.playingId = null;
       };
 
       try {
-        await audioPlayer.playWithFallback(meow.mp3_url, meow.wav_url);
+        await audioPlayer.playWithFallback(sound.mp3_url, sound.wav_url);
       } catch {
         this.playingId = null;
       }
@@ -164,20 +164,20 @@ function libraryView() {
        Detail modal
     ────────────────────────────────────────────────────── */
 
-    openDetail(meow) {
+    openDetail(sound) {
       audioPlayer.stop();
       this._stopDetailWaveform();
       this.playingId = null;
       this._detailIsPlaying = false;
-      this.detailMeow = { ...meow, labels: [...(meow.labels || [])] };
-      this.detailTitle = meow.title || '';
+      this.detailSound = { ...sound, labels: [...(sound.labels || [])] };
+      this.detailTitle = sound.title || '';
       this.showDetail = true;
       this.showDeleteConfirm = false;
       this.labelInput = '';
 
       // Draw static waveform after modal is in the DOM
       this.$nextTick(() => {
-        this._drawDetailWaveform(meow, 0);
+        this._drawDetailWaveform(sound, 0);
       });
     },
 
@@ -186,18 +186,18 @@ function libraryView() {
       this._stopDetailWaveform();
       this._detailIsPlaying = false;
       this.showDetail = false;
-      this.detailMeow = null;
+      this.detailSound = null;
       this.showDeleteConfirm = false;
     },
 
-    _drawDetailWaveform(meow, progress) {
+    _drawDetailWaveform(sound, progress) {
       const canvas = this.$refs.detailWaveformCanvas;
-      if (!canvas || !meow?.waveform_data?.length) return;
+      if (!canvas || !sound?.waveform_data?.length) return;
 
       if (this._detailIsPlaying && progress === 0) {
         this._cancelDetailWaveform = animateWaveform(
           canvas,
-          meow.waveform_data,
+          sound.waveform_data,
           getAccentColor(),
           () => {
             if (audioPlayer.duration === 0) return 0;
@@ -205,7 +205,7 @@ function libraryView() {
           }
         );
       } else {
-        drawWaveform(canvas, meow.waveform_data, getAccentColor(), progress);
+        drawWaveform(canvas, sound.waveform_data, getAccentColor(), progress);
       }
     },
 
@@ -213,7 +213,7 @@ function libraryView() {
       this._cancelDetailWaveform = cancelDraw(this._cancelDetailWaveform);
     },
 
-    playDetailMeow() {
+    playDetailSound() {
       if (this._detailIsPlaying) {
         audioPlayer.stop();
         this._stopDetailWaveform();
@@ -221,24 +221,24 @@ function libraryView() {
         return;
       }
 
-      const meow = this.detailMeow;
-      if (!meow) return;
+      const sound = this.detailSound;
+      if (!sound) return;
 
       this._detailIsPlaying = true;
-      recordPlay(meow.id).catch(() => {});
-      this._drawDetailWaveform(meow, 0);
+      recordPlay(sound.id).catch(() => {});
+      this._drawDetailWaveform(sound, 0);
 
       audioPlayer.onEnded = () => {
         this._detailIsPlaying = false;
         this._stopDetailWaveform();
-        this._drawDetailWaveform(meow, 1);
+        this._drawDetailWaveform(sound, 1);
       };
       audioPlayer.onError = () => {
         this._detailIsPlaying = false;
         this._stopDetailWaveform();
       };
 
-      audioPlayer.playWithFallback(meow.mp3_url, meow.wav_url).catch(() => {
+      audioPlayer.playWithFallback(sound.mp3_url, sound.wav_url).catch(() => {
         this._detailIsPlaying = false;
         this._stopDetailWaveform();
       });
@@ -249,34 +249,34 @@ function libraryView() {
     ────────────────────────────────────────────────────── */
 
     removeLabel(label) {
-      if (!this.detailMeow) return;
+      if (!this.detailSound) return;
       if (!this.requireAuth()) return;
-      this.detailMeow.labels = this.detailMeow.labels.filter((l) => l !== label);
+      this.detailSound.labels = this.detailSound.labels.filter((l) => l !== label);
       this._saveLabels();
     },
 
     async addLabel() {
       const label = this.labelInput.trim().toLowerCase();
-      if (!label || !this.detailMeow) return;
-      if (this.detailMeow.labels.includes(label)) {
+      if (!label || !this.detailSound) return;
+      if (this.detailSound.labels.includes(label)) {
         this.labelInput = '';
         return;
       }
       if (!this.requireAuth()) return;
-      this.detailMeow.labels = [...this.detailMeow.labels, label];
+      this.detailSound.labels = [...this.detailSound.labels, label];
       this.labelInput = '';
       await this._saveLabels();
     },
 
     async _saveLabels() {
-      if (!this.detailMeow) return;
+      if (!this.detailSound) return;
       if (!this.requireAuth()) return;
       try {
-        await updateSound(this.detailMeow.id, { labels: this.detailMeow.labels });
+        await updateSound(this.detailSound.id, { labels: this.detailSound.labels });
         // Update the row in the list too
-        const idx = this.meows.findIndex((m) => m.id === this.detailMeow.id);
+        const idx = this.sounds.findIndex((m) => m.id === this.detailSound.id);
         if (idx !== -1) {
-          this.meows[idx] = { ...this.meows[idx], labels: [...this.detailMeow.labels] };
+          this.sounds[idx] = { ...this.sounds[idx], labels: [...this.detailSound.labels] };
         }
         // Refresh label filter chips
         await this._loadLabels();
@@ -286,13 +286,13 @@ function libraryView() {
     },
 
     async saveTitle() {
-      if (!this.detailMeow) return;
+      if (!this.detailSound) return;
       if (!this.requireAuth()) return;
       try {
-        const updated = await updateSound(this.detailMeow.id, { title: this.detailTitle || null });
-        this.detailMeow = { ...updated, labels: updated.labels || [] };
-        const idx = this.meows.findIndex((m) => m.id === this.detailMeow.id);
-        if (idx !== -1) this.meows[idx] = { ...this.meows[idx], title: updated.title };
+        const updated = await updateSound(this.detailSound.id, { title: this.detailTitle || null });
+        this.detailSound = { ...updated, labels: updated.labels || [] };
+        const idx = this.sounds.findIndex((m) => m.id === this.detailSound.id);
+        if (idx !== -1) this.sounds[idx] = { ...this.sounds[idx], title: updated.title };
       } catch (err) {
         showToast(err.message || 'Failed to save title', 'error');
       }
@@ -306,13 +306,13 @@ function libraryView() {
       this.showDeleteConfirm = true;
     },
 
-    async deleteMeowConfirmed() {
-      if (!this.detailMeow) return;
+    async deleteSoundConfirmed() {
+      if (!this.detailSound) return;
       if (!this.requireAuth()) return;
-      const id = this.detailMeow.id;
+      const id = this.detailSound.id;
       try {
         await deleteSound(id);
-        this.meows = this.meows.filter((m) => m.id !== id);
+        this.sounds = this.sounds.filter((m) => m.id !== id);
         this.total = Math.max(0, this.total - 1);
         this.closeDetail();
         showToast('Sound deleted', 'success');

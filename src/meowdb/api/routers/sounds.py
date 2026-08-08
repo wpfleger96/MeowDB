@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from meowdb.api.auth import require_auth
-from meowdb.api.models import FeedbackRequest, SoundListResponse, SoundResponse, UpdateMeowRequest
+from meowdb.api.models import FeedbackRequest, SoundListResponse, SoundResponse, UpdateSoundRequest
 from meowdb.api.streaming import safe_path
 from meowdb.config import MP3_DIR, WAV_DIR
 from meowdb.similarity import update_library_uniqueness
@@ -56,7 +56,7 @@ async def get_random_sound(
     response = _sound_to_response(sound)
     photo_row = db.get_random_photo_for_animal(sound["animal_id"], exclude_id=exclude_photo)
     if photo_row is not None:
-        from meowdb.api.routers.photos import photo_to_response
+        from meowdb.api.converters import photo_to_response
 
         response = response.model_copy(update={"photo": photo_to_response(photo_row)})
     return response
@@ -86,7 +86,7 @@ async def list_sounds(
 @router.patch("/sounds/{sound_id}", response_model=SoundResponse)
 async def update_sound(
     sound_id: str,
-    body: UpdateMeowRequest,
+    body: UpdateSoundRequest,
     request: Request,
     _: None = Depends(require_auth),
 ) -> SoundResponse:

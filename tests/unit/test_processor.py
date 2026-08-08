@@ -9,7 +9,7 @@ import pytest
 
 from pydub import AudioSegment
 
-from meowdb.processor import MeowProcessor
+from meowdb.processor import SoundProcessor
 
 _ffmpeg_available = pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
@@ -50,7 +50,7 @@ class TestAudioConversion:
         The key invariant: clipped positive samples produce non-negative int16 values
         and clipped negative samples produce non-positive int16 values.
         """
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         samples = np.array([1.5, -1.5, 0.5], dtype=np.float32)
         audio = processor._numpy_to_audio(samples, 44100)
         recovered = np.frombuffer(audio.raw_data, dtype=np.int16)
@@ -60,7 +60,7 @@ class TestAudioConversion:
         assert np.all(np.abs(recovered.astype(np.int32)) <= 32768)
 
     def test_round_trip_preserves_shape(self):
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 500)
         samples = processor._audio_to_numpy(audio)
         reconstructed = processor._numpy_to_audio(samples, audio.frame_rate)
@@ -68,7 +68,7 @@ class TestAudioConversion:
         assert len(recovered) == len(samples)
 
     def test_audio_to_numpy_float32(self):
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 100)
         samples = processor._audio_to_numpy(audio)
         assert samples.dtype == np.float32
@@ -80,7 +80,7 @@ class TestAudioConversion:
 class TestDiscriminatorSignals:
     def test_cat_band_passes_cat_frequency(self):
         """800Hz is inside the cat band (300-5000Hz); energy should be high."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 500)
         samples = processor._audio_to_numpy(audio)
         cat_band, low_band = processor._build_discriminator_signals(samples, audio.frame_rate)
@@ -90,7 +90,7 @@ class TestDiscriminatorSignals:
 
     def test_low_band_passes_speech_frequency(self):
         """150Hz is in the low band (0-300Hz); low energy should dominate."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(150, 500)
         samples = processor._audio_to_numpy(audio)
         cat_band, low_band = processor._build_discriminator_signals(samples, audio.frame_rate)
@@ -103,7 +103,7 @@ class TestDiscriminatorSignals:
 class TestSegmentDetection:
     def test_detects_cat_frequency_segment(self, tmp_path: Path):
         """800Hz tone should be detected as a candidate segment."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 1000, amplitude=0.6)
         wav_path = tmp_path / "cat.wav"
         _save_wav(audio, wav_path)
@@ -115,7 +115,7 @@ class TestSegmentDetection:
 
     def test_segment_duration_filter_rejects_too_short(self):
         """A 50ms tone is below min_segment_ms=80 and must be rejected."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 50, amplitude=0.6)
         samples = processor._audio_to_numpy(audio)
         cat_band, _ = processor._build_discriminator_signals(samples, audio.frame_rate)
@@ -124,7 +124,7 @@ class TestSegmentDetection:
 
     def test_segment_duration_filter_rejects_too_long(self):
         """A 10-second tone exceeds max_segment_ms=5000 and must be rejected."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         # Use lower amplitude so convolve-based RMS produces one merged run
         audio = _make_sine_wav(800, 10000, amplitude=0.4)
         samples = processor._audio_to_numpy(audio)
@@ -137,7 +137,7 @@ class TestSegmentDetection:
 class TestClassification:
     def test_accepts_cat_frequency_segment(self):
         """800Hz has high cat-band energy; ratio >= min_cat_energy_ratio → accepted."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 1000, amplitude=0.6)
         samples = processor._audio_to_numpy(audio)
         cat_band, low_band = processor._build_discriminator_signals(samples, audio.frame_rate)
@@ -148,7 +148,7 @@ class TestClassification:
 
     def test_rejects_speech_frequency_segment(self):
         """150Hz lives in low band; ratio < 1.2 → rejected."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(150, 1000, amplitude=0.6)
         samples = processor._audio_to_numpy(audio)
         cat_band, low_band = processor._build_discriminator_signals(samples, audio.frame_rate)
@@ -160,7 +160,7 @@ class TestClassification:
 @pytest.mark.unit
 class TestPadding:
     def test_expands_segment_by_pad(self):
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         sr = 44100
         # pre_pad_ms=200, post_pad_ms=200
         pre = int(0.200 * sr)
@@ -172,7 +172,7 @@ class TestPadding:
         assert padded[0][1] == sr * 2 + post
 
     def test_clamps_to_bounds(self):
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         sr = 44100
         total = sr * 2
         # Segment starting at 0 — pre-pad would go negative
@@ -182,7 +182,7 @@ class TestPadding:
         assert padded[0][1] <= total
 
     def test_merges_overlapping_after_padding(self):
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         sr = 44100
         total = sr * 5
         # Two close segments that overlap after padding
@@ -195,28 +195,28 @@ class TestPadding:
 class TestWaveform:
     def test_waveform_range(self):
         """All waveform values must be in [0, 1]."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 500)
         waveform = processor._compute_waveform(audio)
         assert all(0.0 <= v <= 1.0 for v in waveform)
 
     def test_waveform_length_approx_100_per_sec(self):
         """~100 samples/sec — 500ms → ~50 frames."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 500)
         waveform = processor._compute_waveform(audio)
         assert 30 <= len(waveform) <= 70
 
     def test_waveform_max_is_one(self):
         """After normalization, the peak must equal exactly 1.0."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 500, amplitude=0.3)
         waveform = processor._compute_waveform(audio)
         assert max(waveform) == pytest.approx(1.0, abs=1e-6)
 
     def test_silent_audio_returns_zeros(self):
         """Silent audio should produce all-zero waveform."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         silence = AudioSegment.silent(duration=500, frame_rate=44100)
         waveform = processor._compute_waveform(silence)
         assert all(v == 0.0 for v in waveform)
@@ -230,7 +230,7 @@ class TestProcessSingle:
         wav_path = tmp_path / "meow.wav"
         _save_wav(audio, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         segment = processor.process_single(wav_path, staging_dir=tmp_path)
 
         assert segment.index == 0
@@ -245,7 +245,7 @@ class TestProcessSingle:
         wav_path = tmp_path / "meow.wav"
         _save_wav(audio, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         segment = processor.process_single(wav_path, staging_dir=tmp_path)
 
         assert segment.wav_path is not None
@@ -267,7 +267,7 @@ class TestProcessFile:
         wav_path = tmp_path / "recording.wav"
         _save_wav(full, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         result = processor.process_file(wav_path, staging_dir=tmp_path)
 
         assert result.source_path == wav_path
@@ -282,7 +282,7 @@ class TestProcessFile:
         wav_path = tmp_path / "speech.wav"
         _save_wav(full, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         result = processor.process_file(wav_path, staging_dir=tmp_path)
 
         assert len(result.segments) == 0
@@ -293,7 +293,7 @@ class TestProcessFile:
         wav_path = tmp_path / "meow.wav"
         _save_wav(audio, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         result = processor.process_file(wav_path, staging_dir=tmp_path)
 
         assert result.elapsed_seconds > 0
@@ -310,7 +310,7 @@ class TestAdaptiveThreshold:
         -40dBFS threshold, so only adaptive detection catches it.
         """
         sr = 44100
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         # 5s recording: meow is only 8% of frames so P30 stays in the noise floor
         n_total = int(sr * 5.0)
 
@@ -329,7 +329,7 @@ class TestAdaptiveThreshold:
         # Fixed threshold (-40dBFS) must miss the meow (meow RMS ~ -43dBFS < -40)
         from meowdb.models import ProcessorConfig, SegmentationConfig
 
-        fixed_proc = MeowProcessor(
+        fixed_proc = SoundProcessor(
             config=ProcessorConfig(segmentation=SegmentationConfig(adaptive_threshold=False))
         )
         fixed_candidates = fixed_proc._detect_segments(cat_band, sr)
@@ -341,7 +341,7 @@ class TestAdaptiveThreshold:
 
     def test_adaptive_floor_clamps_threshold(self):
         """If percentile + offset would fall below adaptive_floor_dbfs, clamp to floor."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         # All active frames at -75dBFS: P30=-75, threshold=-75+10=-65, clamped to floor
         very_quiet = np.full(10000, -75.0)
         threshold = processor._compute_adaptive_threshold(very_quiet)
@@ -349,7 +349,7 @@ class TestAdaptiveThreshold:
 
     def test_adaptive_ceiling_clamps_threshold(self):
         """If percentile + offset would exceed adaptive_ceiling_dbfs, clamp to ceiling."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         # All frames near -10 dBFS → high percentile → threshold must clamp to ceiling
         very_loud = np.full(10000, -10.0)
         threshold = processor._compute_adaptive_threshold(very_loud)
@@ -360,7 +360,7 @@ class TestAdaptiveThreshold:
         from meowdb.models import ProcessorConfig, SegmentationConfig
 
         config = ProcessorConfig(segmentation=SegmentationConfig(adaptive_threshold=False))
-        processor = MeowProcessor(config=config)
+        processor = SoundProcessor(config=config)
         frame_dbfs = np.linspace(-80, -20, 1000)
         threshold = processor._compute_adaptive_threshold(frame_dbfs)
         assert threshold == config.segmentation.silence_threshold_dbfs
@@ -370,7 +370,7 @@ class TestAdaptiveThreshold:
 class TestSpectralClassifier:
     def test_pure_tone_has_low_flatness(self):
         """A pure 800Hz sine has near-zero spectral flatness (highly tonal)."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio = _make_sine_wav(800, 500)
         samples = processor._audio_to_numpy(audio)
         flatness = processor._spectral_flatness(samples, audio.frame_rate)
@@ -378,7 +378,7 @@ class TestSpectralClassifier:
 
     def test_white_noise_has_high_flatness(self):
         """White noise has flatness near 1.0 (spectrally flat)."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         rng = np.random.default_rng(42)
         noise = rng.standard_normal(44100).astype(np.float32) * 0.1
         flatness = processor._spectral_flatness(noise, 44100)
@@ -386,7 +386,7 @@ class TestSpectralClassifier:
 
     def test_short_segment_returns_zero(self):
         """Segments shorter than 256 samples return 0.0 (assumed tonal, passes test3)."""
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         short = np.zeros(100, dtype=np.float32)
         flatness = processor._spectral_flatness(short, 44100)
         assert flatness == 0.0
@@ -397,7 +397,7 @@ class TestSpectralClassifier:
         A tonal first 46ms followed by broadband noise must score high flatness
         overall, not low flatness from the onset alone.
         """
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         sr = 44100
         rng = np.random.default_rng(0)
         # 46ms tonal onset (one 2048-sample window)
@@ -421,7 +421,7 @@ class TestClassifierRequiresAllThree:
         above the 0.45 threshold. The 3-of-3 requirement correctly rejects this segment.
         """
         sr = 44100
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         rng = np.random.default_rng(7)
         noise_samples = (rng.standard_normal(int(sr * 0.3)) * 0.005).astype(np.float32)
         burst_audio = _make_sine_wav(800, 50, amplitude=0.5)
@@ -447,7 +447,7 @@ class TestShortMeowDetection:
         wav_path = tmp_path / "short_meow.wav"
         _save_wav(full, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio, samples, rate = processor._load(wav_path)
         cat_band, _ = processor._build_discriminator_signals(samples, rate)
         candidates = processor._detect_segments(cat_band, rate)
@@ -462,7 +462,7 @@ class TestShortMeowDetection:
         wav_path = tmp_path / "very_short.wav"
         _save_wav(full, wav_path)
 
-        processor = MeowProcessor()
+        processor = SoundProcessor()
         audio, samples, rate = processor._load(wav_path)
         cat_band, _ = processor._build_discriminator_signals(samples, rate)
         candidates = processor._detect_segments(cat_band, rate)
@@ -473,14 +473,14 @@ class TestShortMeowDetection:
 class TestSpeciesConfig:
     def test_processor_config_for_species_dog_has_dog_band(self):
         """processor_config_for_species('dog') builds a SegmentationConfig with the dog
-        frequency band (60–3500 Hz) and MeowProcessor accepts it without error."""
+        frequency band (60–3500 Hz) and SoundProcessor accepts it without error."""
         from meowdb.species import processor_config_for_species
 
         config = processor_config_for_species("dog")
         assert config.segmentation.band_low_hz == pytest.approx(60.0)
         assert config.segmentation.band_high_hz == pytest.approx(3500.0)
 
-        processor = MeowProcessor(config=config)
+        processor = SoundProcessor(config=config)
         assert processor.config.segmentation.band_low_hz == pytest.approx(60.0)
         assert processor.config.segmentation.band_high_hz == pytest.approx(3500.0)
 

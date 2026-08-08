@@ -21,9 +21,9 @@ def _run_recalculate(db: Any, force: bool = False) -> int:
         update_library_uniqueness(db, [], force=True)
         return len(all_ids)
     else:
-        existing_fps = set(db.get_all_fingerprints().keys())
-        missing_ids = [r["id"] for r in db.get_all_wav_paths() if r["id"] not in existing_fps]
-        update_library_uniqueness(db, missing_ids)
+        all_fps = db.get_all_fingerprints()
+        missing_ids = [r["id"] for r in db.get_all_wav_paths() if r["id"] not in all_fps]
+        update_library_uniqueness(db, missing_ids, fingerprints=all_fps)
         return len(missing_ids)
 
 

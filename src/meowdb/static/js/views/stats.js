@@ -47,8 +47,7 @@ function statsView() {
     },
 
     get firstSoundDate() {
-      if (!this.stats?.recent?.length) return '—';
-      return this.stats.first_sound_at
+      return this.stats?.first_sound_at
         ? MeowUtils.formatDate(this.stats.first_sound_at)
         : '—';
     },

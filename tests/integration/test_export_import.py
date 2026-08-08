@@ -684,3 +684,220 @@ def test_import_photos_warns_when_archive_has_no_photos(
     )
     assert result.exit_code == 0
     assert "does not contain photos" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Import hardening tests (path-traversal, corrupt audio, unsafe IDs)
+# ---------------------------------------------------------------------------
+
+_EMPTY_SOUND: dict = {
+    "timestamp": "",
+    "duration_ms": 100,
+    "labels": [],
+    "title": None,
+    "play_count": 0,
+    "last_played": None,
+    "created_at": "",
+    "waveform_data": [],
+    "peak_dbfs": None,
+    "cat_energy_ratio": None,
+    "recorded_at": None,
+    "upvote_count": 0,
+    "downvote_count": 0,
+}
+
+
+@pytest.mark.integration
+def test_import_traversal_sound_id_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_runner: CliRunner,
+    db_path: Path,
+    tmp_path: Path,
+) -> None:
+    """A manifest entry with a path-traversal sound ID is skipped; nothing written to disk."""
+    import meowdb.cli.commands.import_cmd as import_mod
+
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
+    monkeypatch.setattr(import_mod, "WAV_DIR", wav_dir)
+    monkeypatch.setattr(import_mod, "MP3_DIR", mp3_dir)
+
+    archive = tmp_path / "export.zip"
+    manifest = {
+        "format_version": 1,
+        "meow_count": 1,
+        "meows": [{"id": "../../evil", **_EMPTY_SOUND}],
+    }
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(_MANIFEST_PATH, json.dumps(manifest))
+
+    result = cli_runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
+    assert result.exit_code == 0, result.output
+
+    # Traversal ID rejected — no DB record created
+    db = MeowDB(db_path)
+    assert db.get_count() == 0
+    db.close()
+
+    # No WAV file written inside WAV_DIR
+    if wav_dir.exists():
+        assert list(wav_dir.glob("*.wav")) == []
+
+
+@pytest.mark.integration
+def test_import_traversal_photo_filename_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_runner: CliRunner,
+    db_path: Path,
+    tmp_path: Path,
+) -> None:
+    """A manifest photo with a path-traversal filename is skipped; nothing written outside PHOTOS_DIR."""
+    import meowdb.cli.commands.import_cmd as import_mod
+
+    photos_dir = tmp_path / "photos"
+    monkeypatch.setattr(import_mod, "WAV_DIR", tmp_path / "wav")
+    monkeypatch.setattr(import_mod, "MP3_DIR", tmp_path / "mp3")
+    monkeypatch.setattr(import_mod, "PHOTOS_DIR", photos_dir)
+
+    archive = tmp_path / "export.zip"
+    manifest = {
+        "format_version": 1,
+        "meow_count": 0,
+        "meows": [],
+        "photos": [
+            {
+                "id": str(uuid.uuid4()),
+                "animal_id": None,
+                "filename": "../etc/passwd.webp",
+                "created_at": "2026-01-01T00:00:00",
+                "is_default": False,
+                "updated_at": None,
+            }
+        ],
+    }
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(_MANIFEST_PATH, json.dumps(manifest))
+
+    result = cli_runner.invoke(
+        main, ["import", str(archive), "--include-photos", "--db-path", str(db_path)]
+    )
+    assert result.exit_code == 0, result.output
+
+    # Photo skipped — no DB record
+    db = MeowDB(db_path)
+    assert db.get_photos() == []
+    db.close()
+
+    # No file written at the escaped path
+    escaped = tmp_path / "etc" / "passwd.webp"
+    assert not escaped.exists()
+
+    # Nothing inside photos_dir either
+    if photos_dir.exists():
+        assert list(photos_dir.glob("*.webp")) == []
+
+
+@pytest.mark.integration
+def test_import_corrupt_wav_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_runner: CliRunner,
+    db_path: Path,
+    tmp_path: Path,
+    silent_wav_bytes: bytes,
+) -> None:
+    """Corrupt WAV entry is skipped with no artifacts on disk; valid sibling entry still imports."""
+    import meowdb.cli.commands.import_cmd as import_mod
+
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
+    monkeypatch.setattr(import_mod, "WAV_DIR", wav_dir)
+    monkeypatch.setattr(import_mod, "MP3_DIR", mp3_dir)
+
+    corrupt_id = str(uuid.uuid4())
+    valid_id = str(uuid.uuid4())
+
+    archive = tmp_path / "export.zip"
+    manifest = {
+        "format_version": 1,
+        "meow_count": 2,
+        "meows": [
+            {"id": corrupt_id, **_EMPTY_SOUND},
+            {"id": valid_id, **_EMPTY_SOUND},
+        ],
+    }
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(_MANIFEST_PATH, json.dumps(manifest))
+        zf.writestr(f"meowdb-export/audio/{corrupt_id}.wav", b"\xff" * 100)
+        zf.writestr(f"meowdb-export/audio/{valid_id}.wav", silent_wav_bytes)
+
+    # Override the autouse AudioSegment stub: fail only for the corrupt entry's path.
+    corrupt_wav_path = str(wav_dir / f"{corrupt_id}.wav")
+
+    class _SelectiveAudioSegment:
+        @staticmethod
+        def from_wav(path: str) -> _SelectiveAudioSegment:
+            if path == corrupt_wav_path:
+                raise Exception("Unreadable audio")
+            return _SelectiveAudioSegment()
+
+        def export(self, path: str, **kwargs: object) -> None:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_bytes(b"\x00")
+
+    monkeypatch.setattr(import_mod, "AudioSegment", _SelectiveAudioSegment)
+
+    result = cli_runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
+    assert result.exit_code == 0, result.output
+
+    # Corrupt entry: no .wav on disk, no .mp3, no DB record
+    assert not (wav_dir / f"{corrupt_id}.wav").exists()
+    assert not (mp3_dir / f"{corrupt_id}.mp3").exists()
+    db = MeowDB(db_path)
+    assert db.get_by_id(corrupt_id) is None
+
+    # Valid sibling entry: imported successfully
+    assert (wav_dir / f"{valid_id}.wav").exists()
+    assert (mp3_dir / f"{valid_id}.mp3").exists()
+    assert db.get_by_id(valid_id) is not None
+    db.close()
+
+
+@pytest.mark.integration
+def test_import_unsafe_sound_ids_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_runner: CliRunner,
+    db_path: Path,
+    tmp_path: Path,
+) -> None:
+    """Empty string, single-dot, and double-dot IDs are each rejected; no files written."""
+    import meowdb.cli.commands.import_cmd as import_mod
+
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
+    monkeypatch.setattr(import_mod, "WAV_DIR", wav_dir)
+    monkeypatch.setattr(import_mod, "MP3_DIR", mp3_dir)
+
+    archive = tmp_path / "export.zip"
+    manifest = {
+        "format_version": 1,
+        "meow_count": 3,
+        "meows": [
+            {"id": "", **_EMPTY_SOUND},
+            {"id": ".", **_EMPTY_SOUND},
+            {"id": "..", **_EMPTY_SOUND},
+        ],
+    }
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr(_MANIFEST_PATH, json.dumps(manifest))
+
+    result = cli_runner.invoke(main, ["import", str(archive), "--db-path", str(db_path)])
+    assert result.exit_code == 0, result.output
+
+    # All three unsafe IDs rejected — nothing in DB
+    db = MeowDB(db_path)
+    assert db.get_count() == 0
+    db.close()
+
+    # No WAV files written
+    if wav_dir.exists():
+        assert list(wav_dir.glob("*.wav")) == []
