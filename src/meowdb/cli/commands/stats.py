@@ -15,26 +15,33 @@ def stats(db_path: str | None) -> None:
     data = ctx.db.get_stats()
     ctx.db.close()
 
-    total = data["total_meows"]
+    total = data["total_sounds"]
     if total == 0:
-        print_info("No meows in the library yet.")
+        print_info("No sounds in the library yet.")
         return
 
     console.print()
-    console.print(f"  [bold]Total meows:[/bold]    {total}")
+    console.print(f"  [bold]Total sounds:[/bold]   {total}")
     console.print(
         f"  [bold]Total duration:[/bold] {format_duration(int(data['total_duration_ms']))}"
     )
     console.print(f"  [bold]Avg duration:[/bold]   {format_duration(int(data['avg_duration_ms']))}")
 
+    species_counts = data.get("species_counts") or {}
+    if species_counts:
+        console.print()
+        console.print("  [bold]By species:[/bold]")
+        for species, count in sorted(species_counts.items()):
+            console.print(f"    {species}: {count}")
+
     most_played = data.get("most_played") or []
     if most_played:
         console.print()
         console.print("  [bold]Most played:[/bold]")
-        for meow in most_played[:5]:
-            short_id = meow["id"][:8]
-            plays = meow.get("play_count", 0)
-            duration = format_duration(meow["duration_ms"])
+        for sound in most_played[:5]:
+            short_id = sound["id"][:8]
+            plays = sound.get("play_count", 0)
+            duration = format_duration(sound["duration_ms"])
             console.print(f"    {short_id}  {duration}  {plays}x")
 
     recent = data.get("recent") or []

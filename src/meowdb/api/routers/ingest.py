@@ -6,8 +6,9 @@ import shutil
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -52,6 +53,7 @@ def _job_to_response(job: dict) -> IngestJobResponse:  # type: ignore[type-arg]
         segments=segments,
         source_filename=job.get("source_filename"),
         error=job.get("error"),
+        animal_id=job.get("animal_id"),
     )
 
 
@@ -89,15 +91,20 @@ def _extract_audio_from_video(source_path: Path, staging_dir: Path) -> None:
 async def create_ingest_job(
     request: Request,
     file: UploadFile,
+    animal_id: str = Form(...),
 ) -> IngestJobResponse:
     db = request.app.state.db
+
+    animal = db.get_animal(animal_id)
+    if animal is None:
+        raise HTTPException(status_code=404, detail="Animal not found")
 
     source_filename = file.filename or "upload"
     suffix = Path(source_filename).suffix.lower()
     if suffix not in ALLOWED_MEDIA_SUFFIXES:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {suffix!r}")
 
-    job_id = db.create_job(source_filename)
+    job_id = db.create_job(source_filename, animal_id)
 
     job_staging_dir = STAGING_DIR / job_id
     job_staging_dir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +117,11 @@ async def create_ingest_job(
         shutil.rmtree(job_staging_dir, ignore_errors=True)
         db.delete_job(job_id)
         raise
+    except OSError as err:
+        temp_path.unlink(missing_ok=True)
+        shutil.rmtree(job_staging_dir, ignore_errors=True)
+        db.delete_job(job_id)
+        raise HTTPException(status_code=500, detail="Failed to store upload") from err
 
     db.update_job_status(job_id, "uploaded")
 
@@ -125,6 +137,7 @@ async def create_ingest_job(
         job_id=job_id,
         status="uploaded",
         source_filename=source_filename,
+        animal_id=animal_id,
     )
 
 
@@ -187,7 +200,7 @@ async def commit_ingest_job(
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    meow_ids = db.commit_job(job_id, body.accepted_ids, body.rejected_ids, WAV_DIR, MP3_DIR)
+    sound_ids = db.commit_job(job_id, body.accepted_ids, body.rejected_ids, WAV_DIR, MP3_DIR)
 
     # Clean up rejected staging files
     for seg_id in body.rejected_ids:
@@ -207,10 +220,10 @@ async def commit_ingest_job(
         except OSError:
             logger.warning("Failed to remove staging dir %s", job_staging_dir)
 
-    if meow_ids:
-        await run_in_threadpool(update_library_uniqueness, db, meow_ids)
+    if sound_ids:
+        await run_in_threadpool(update_library_uniqueness, db, sound_ids)
 
-    return CommitResponse(meow_ids=meow_ids, rejected_count=len(body.rejected_ids))
+    return CommitResponse(sound_ids=sound_ids, rejected_count=len(body.rejected_ids))
 
 
 @router.delete("/ingest/{job_id}", status_code=204)
@@ -253,24 +266,35 @@ async def stream_source_audio(job_id: str, request: Request) -> StreamingRespons
     return stream_file(source_path, request, media_type)
 
 
+def _processor_for_job(db: Any, job: dict) -> Any:  # type: ignore[type-arg]
+    from meowdb.processor import SoundProcessor
+    from meowdb.species import DEFAULT_SPECIES, processor_config_for_species
+
+    animal = db.get_animal(job["animal_id"])
+    species = animal["species"] if animal else DEFAULT_SPECIES
+    return SoundProcessor(processor_config_for_species(species))
+
+
 @router.post("/ingest/{job_id}/detect", response_model=DetectResponse)
 async def detect_regions(job_id: str, request: Request) -> DetectResponse:
-    from meowdb.processor import MeowProcessor
-
     db = request.app.state.db
     job = db.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    processor = _processor_for_job(db, job)
     source_path = _resolve_staging_path(job_id)
-    result = await run_in_threadpool(MeowProcessor().detect_only, source_path)
+    try:
+        result = await run_in_threadpool(processor.detect_only, source_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not process audio file") from exc
     return DetectResponse(regions=[ClipRegion(start_ms=s, end_ms=e) for s, e in result])
 
 
 @router.post("/ingest/{job_id}/clip", response_model=CommitResponse)
 async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> CommitResponse:
-    from meowdb.processor import MeowProcessor
-
     db = request.app.state.db
     job = db.get_job(job_id)
     if job is None:
@@ -279,6 +303,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     if not body.regions:
         raise HTTPException(status_code=400, detail="At least one region is required")
 
+    processor = _processor_for_job(db, job)
     source_path = _resolve_staging_path(job_id)
     try:
         mtime = os.path.getmtime(str(source_path))
@@ -288,17 +313,22 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     staging_dir = STAGING_DIR / job_id
 
     regions = [(r.start_ms, r.end_ms) for r in body.regions]
-    segments = await run_in_threadpool(
-        MeowProcessor().process_clips, source_path, regions, staging_dir
-    )
+    try:
+        segments = await run_in_threadpool(
+            processor.process_clips, source_path, regions, staging_dir
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not process audio file") from exc
 
     seg_dicts = [seg.to_db_dict() for seg in segments]
     db.add_segments(job_id, seg_dicts)
     segment_ids = db.get_segment_ids(job_id)
-    meow_ids = db.commit_job(job_id, segment_ids, [], WAV_DIR, MP3_DIR, recorded_at=recorded_at)
+    sound_ids = db.commit_job(job_id, segment_ids, [], WAV_DIR, MP3_DIR, recorded_at=recorded_at)
     shutil.rmtree(staging_dir, ignore_errors=True)
 
-    if meow_ids:
-        await run_in_threadpool(update_library_uniqueness, db, meow_ids)
+    if sound_ids:
+        await run_in_threadpool(update_library_uniqueness, db, sound_ids)
 
-    return CommitResponse(meow_ids=meow_ids, rejected_count=0)
+    return CommitResponse(sound_ids=sound_ids, rejected_count=0)

@@ -10,34 +10,119 @@ import numpy as np
 from pydub import AudioSegment
 from scipy.fft import dct
 
+from meowdb.species import DEFAULT_SPECIES, get_species_config
+
 if TYPE_CHECKING:
     from meowdb.db import MeowDB
 
 _logger = logging.getLogger(__name__)
 
 
-def update_library_uniqueness(db: MeowDB, new_meow_ids: list[str]) -> None:
-    """Extract fingerprints for new meows, then recompute uniqueness scores for the whole library."""
-    similarity = MeowSimilarity()
-    all_wav_paths = {r["id"]: r["wav_path"] for r in db.get_all_wav_paths()}
-    fingerprints = db.get_all_fingerprints()
+def _compute_group_scores(
+    sim_scorer: SoundSimilarity,
+    fingerprints: dict[str, list[float]],
+    group_map: dict[str, str],
+) -> dict[str, float | None]:
+    """Partition sounds by group key and score each pool independently.
 
-    for meow_id in new_meow_ids:
-        if meow_id not in fingerprints and meow_id in all_wav_paths:
+    Only sounds that appear in both ``fingerprints`` and ``group_map`` are
+    included.  Sounds with no fingerprint are silently skipped; their existing
+    DB scores are left untouched by the caller.
+
+    Args:
+        sim_scorer: Any SoundSimilarity instance — scoring is band-independent.
+        fingerprints: {sound_id: feature_vector} for all sounds with fingerprints.
+        group_map: {sound_id: group_key} defining the pools (e.g. animal_id or species).
+
+    Returns:
+        Flat {sound_id: percentile | None} covering every sound that has both a
+        fingerprint and a group key.  A pool of one yields None for that sound.
+    """
+    pools: dict[str, list[str]] = {}
+    for sound_id, group_key in group_map.items():
+        if sound_id in fingerprints:
+            pools.setdefault(group_key, []).append(sound_id)
+
+    results: dict[str, float | None] = {}
+    for ids in pools.values():
+        pool_fps = {sid: fingerprints[sid] for sid in ids}
+        results.update(sim_scorer.compute_uniqueness_scores(pool_fps))
+    return results
+
+
+def update_library_uniqueness(
+    db: MeowDB,
+    new_sound_ids: list[str],
+    *,
+    force: bool = False,
+    fingerprints: dict[str, list[float]] | None = None,
+) -> None:
+    """Extract fingerprints for new sounds, then recompute both uniqueness scores.
+
+    Args:
+        db: Open MeowDB instance.
+        new_sound_ids: Sound IDs just added to the library.  Fingerprints are
+            extracted for any of these that are missing one.
+        force: When True, re-extract fingerprints for **all** sounds in the DB
+            using their species-appropriate frequency bands (useful after band
+            config changes or file fixes).  ``new_sound_ids`` is ignored.
+        fingerprints: Pre-loaded fingerprint dict {sound_id: feature_vector}.
+            When provided and ``force`` is False, skips the DB fetch for the
+            existing fingerprint set (avoids a redundant round-trip when the
+            caller already holds the dict).  Ignored when ``force`` is True
+            because force re-extracts all fingerprints from scratch.
+
+    Each sound receives two percentile scores:
+    - ``animal_uniqueness_score``: rank within the same animal's sound pool.
+    - ``species_uniqueness_score``: rank within all sounds of the same species.
+
+    Only sounds whose scores were computed in this call are written; sounds
+    absent from the results dict (e.g. no fingerprint) keep their existing
+    scores in the DB.
+    """
+    species_map = db.get_sound_species_groups()
+    all_wav_paths = {r["id"]: r["wav_path"] for r in db.get_all_wav_paths()}
+    # Re-use caller-supplied fingerprints when available and not force (avoids a
+    # redundant DB round-trip when the caller already fetched the full dict).
+    if fingerprints is not None and not force:
+        fingerprints = dict(fingerprints)  # copy — extraction loop mutates this
+    else:
+        fingerprints = db.get_all_fingerprints()
+
+    # Cache one SoundSimilarity extractor per species so we pay the filterbank
+    # build cost at most once per species per call.
+    extractors: dict[str, SoundSimilarity] = {}
+
+    ids_to_extract: list[str] = list(all_wav_paths) if force else new_sound_ids
+
+    # Collect newly extracted fingerprints for a single bulk write after the loop.
+    new_fingerprints: dict[str, list[float]] = {}
+    for sound_id in ids_to_extract:
+        if (force or sound_id not in fingerprints) and sound_id in all_wav_paths:
             try:
-                fp = similarity.extract_fingerprint(all_wav_paths[meow_id])
-                db.update_fingerprint(meow_id, fp)
-                fingerprints[meow_id] = fp
+                species = species_map.get(sound_id, DEFAULT_SPECIES)
+                if species not in extractors:
+                    cfg = get_species_config(species)
+                    extractors[species] = SoundSimilarity(fmin=cfg.fmin, fmax=cfg.fmax)
+                fp = extractors[species].extract_fingerprint(all_wav_paths[sound_id])
+                new_fingerprints[sound_id] = fp
+                fingerprints[sound_id] = fp
             except Exception as exc:
-                _logger.warning("Failed to extract fingerprint for %s: %s", meow_id, exc)
+                _logger.warning("Failed to extract fingerprint for %s: %s", sound_id, exc)
+
+    if new_fingerprints:
+        db.update_fingerprints_bulk(new_fingerprints)
 
     if fingerprints:
-        scores = similarity.compute_uniqueness_scores(fingerprints)
-        db.update_uniqueness_scores_bulk(scores)
+        # Band choice doesn't affect scoring math; use a single default instance.
+        scorer = SoundSimilarity()
+        animal_scores = _compute_group_scores(scorer, fingerprints, db.get_sound_animal_groups())
+        species_scores = _compute_group_scores(scorer, fingerprints, species_map)
+        db.update_uniqueness_scores_bulk(animal_scores, species_scores)
 
 
-class MeowSimilarity:
-    """MFCC-based audio fingerprinting and uniqueness scoring for meow comparison."""
+class SoundSimilarity:
+    """MFCC-based audio fingerprinting and uniqueness scoring for sound comparison."""
 
     def __init__(
         self,
@@ -105,7 +190,7 @@ class MeowSimilarity:
         return pcen
 
     def extract_fingerprint(self, wav_path: str | Path) -> list[float]:
-        """Return a 120-dim feature vector for the meow (static + delta + delta-delta MFCCs, each mean+std)."""
+        """Return a 120-dim feature vector for the sound (static + delta + delta-delta MFCCs, each mean+std)."""
         audio = AudioSegment.from_wav(str(wav_path))
         audio = audio.set_channels(1).set_frame_rate(self.sr)
         samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
@@ -145,10 +230,10 @@ class MeowSimilarity:
     def compute_uniqueness_scores(
         self, fingerprints: dict[str, list[float]]
     ) -> dict[str, float | None]:
-        """Return {meow_id: uniqueness_percentile} for all meows.
+        """Return {sound_id: uniqueness_percentile} for all sounds.
 
-        Score is the percentile rank of each meow's raw uniqueness relative to the library.
-        A library of one meow returns None (percentile rank is undefined with no peers).
+        Score is the percentile rank of each sound's raw uniqueness relative to the pool.
+        A pool of one sound returns None (percentile rank is undefined with no peers).
         """
         ids = list(fingerprints.keys())
         if len(ids) == 0:
@@ -168,19 +253,19 @@ class MeowSimilarity:
         sim_matrix = normalized @ normalized.T
 
         raw_uniqueness: dict[str, float] = {}
-        for idx, meow_id in enumerate(ids):
+        for idx, sound_id in enumerate(ids):
             row = sim_matrix[idx].copy()
             row[idx] = -np.inf  # exclude self
             k = min(self.k_neighbors, len(ids) - 1)  # graceful degradation
             # np.partition is O(N), faster than full sort
             top_k = np.partition(row, -k)[-k:]
             avg_sim = float(np.mean(np.clip(top_k, 0.0, 1.0)))
-            raw_uniqueness[meow_id] = 1.0 - avg_sim
+            raw_uniqueness[sound_id] = 1.0 - avg_sim
 
-        raw_vals = np.array([raw_uniqueness[mid] for mid in ids])
+        raw_vals = np.array([raw_uniqueness[sid] for sid in ids])
         scores: dict[str, float | None] = {}
-        for idx, meow_id in enumerate(ids):
+        for idx, sound_id in enumerate(ids):
             n_below = int(np.sum(raw_vals < raw_vals[idx]))
             pct = round(n_below / (len(ids) - 1) * 100.0, 1) if len(ids) > 1 else 0.0
-            scores[meow_id] = pct
+            scores[sound_id] = pct
         return scores

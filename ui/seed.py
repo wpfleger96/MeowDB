@@ -41,79 +41,116 @@ def main() -> None:
     wav_dir.mkdir(parents=True, exist_ok=True)
     mp3_dir.mkdir(parents=True, exist_ok=True)
 
-    meows = [
-        {
-            "timestamp": "2026-01-01T10:00:00",
-            "duration_ms": 800,
-            "labels": ["happy"],
-            "peak_dbfs": -8.0,
-            "cat_energy_ratio": 3.1,
-            "plays": 12,
-        },
-        {
-            "timestamp": "2026-01-02T10:00:00",
-            "duration_ms": 1200,
-            "labels": ["hungry", "loud"],
-            "peak_dbfs": -5.0,
-            "cat_energy_ratio": 2.8,
-            "plays": 7,
-        },
-        {
-            "timestamp": "2026-01-03T10:00:00",
-            "duration_ms": 450,
-            "labels": ["happy"],
-            "peak_dbfs": -12.0,
-            "cat_energy_ratio": 2.2,
-            "plays": 3,
-        },
-        {
-            "timestamp": "2026-01-04T10:00:00",
-            "duration_ms": 2100,
-            "labels": [],
-            "peak_dbfs": -15.0,
-            "cat_energy_ratio": 1.8,
-            "plays": 0,
-        },
-        {
-            "timestamp": "2026-01-05T10:00:00",
-            "duration_ms": 600,
-            "labels": ["sleepy"],
-            "peak_dbfs": -20.0,
-            "cat_energy_ratio": 1.5,
-            "plays": 1,
-        },
-    ]
-
     db = MeowDB(db_path)
     try:
-        for i, meow in enumerate(meows):
-            stem = f"meow-{i + 1:02d}"
+        # MeowDB.__init__ auto-seeds Squishy (cat) when the animals table is empty.
+        # Reuse that row rather than inserting a duplicate.
+        squishy_id = db.get_animals()[0]["id"]
+
+        thrasher_id = db.add_animal("Thrasher", "cat")
+        slushie_id = db.add_animal("Slushie", "dog")
+
+        sounds = [
+            # Squishy (cat) — 3 sounds
+            {
+                "animal_id": squishy_id,
+                "timestamp": "2026-01-01T10:00:00",
+                "duration_ms": 800,
+                "labels": ["happy"],
+                "peak_dbfs": -8.0,
+                "species_energy_ratio": 3.1,
+                "plays": 12,
+            },
+            {
+                "animal_id": squishy_id,
+                "timestamp": "2026-01-02T10:00:00",
+                "duration_ms": 1200,
+                "labels": ["hungry", "loud"],
+                "peak_dbfs": -5.0,
+                "species_energy_ratio": 2.8,
+                "plays": 7,
+            },
+            {
+                "animal_id": squishy_id,
+                "timestamp": "2026-01-03T10:00:00",
+                "duration_ms": 450,
+                "labels": ["happy"],
+                "peak_dbfs": -12.0,
+                "species_energy_ratio": 2.2,
+                "plays": 3,
+            },
+            # Thrasher (cat) — 2 sounds
+            {
+                "animal_id": thrasher_id,
+                "timestamp": "2026-01-04T10:00:00",
+                "duration_ms": 2100,
+                "labels": [],
+                "peak_dbfs": -15.0,
+                "species_energy_ratio": 1.8,
+                "plays": 0,
+            },
+            {
+                "animal_id": thrasher_id,
+                "timestamp": "2026-01-05T10:00:00",
+                "duration_ms": 600,
+                "labels": ["sleepy"],
+                "peak_dbfs": -20.0,
+                "species_energy_ratio": 1.5,
+                "plays": 1,
+            },
+            # Slushie (dog) — 2 sounds
+            {
+                "animal_id": slushie_id,
+                "timestamp": "2026-01-06T10:00:00",
+                "duration_ms": 950,
+                "labels": ["playful"],
+                "peak_dbfs": -10.0,
+                "species_energy_ratio": 2.5,
+                "plays": 4,
+            },
+            {
+                "animal_id": slushie_id,
+                "timestamp": "2026-01-07T10:00:00",
+                "duration_ms": 700,
+                "labels": [],
+                "peak_dbfs": -18.0,
+                "species_energy_ratio": 1.2,
+                "plays": 0,
+            },
+        ]
+
+        for i, sound in enumerate(sounds):
+            stem = f"sound-{i + 1:02d}"
             wav_path = wav_dir / f"{stem}.wav"
             mp3_path = mp3_dir / f"{stem}.mp3"
 
             _make_wav(wav_path)
             _make_mp3(mp3_path)
 
-            meow_id = db.add(
+            sound_id = db.add(
                 {
-                    "timestamp": meow["timestamp"],
-                    "duration_ms": meow["duration_ms"],
-                    "labels": meow["labels"],
+                    "animal_id": sound["animal_id"],
+                    "timestamp": sound["timestamp"],
+                    "duration_ms": sound["duration_ms"],
+                    "labels": sound["labels"],
                     "wav_path": str(wav_path),
                     "mp3_path": str(mp3_path),
                     "waveform_data": _waveform(i),
-                    "peak_dbfs": meow["peak_dbfs"],
-                    "cat_energy_ratio": meow["cat_energy_ratio"],
+                    "peak_dbfs": sound["peak_dbfs"],
+                    "species_energy_ratio": sound["species_energy_ratio"],
                 }
             )
 
-            play_count: int = meow["plays"]  # type: ignore[assignment]
-            for _ in range(play_count):
-                db.increment_play_count(meow_id)
+            for _ in range(sound["plays"]):
+                db.increment_play_count(sound_id)
+
+        animals = db.get_animals()
+        print(
+            f"Seeded {len(sounds)} sounds across {len(animals)} animals "
+            f"({', '.join(a['name'] for a in animals)}) into {db_path}"
+        )
     finally:
         db.close()
-
-    print(f"Seeded {len(meows)} meows into {db_path}")
 
 
 if __name__ == "__main__":

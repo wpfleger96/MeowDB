@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import logging
 import time
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -11,36 +9,22 @@ from starlette.concurrency import run_in_threadpool
 
 from meowdb.api.auth import require_auth
 from meowdb.api.models import RecalculateResponse
-from meowdb.similarity import MeowSimilarity
+from meowdb.similarity import update_library_uniqueness
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
-
-_similarity = MeowSimilarity()
 
 
 def _run_recalculate(db: Any, force: bool = False) -> int:
-    """Extract fingerprints (missing ones, or all if force=True), recompute all scores."""
-    all_rows = db.get_all_wav_paths()
-    existing_fps = db.get_all_fingerprints()
-
-    updated = 0
-    for row in all_rows:
-        meow_id = row["id"]
-        if force or meow_id not in existing_fps:
-            try:
-                fp = _similarity.extract_fingerprint(Path(row["wav_path"]))
-                db.update_fingerprint(meow_id, fp)
-                existing_fps[meow_id] = fp
-                updated += 1
-            except Exception as exc:
-                logger.warning("Failed to extract fingerprint for %s: %s", meow_id, exc)
-
-    if existing_fps:
-        scores = _similarity.compute_uniqueness_scores(existing_fps)
-        db.update_uniqueness_scores_bulk(scores)
-
-    return updated
+    """Delegate fingerprint extraction and uniqueness recomputation to update_library_uniqueness."""
+    if force:
+        all_ids = [r["id"] for r in db.get_all_wav_paths()]
+        update_library_uniqueness(db, [], force=True)
+        return len(all_ids)
+    else:
+        all_fps = db.get_all_fingerprints()
+        missing_ids = [r["id"] for r in db.get_all_wav_paths() if r["id"] not in all_fps]
+        update_library_uniqueness(db, missing_ids, fingerprints=all_fps)
+        return len(missing_ids)
 
 
 @router.post("/uniqueness/recalculate", response_model=RecalculateResponse)
@@ -51,7 +35,7 @@ async def recalculate_uniqueness(
 ) -> RecalculateResponse:
     """Recompute MFCC fingerprints and all uniqueness scores.
 
-    By default only extracts fingerprints for meows that don't have one yet.
+    By default only extracts fingerprints for sounds that don't have one yet.
     Pass ?force=true to re-extract all fingerprints (useful after fixing file issues).
     """
     db = request.app.state.db

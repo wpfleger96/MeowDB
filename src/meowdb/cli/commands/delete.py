@@ -16,22 +16,22 @@ from meowdb.display import print_error, print_success
 @click.option("--force", is_flag=True, default=False, help="Skip confirmation prompt.")
 @db_path_option
 def delete(id: str, force: bool, db_path: str | None) -> None:
-    """Delete a meow from the library."""
+    """Delete a sound from the library."""
     ctx = build_context(db_path)
 
-    meow = ctx.db.get_by_id(id)
-    if meow is None:
-        die(ctx, f"Meow not found: {id}")
+    sound = ctx.db.get_by_id(id)
+    if sound is None:
+        die(ctx, f"Sound not found: {id}")
 
     if not force:
-        confirmed = click.confirm(f"Delete meow {id[:8]}?", default=False)
+        confirmed = click.confirm(f"Delete sound {id[:8]}?", default=False)
         if not confirmed:
             ctx.db.close()
             return
 
     # Remove audio files before deleting the db record
     for field in ("wav_path", "mp3_path"):
-        file_path = meow.get(field)
+        file_path = sound.get(field)
         if file_path:
             p = Path(file_path)
             if p.exists():

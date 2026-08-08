@@ -8,6 +8,9 @@ function ingestView() {
 
     jobs: [],
 
+    animals: [],
+    selectedAnimalId: '',
+
     uploadProgress: { done: 0, total: 0, errors: [] },
 
     isDragOver: false,
@@ -22,13 +25,28 @@ function ingestView() {
        Lifecycle
     ────────────────────────────────────────────────────── */
 
-    init() {
+    async init() {
       this._wavesurfers = new Map();
       try {
         micRecorder.onTick = (s) => { this.recordSeconds = s; };
         micRecorder.onStop = (blob) => { this._uploadBlob(blob); };
       } catch (e) {
         console.error('ingestView init error:', e);
+      }
+
+      const boot = window.__BOOTSTRAP__ || {};
+      if (boot.animals) {
+        this.animals = boot.animals;
+      } else {
+        try {
+          const res = await getAnimals();
+          this.animals = res.items;
+        } catch {
+          this.animals = [];
+        }
+      }
+      if (this.animals.length > 0) {
+        this.selectedAnimalId = this.animals[0].id;
       }
     },
 
@@ -79,6 +97,11 @@ function ingestView() {
       if (this._resetting) return;
       if (!this.requireAuth()) return;
 
+      if (!this.selectedAnimalId) {
+        showToast('Select an animal before uploading', 'error');
+        return;
+      }
+
       this.phase = 'uploading';
       this.uploadProgress = { done: 0, total: files.length, errors: [] };
       for (const job of this.jobs) {
@@ -108,7 +131,7 @@ function ingestView() {
         const job = this.jobs[i];
 
         try {
-          const result = await createIngestJob(file);
+          const result = await createIngestJob(file, this.selectedAnimalId);
           job.jobId = result.job_id;
           job.phase = 'clipping';
         } catch (err) {
@@ -343,7 +366,7 @@ function ingestView() {
           job.regionCount = entry.regions.getRegions().length;
         }
         if (result.regions.length === 0) {
-          showToast('No meows detected — draw regions manually', 'info');
+          showToast('No sounds detected — draw regions manually', 'info');
         }
       } catch (err) {
         showToast(err.message || 'Auto-detect failed', 'error');
@@ -382,7 +405,7 @@ function ingestView() {
         const result = await clipAndCommit(job.jobId, regionData);
         this._destroyWaveSurferForJob(job);
         job.phase = 'done';
-        showToast('Saved ' + result.meow_ids.length + ' meow' + (result.meow_ids.length !== 1 ? 's' : ''), 'success');
+        showToast('Saved ' + result.sound_ids.length + ' sound' + (result.sound_ids.length !== 1 ? 's' : ''), 'success');
         if (this.jobs.every(j => j.phase === 'done' || j.phase === 'error')) {
           this.phase = 'done';
         }

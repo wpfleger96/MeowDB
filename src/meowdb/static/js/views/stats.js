@@ -27,14 +27,14 @@ function statsView() {
       }
     },
 
-    async playLeaderboardMeow(meow) {
-      if (!meow?.mp3_url) return;
+    async playLeaderboardSound(sound) {
+      if (!sound?.mp3_url) return;
       audioPlayer.stop();
-      recordPlay(meow.id).catch(() => {});
+      recordPlay(sound.id).catch(() => {});
       audioPlayer.onEnded = null;
       audioPlayer.onError = (err) => showToast('Playback error: ' + err.message, 'error');
       try {
-        await audioPlayer.play(meow.mp3_url);
+        await audioPlayer.play(sound.mp3_url);
       } catch {}
     },
 
@@ -46,10 +46,9 @@ function statsView() {
       return MeowUtils.formatDuration(this.stats?.avg_duration_ms ?? null);
     },
 
-    get firstMeowDate() {
-      if (!this.stats?.recent?.length) return '—';
-      return this.stats.first_meow_at
-        ? MeowUtils.formatDate(this.stats.first_meow_at)
+    get firstSoundDate() {
+      return this.stats?.first_sound_at
+        ? MeowUtils.formatDate(this.stats.first_sound_at)
         : '—';
     },
   };

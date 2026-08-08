@@ -4,13 +4,13 @@
 
 function playView() {
   return {
-    meowCount: null,
+    soundCount: null,
     isPlaying: false,
     // Must start true: Alpine evaluates the x-if wrapping the MEOW button
     // against these initializers before init() runs, and a false start
     // collapses the play area for one frame (layout shift).
     isLoading: true,
-    currentMeow: null,
+    currentSound: null,
     currentPhoto: null,
     feedbackGiven: null,
     _cancelWaveform: null,
@@ -20,92 +20,91 @@ function playView() {
       const boot = window.__BOOTSTRAP__ || {};
       if (boot.photo) this.currentPhoto = boot.photo;
       else getRandomPhoto().then(photo => { this.currentPhoto = photo; }).catch(() => {});
-      if (typeof boot.meow_count === 'number') this.meowCount = boot.meow_count;
+      if (typeof boot.sound_count === 'number') this.soundCount = boot.sound_count;
       else await this._refreshCount();
       this.isLoading = false;
     },
 
     async _refreshCount() {
       try {
-        const res = await getMeows({ limit: 1 });
-        this.meowCount = res.total;
+        const res = await getSounds({ limit: 1 });
+        this.soundCount = res.total;
       } catch {
-        this.meowCount = 0;
+        this.soundCount = 0;
       }
     },
 
     /**
-     * Main MEOW button handler. Every tap cancels the current meow and advances
-     * to a new random meow + photo. A generation counter ensures only the latest
+     * Main MEOW button handler. Every tap cancels the current sound and advances
+     * to a new random sound + photo. A generation counter ensures only the latest
      * tap's async work takes effect, so rapid taps land on the last one.
      * Called directly from a click event — satisfies iOS user-gesture requirement.
      */
     async onMeowPress() {
       const gen = ++this._gen;
 
-      // Cancel the current meow within the gesture; stop() never errors.
+      // Cancel the current sound within the gesture; stop() never errors.
       audioPlayer.stop();
       this._stopWaveform();
       this.isPlaying = false;
       this.isLoading = true;
 
-      let meow;
+      let sound;
       try {
-        meow = await getRandomMeow(this.currentMeow?.id);
+        sound = await getRandomSound(this.currentSound?.id, this.currentPhoto?.id);
       } catch (err) {
         if (gen !== this._gen) return; // superseded by a newer tap
         this.isLoading = false;
-        showToast(err.message || 'Could not fetch a meow', 'error');
+        showToast(err.message || 'Could not fetch a sound', 'error');
         return;
       }
       if (gen !== this._gen) return; // a newer tap won; abandon this one
 
-      this.currentMeow = meow;
+      this.currentSound = sound;
       this.feedbackGiven = null;
-      // New photo on every advance; guard so only the latest tap's photo sticks.
-      getRandomPhoto(this.currentPhoto?.id)
-        .then(photo => { if (gen === this._gen) this.currentPhoto = photo; })
-        .catch(() => {});
+      // Photo comes embedded in the sound response; may be null (no photos for this animal).
+      // Never substitute another animal's photo — null renders the photo-less button state.
+      this.currentPhoto = sound.photo;
       this.isLoading = false;
 
-      await this._playCurrent(meow);
+      await this._playCurrent(sound);
     },
 
     /**
-     * Replay the meow that's already loaded, without advancing to a new one.
+     * Replay the sound that's already loaded, without advancing to a new one.
      * Shares the gesture/cancel contract with onMeowPress: bumping _gen and
      * calling audioPlayer.stop() here means an in-flight advance is abandoned,
      * and a later advance abandons this replay. Called directly from the click
      * handler so it satisfies the iOS user-gesture requirement.
      */
-    async replayMeow() {
-      if (!this.currentMeow || this.isLoading) return;
+    async replaySound() {
+      if (!this.currentSound || this.isLoading) return;
 
       ++this._gen;
       audioPlayer.stop();
       this._stopWaveform();
       this.isPlaying = false;
 
-      // A replay is a fresh listen, so allow re-voting on the same meow.
+      // A replay is a fresh listen, so allow re-voting on the same sound.
       this.feedbackGiven = null;
 
-      await this._playCurrent(this.currentMeow);
+      await this._playCurrent(this.currentSound);
     },
 
     /**
-     * Play this.currentMeow from the start: record the play, draw + animate the
+     * Play the given sound from the start: record the play, draw + animate the
      * waveform, wire the audio callbacks, and start playback. Shared tail of
-     * onMeowPress() and replayMeow(); the caller has already settled currentMeow
+     * onMeowPress() and replaySound(); the caller has already settled currentSound
      * and the generation counter.
      */
-    async _playCurrent(meow) {
+    async _playCurrent(sound) {
       this.isPlaying = true;
 
       // Record play event (fire-and-forget)
-      recordPlay(meow.id).catch(() => {});
+      recordPlay(sound.id).catch(() => {});
 
       // Draw initial waveform
-      this._drawWaveform(meow, 0);
+      this._drawWaveform(sound, 0);
 
       // Set up callbacks before calling play(). No _gen guard needed here: the
       // audio core fires these only for the current element, and the next tap's
@@ -113,13 +112,12 @@ function playView() {
       audioPlayer.onEnded = () => {
         this.isPlaying = false;
         this._stopWaveform();
-        this._drawWaveform(meow, 1);
-        this._refreshCount();
+        this._drawWaveform(sound, 1);
       };
 
       audioPlayer.onError = (err) => {
         this.isPlaying = false;
-        this.currentMeow = null;
+        this.currentSound = null;
         this.feedbackGiven = null;
         this._stopWaveform();
         showToast('Playback error: ' + (err.message || 'unknown'), 'error');
@@ -127,22 +125,22 @@ function playView() {
 
       try {
         // play() must be called synchronously after user gesture
-        await audioPlayer.playWithFallback(meow.mp3_url, meow.wav_url);
+        await audioPlayer.playWithFallback(sound.mp3_url, sound.wav_url);
       } catch {
         this.isPlaying = false;
         this._stopWaveform();
       }
     },
 
-    _drawWaveform(meow, progress) {
+    _drawWaveform(sound, progress) {
       const canvas = this.$refs.waveformCanvas;
-      if (!canvas || !meow?.waveform_data?.length) return;
+      if (!canvas || !sound?.waveform_data?.length) return;
 
       if (this.isPlaying && progress === 0) {
         // Start animated waveform that tracks playback
         this._cancelWaveform = animateWaveform(
           canvas,
-          meow.waveform_data,
+          sound.waveform_data,
           getAccentColor(),
           () => {
             if (audioPlayer.duration === 0) return 0;
@@ -150,7 +148,7 @@ function playView() {
           }
         );
       } else {
-        drawWaveform(canvas, meow.waveform_data, getAccentColor(), progress);
+        drawWaveform(canvas, sound.waveform_data, getAccentColor(), progress);
       }
     },
 
@@ -159,11 +157,11 @@ function playView() {
     },
 
     submitFeedback(vote) {
-      if (!this.currentMeow || this.feedbackGiven === vote) return;
+      if (!this.currentSound || this.feedbackGiven === vote) return;
       const previous = this.feedbackGiven;
       this.feedbackGiven = vote;
       const body = previous ? { vote, previous } : { vote };
-      recordFeedback(this.currentMeow.id, body)
+      recordFeedback(this.currentSound.id, body)
         .then(() => {
           showToast(vote === 'up' ? 'Upvoted!' : 'Downvoted', vote === 'up' ? 'success' : 'info');
         })

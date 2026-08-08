@@ -39,28 +39,35 @@ async function apiFetch(path, opts = {}) {
 }
 
 /* ============================================================
-   Meows
+   Sounds
    ============================================================ */
 
 /**
- * @param {{ sort?: string, label?: string, limit?: number, offset?: number }} [params]
+ * @param {{ sort?: string, label?: string, animal_id?: string, limit?: number, offset?: number }} [params]
  * @returns {Promise<{ items: object[], total: number, limit: number, offset: number }>}
  */
-async function getMeows(params = {}) {
+async function getSounds(params = {}) {
   const qs = new URLSearchParams();
-  if (params.sort)   qs.set('sort', params.sort);
-  if (params.label)  qs.set('label', params.label);
-  if (params.limit != null) qs.set('limit', String(params.limit));
+  if (params.sort)       qs.set('sort',      params.sort);
+  if (params.label)      qs.set('label',     params.label);
+  if (params.animal_id)  qs.set('animal_id', params.animal_id);
+  if (params.limit  != null) qs.set('limit',  String(params.limit));
   if (params.offset != null) qs.set('offset', String(params.offset));
   const q = qs.toString();
-  return apiFetch('/meows' + (q ? '?' + q : ''));
+  return apiFetch('/sounds' + (q ? '?' + q : ''));
 }
 
 /**
- * @returns {Promise<object>} RandomMeowResponse with mp3_url, waveform_data, etc.
+ * @param {string} [excludeId]
+ * @param {string} [excludePhotoId]
+ * @returns {Promise<object>} Sound object with mp3_url, waveform_data, animal_name, animal_species, photo
  */
-async function getRandomMeow(excludeId) {
-  return apiFetch('/meows/random' + (excludeId ? '?exclude=' + encodeURIComponent(excludeId) : ''));
+async function getRandomSound(excludeId, excludePhotoId) {
+  const qs = new URLSearchParams();
+  if (excludeId)      qs.set('exclude',       excludeId);
+  if (excludePhotoId) qs.set('exclude_photo', excludePhotoId);
+  const q = qs.toString();
+  return apiFetch('/sounds/random' + (q ? '?' + q : ''));
 }
 
 /**
@@ -68,8 +75,8 @@ async function getRandomMeow(excludeId) {
  * @param {{ labels?: string[], title?: string|null, recorded_at?: string|null }} fields
  * @returns {Promise<object>}
  */
-async function updateMeow(id, fields) {
-  return apiFetch(`/meows/${id}`, {
+async function updateSound(id, fields) {
+  return apiFetch(`/sounds/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(fields),
@@ -80,8 +87,8 @@ async function updateMeow(id, fields) {
  * @param {string} id
  * @returns {Promise<null>}
  */
-async function deleteMeow(id) {
-  return apiFetch(`/meows/${id}`, { method: 'DELETE' });
+async function deleteSound(id) {
+  return apiFetch(`/sounds/${id}`, { method: 'DELETE' });
 }
 
 /**
@@ -90,7 +97,7 @@ async function deleteMeow(id) {
  * @returns {Promise<null>}
  */
 async function recordPlay(id) {
-  return apiFetch(`/meows/${id}/play`, { method: 'POST' });
+  return apiFetch(`/sounds/${id}/play`, { method: 'POST' });
 }
 
 /**
@@ -100,7 +107,7 @@ async function recordPlay(id) {
  * @returns {Promise<null>}
  */
 async function recordFeedback(id, body) {
-  return apiFetch(`/meows/${id}/feedback`, {
+  return apiFetch(`/sounds/${id}/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -125,11 +132,13 @@ async function getVersion() {
 /**
  * Upload an audio file and create an ingest job.
  * @param {File|Blob} file
+ * @param {string} animalId
  * @returns {Promise<{ job_id: string, status: string }>}
  */
-async function createIngestJob(file) {
+async function createIngestJob(file, animalId) {
   const form = new FormData();
   form.append('file', file, file.name || 'recording.webm');
+  form.append('animal_id', animalId);
   return apiFetch('/ingest', { method: 'POST', body: form });
 }
 
@@ -143,7 +152,7 @@ function sourceAudioUrl(jobId) {
 }
 
 /**
- * Trigger auto-detection of meow regions in the source audio.
+ * Trigger auto-detection of sound regions in the source audio.
  * @param {string} jobId
  * @returns {Promise<{ regions: Array<{ start_ms: number, end_ms: number }> }>}
  */
@@ -155,7 +164,7 @@ async function detectRegions(jobId) {
  * Clip the source audio at the given regions and commit to the library.
  * @param {string} jobId
  * @param {Array<{ start_ms: number, end_ms: number }>} regions
- * @returns {Promise<{ meow_ids: string[] }>}
+ * @returns {Promise<{ sound_ids: string[] }>}
  */
 async function clipAndCommit(jobId, regions) {
   return apiFetch(`/ingest/${jobId}/clip`, {
@@ -171,12 +180,14 @@ async function clipAndCommit(jobId, regions) {
 
 /**
  * @returns {Promise<{
- *   total_meows: number,
+ *   total_sounds: number,
  *   total_duration_ms: number,
  *   avg_duration_ms: number,
  *   most_played: object[],
  *   recent: object[],
- *   label_counts: object
+ *   label_counts: object,
+ *   species_counts: object,
+ *   first_sound_at: string|null
  * }>}
  */
 async function getStats() {
@@ -221,15 +232,8 @@ async function logout() {
 }
 
 /* ============================================================
-   Photos
+   Photos (global bootstrap only)
    ============================================================ */
-
-/**
- * @returns {Promise<{ items: object[] }>}
- */
-async function getPhotos() {
-  return apiFetch('/photos');
-}
 
 /**
  * @returns {Promise<object>} PhotoResponse with image_url
@@ -238,30 +242,90 @@ async function getRandomPhoto(excludeId) {
   return apiFetch('/photos/random' + (excludeId ? '?exclude=' + encodeURIComponent(excludeId) : ''));
 }
 
+/* ============================================================
+   Animals
+   ============================================================ */
+
 /**
- * @param {File} file
- * @returns {Promise<object>} PhotoResponse
+ * @returns {Promise<{ items: Array<{ id: string, name: string, species: string, created_at: string, sound_count: number, photo_count: number }> }>}
  */
-async function uploadPhoto(file) {
-  const form = new FormData();
-  form.append('file', file, file.name || 'photo.jpg');
-  return apiFetch('/photos', { method: 'POST', body: form });
+async function getAnimals() {
+  return apiFetch('/animals');
+}
+
+/**
+ * @param {string} name
+ * @param {string} species
+ * @returns {Promise<object>}
+ */
+async function createAnimal(name, species) {
+  return apiFetch('/animals', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, species }),
+  });
 }
 
 /**
  * @param {string} id
  * @returns {Promise<null>}
  */
-async function deletePhoto(id) {
-  return apiFetch(`/photos/${id}`, { method: 'DELETE' });
+async function deleteAnimal(id) {
+  return apiFetch(`/animals/${id}`, { method: 'DELETE' });
 }
 
-async function editPhoto(id, body) {
-  return apiFetch(`/photos/${id}/edit`, {
+/**
+ * @param {string} animalId
+ * @returns {Promise<{ items: object[] }>}
+ */
+async function getAnimalPhotos(animalId) {
+  return apiFetch(`/animals/${animalId}/photos`);
+}
+
+/**
+ * @param {string} animalId
+ * @param {File} file
+ * @returns {Promise<object>} PhotoResponse
+ */
+async function uploadAnimalPhoto(animalId, file) {
+  const form = new FormData();
+  form.append('file', file, file.name || 'photo.jpg');
+  return apiFetch(`/animals/${animalId}/photos`, { method: 'POST', body: form });
+}
+
+/**
+ * @param {string} animalId
+ * @param {string} photoId
+ * @returns {Promise<null>}
+ */
+async function deleteAnimalPhoto(animalId, photoId) {
+  return apiFetch(`/animals/${animalId}/photos/${photoId}`, { method: 'DELETE' });
+}
+
+/**
+ * @param {string} animalId
+ * @param {string} photoId
+ * @param {object} body
+ * @returns {Promise<object>}
+ */
+async function editAnimalPhoto(animalId, photoId, body) {
+  return apiFetch(`/animals/${animalId}/photos/${photoId}/edit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * @param {string} animalId
+ * @param {string} [excludeId]
+ * @returns {Promise<object>} PhotoResponse
+ */
+async function getRandomAnimalPhoto(animalId, excludeId) {
+  return apiFetch(
+    `/animals/${animalId}/photos/random` +
+    (excludeId ? '?exclude=' + encodeURIComponent(excludeId) : '')
+  );
 }
 
 /* ============================================================
