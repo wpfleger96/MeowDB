@@ -108,14 +108,17 @@ async function recordFeedback(id, body) {
 }
 
 /* ============================================================
-   Version
+   About
    ============================================================ */
 
 /**
- * @returns {Promise<{ version: string }>}
+ * Build provenance and runtime facts for the About panel.
+ * @returns {Promise<{ version: string, git_sha: string, build_time: string,
+ *   uptime_seconds: number, auth_mode: string, python_version: string,
+ *   sqlite_version: string }>}
  */
-async function getVersion() {
-  return apiFetch('/version');
+async function getAbout() {
+  return apiFetch('/about');
 }
 
 /* ============================================================

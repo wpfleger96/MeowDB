@@ -30,6 +30,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute build metadata
+        id: build_meta
+        run: |
+          # Read from the checkout, which is pinned to the release tag —
+          # GITHUB_SHA on a release event does not always point at that commit.
+          echo "sha_short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -37,3 +45,6 @@ jobs:
           tags: |
             ghcr.io/wpfleger96/meowdb:${{ github.event.release.tag_name }}
             ghcr.io/wpfleger96/meowdb:latest
+          build-args: |
+            GIT_SHA=${{ steps.build_meta.outputs.sha_short }}
+            BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
