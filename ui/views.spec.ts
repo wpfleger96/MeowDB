@@ -116,6 +116,39 @@ test.describe('MeowDB views', () => {
     await screenshot(page, testInfo, '06-algorithm.png');
   });
 
+  test('about panel', async ({ page }, testInfo) => {
+    await page.goto('/', GOTO_OPTS);
+
+    // Desktop opens About from the sidebar brand; mobile from the Play view's
+    // floating control, since the brand row is hidden below 768px.
+    const trigger = isDesktop(page)
+      ? page.locator('.nav-brand')
+      : page.locator('.play-auth-mobile .btn-icon');
+    await trigger.click();
+
+    await page.waitForSelector('.modal-sheet .about-row', { state: 'visible' });
+    // Let the slide-in animation settle before measuring or capturing.
+    await page.waitForTimeout(400);
+    await expect(page.locator('.about-row').first().locator('.about-value')).toHaveText(
+      /^v\d+\.\d+\.\d+/,
+    );
+    // Every Build and Runtime field renders.
+    await expect(page.locator('.about-row')).toHaveCount(7);
+    await screenshot(page, testInfo, '07-about.png');
+
+    if (isDesktop(page)) {
+      const vp = page.viewportSize()!;
+      // Right-pinned full-height 420px panel, not a bottom sheet
+      const panel = await page.locator('.modal-backdrop:visible').boundingBox();
+      expect(panel!.width).toBe(420);
+      expect(panel!.x + panel!.width).toBeCloseTo(vp.width, 0);
+      expect(panel!.height).toBe(vp.height);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.modal-sheet .about-row').first()).toBeHidden();
+  });
+
   test('stats dashboard', async ({ page }, testInfo) => {
     await page.goto('/stats', GOTO_OPTS);
     await page.waitForSelector('.stat-tile', { state: 'visible' });

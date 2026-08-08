@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+import platform
 import re
 import shutil
+import sqlite3
 import warnings
 
 from pathlib import Path
@@ -13,6 +15,8 @@ import bcrypt
 import pytest
 
 from PIL import Image
+
+import meowdb
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -625,6 +629,76 @@ def test_health_returns_503_when_db_unreachable(client):
         resp = client.get("/health")
     assert resp.status_code == 503
     assert resp.json() == {"status": "error"}
+
+
+@pytest.mark.integration
+def test_about_returns_expected_fields(client):
+    resp = client.get("/api/about")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {
+        "version",
+        "git_sha",
+        "build_time",
+        "uptime_seconds",
+        "auth_mode",
+        "python_version",
+        "sqlite_version",
+    }
+    assert body["version"] == meowdb.__version__
+    assert isinstance(body["uptime_seconds"], float)
+    assert body["uptime_seconds"] >= 0
+    assert body["python_version"] == platform.python_version()
+    assert body["sqlite_version"] == sqlite3.sqlite_version
+
+
+@pytest.mark.integration
+def test_about_reads_build_metadata_from_env(client, monkeypatch):
+    monkeypatch.setenv("MEOWDB_GIT_SHA", "abc1234")
+    monkeypatch.setenv("MEOWDB_BUILD_TIME", "2026-08-08T00:00:00Z")
+    body = client.get("/api/about").json()
+    assert body["git_sha"] == "abc1234"
+    assert body["build_time"] == "2026-08-08T00:00:00Z"
+
+
+@pytest.mark.integration
+def test_about_build_metadata_defaults_when_env_unset(client, monkeypatch):
+    monkeypatch.delenv("MEOWDB_GIT_SHA", raising=False)
+    monkeypatch.delenv("MEOWDB_BUILD_TIME", raising=False)
+    body = client.get("/api/about").json()
+    assert body["git_sha"] == "dev"
+    assert body["build_time"] == ""
+
+
+# The about router reads config at request time, so these patch its import site
+# per-test rather than in the client fixture (which is at the nested-block limit).
+@pytest.mark.integration
+def test_about_auth_mode_reflects_password_hash(client):
+    with (
+        patch("meowdb.api.routers.about.PASSWORD_HASH", ""),
+        patch("meowdb.api.routers.about.IS_LOCALHOST", True),
+    ):
+        assert client.get("/api/about").json()["auth_mode"] == "Open (local)"
+    with (
+        patch("meowdb.api.routers.about.PASSWORD_HASH", _TEST_HASH),
+        patch("meowdb.api.routers.about.IS_LOCALHOST", True),
+    ):
+        assert client.get("/api/about").json()["auth_mode"] == "Password-protected"
+
+
+@pytest.mark.integration
+def test_about_auth_mode_is_protected_when_not_localhost(client):
+    with (
+        patch("meowdb.api.routers.about.PASSWORD_HASH", ""),
+        patch("meowdb.api.routers.about.IS_LOCALHOST", False),
+    ):
+        assert client.get("/api/about").json()["auth_mode"] == "Password-protected"
+
+
+@pytest.mark.integration
+def test_about_absent_from_openapi_schema(client):
+    schema = client.get("/openapi.json").json()
+    assert "/api/about" not in schema["paths"]
 
 
 @pytest.fixture
