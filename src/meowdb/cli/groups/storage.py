@@ -9,7 +9,7 @@ import click
 from meowdb.cli.helpers import build_context
 from meowdb.cli.options import db_path_option
 from meowdb.config import MP3_DIR, PHOTOS_DIR, WAV_DIR
-from meowdb.display import print_error, print_info, print_success
+from meowdb.display import print_error, print_info, print_success, print_warning
 
 
 @click.group()
@@ -27,7 +27,16 @@ def storage() -> None:
 @db_path_option
 def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> None:
     """Upload local media to S3 and update path records."""
-    from meowdb.storage import is_s3_enabled, mp3_key, photo_key, upload_to_s3_sync, wav_key
+    import botocore.exceptions
+
+    from meowdb.storage import (
+        is_s3_enabled,
+        is_s3_key,
+        mp3_key,
+        photo_key,
+        upload_to_s3_sync,
+        wav_key,
+    )
 
     if not is_s3_enabled():
         print_error("S3 is not configured. Set MEOWDB_S3_BUCKET to enable S3 mode.")
@@ -39,15 +48,17 @@ def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> Non
 
     meows_migrated = 0
     meows_skipped = 0
+    meows_failed = 0
     photos_migrated = 0
     photos_skipped = 0
+    photos_failed = 0
 
     for meow in meows:
         meow_id: str = meow["id"]
         wav_path: str | None = meow.get("wav_path")
         mp3_path: str | None = meow.get("mp3_path")
 
-        if not wav_path or not wav_path.startswith("/"):
+        if not wav_path or is_s3_key(wav_path):
             print_info(f"Meow {meow_id[:8]}: already migrated, skipping")
             meows_skipped += 1
             continue
@@ -62,15 +73,19 @@ def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> Non
             meows_migrated += 1
             continue
 
-        upload_to_s3_sync(Path(wav_path), wk)
-        if mp3_path:
-            upload_to_s3_sync(Path(mp3_path), mk)
-        ctx.db.update_meow_paths(meow_id, wk, mk if mp3_path else (mp3_path or ""))
-
-        if delete_local:
-            Path(wav_path).unlink(missing_ok=True)
+        try:
+            upload_to_s3_sync(Path(wav_path), wk)
             if mp3_path:
-                Path(mp3_path).unlink(missing_ok=True)
+                upload_to_s3_sync(Path(mp3_path), mk)
+            ctx.db.update_meow_paths(meow_id, wk, mk if mp3_path else (mp3_path or ""))
+            if delete_local:
+                Path(wav_path).unlink(missing_ok=True)
+                if mp3_path:
+                    Path(mp3_path).unlink(missing_ok=True)
+        except (FileNotFoundError, botocore.exceptions.ClientError) as exc:
+            print_warning(f"Meow {meow_id[:8]}: migration failed: {exc}")
+            meows_failed += 1
+            continue
 
         print_info(f"Meow {meow_id[:8]}: migrated")
         meows_migrated += 1
@@ -91,10 +106,14 @@ def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> Non
             photos_migrated += 1
             continue
 
-        upload_to_s3_sync(local_file, pk)
-
-        if delete_local:
-            local_file.unlink(missing_ok=True)
+        try:
+            upload_to_s3_sync(local_file, pk)
+            if delete_local:
+                local_file.unlink(missing_ok=True)
+        except (FileNotFoundError, botocore.exceptions.ClientError) as exc:
+            print_warning(f"Photo {filename}: migration failed: {exc}")
+            photos_failed += 1
+            continue
 
         print_info(f"Photo {filename}: migrated")
         photos_migrated += 1
@@ -102,20 +121,26 @@ def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> Non
     ctx.db.close()
 
     action = "would migrate" if dry_run else "migrated"
-    print_success(
-        f"{meows_migrated} meow(s) {action}, {meows_skipped} skipped"
-        f" | {photos_migrated} photo(s) {action}, {photos_skipped} skipped"
-    )
+    meow_summary = f"{meows_migrated} meow(s) {action}, {meows_skipped} skipped"
+    if meows_failed:
+        meow_summary += f", {meows_failed} failed"
+    photo_summary = f"{photos_migrated} photo(s) {action}, {photos_skipped} skipped"
+    if photos_failed:
+        photo_summary += f", {photos_failed} failed"
+    print_success(f"{meow_summary} | {photo_summary}")
 
 
 @storage.command(name="restore-from-s3")
 @db_path_option
 def restore_from_s3(db_path: str | None) -> None:
     """Download S3 media to local storage and restore path records."""
+    import botocore.exceptions
+
     from meowdb.storage import (
         S3NotFoundError,
         download_from_s3_sync,
         is_s3_enabled,
+        is_s3_key,
         mp3_key,
         photo_key,
         wav_key,
@@ -142,8 +167,8 @@ def restore_from_s3(db_path: str | None) -> None:
         wav_path: str | None = meow.get("wav_path")
         mp3_path: str | None = meow.get("mp3_path")
 
-        wav_is_s3 = bool(wav_path and not wav_path.startswith("/"))
-        mp3_is_s3 = bool(mp3_path and not mp3_path.startswith("/"))
+        wav_is_s3 = is_s3_key(wav_path or "")
+        mp3_is_s3 = is_s3_key(mp3_path or "")
 
         if not wav_is_s3 and not mp3_is_s3:
             continue
@@ -157,8 +182,8 @@ def restore_from_s3(db_path: str | None) -> None:
             try:
                 download_from_s3_sync(wav_key(meow_id), local_wav)
                 new_wav = str(local_wav)
-            except S3NotFoundError as exc:
-                print_error(f"Meow {meow_id[:8]}: WAV not found in S3: {exc}")
+            except (S3NotFoundError, botocore.exceptions.ClientError) as exc:
+                print_error(f"Meow {meow_id[:8]}: WAV failed: {exc}")
                 failed = True
 
         if mp3_is_s3:
@@ -166,8 +191,8 @@ def restore_from_s3(db_path: str | None) -> None:
             try:
                 download_from_s3_sync(mp3_key(meow_id), local_mp3)
                 new_mp3 = str(local_mp3)
-            except S3NotFoundError as exc:
-                print_error(f"Meow {meow_id[:8]}: MP3 not found in S3: {exc}")
+            except (S3NotFoundError, botocore.exceptions.ClientError) as exc:
+                print_error(f"Meow {meow_id[:8]}: MP3 failed: {exc}")
                 failed = True
 
         if failed:
@@ -189,8 +214,8 @@ def restore_from_s3(db_path: str | None) -> None:
 
         try:
             download_from_s3_sync(photo_key(filename), local_file)
-        except S3NotFoundError as exc:
-            print_error(f"Photo {filename}: not found in S3: {exc}")
+        except (S3NotFoundError, botocore.exceptions.ClientError) as exc:
+            print_error(f"Photo {filename}: failed: {exc}")
             photos_failed += 1
             continue
 

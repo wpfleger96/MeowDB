@@ -12,7 +12,7 @@ from moto import mock_aws
 from meowdb import config
 from meowdb.cli import main
 from meowdb.db import MeowDB
-from meowdb.storage import reset_s3_client
+from meowdb.storage import _reset_s3_client
 
 _BUCKET = "test-meowdb"
 _REGION = "us-east-1"
@@ -47,11 +47,11 @@ def s3_cli(monkeypatch, tmp_path):
         patch("meowdb.cli.groups.storage.MP3_DIR", mp3_dir),
         patch("meowdb.cli.groups.storage.PHOTOS_DIR", photos_dir),
     ):
-        reset_s3_client()
+        _reset_s3_client()
         s3 = boto3.client("s3", region_name=_REGION)
         s3.create_bucket(Bucket=_BUCKET)
         yield s3, tmp_path, tmp_path / "test.sqlite"
-    reset_s3_client()
+    _reset_s3_client()
 
 
 def _seed_local_meow(db: MeowDB, wav_dir: Path, mp3_dir: Path) -> tuple[str, Path, Path]:
@@ -311,4 +311,84 @@ def test_migrate_to_s3_mp3less_meow_wav_migrates_mp3_path_stays_empty(s3_cli):
     assert meow is not None
     assert meow["wav_path"] == f"audio/wav/{meow_id}.wav"
     assert meow["mp3_path"] == ""
+    db2.close()
+
+
+# ---------------------------------------------------------------------------
+# migrate-to-s3 resilience: per-item failures don't abort the whole batch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_migrate_to_s3_continues_after_per_item_failure(s3_cli):
+    """Deleting one meow's WAV before migration causes that item to fail.
+
+    The command must complete (exit 0), report the failure in its summary,
+    and fully migrate the other meow.
+    """
+    s3, tmp_path, db_path = s3_cli
+    wav_dir = tmp_path / "wav"
+    mp3_dir = tmp_path / "mp3"
+
+    # meow1 — files exist, will migrate successfully
+    wav1 = wav_dir / "m1.wav"
+    mp3_1 = mp3_dir / "m1.mp3"
+    wav1.write_bytes(b"RIFF" + b"\x00" * 36)
+    mp3_1.write_bytes(b"\xff\xfb" + b"\x00" * 50)
+
+    # meow2 — WAV deliberately deleted before migration
+    wav2 = wav_dir / "m2.wav"
+    mp3_2 = mp3_dir / "m2.mp3"
+    wav2.write_bytes(b"RIFF" + b"\x00" * 36)
+    mp3_2.write_bytes(b"\xff\xfb" + b"\x00" * 50)
+
+    db = MeowDB(db_path)
+    meow1_id = db.add(
+        {
+            "timestamp": "2026-01-01T00:00:00",
+            "duration_ms": 1000,
+            "labels": [],
+            "wav_path": str(wav1),
+            "mp3_path": str(mp3_1),
+            "waveform_data": [],
+            "peak_dbfs": -10.0,
+            "cat_energy_ratio": 2.5,
+        }
+    )
+    meow2_id = db.add(
+        {
+            "timestamp": "2026-01-02T00:00:00",
+            "duration_ms": 500,
+            "labels": [],
+            "wav_path": str(wav2),
+            "mp3_path": str(mp3_2),
+            "waveform_data": [],
+            "peak_dbfs": -12.0,
+            "cat_energy_ratio": 1.5,
+        }
+    )
+    db.close()
+
+    # Delete meow2's WAV to force a FileNotFoundError during migration
+    wav2.unlink()
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["storage", "migrate-to-s3", "--db-path", str(db_path)])
+    assert result.exit_code == 0, result.output
+    assert "1 failed" in result.output
+
+    # meow1 migrated successfully
+    bucket_keys = [o["Key"] for o in s3.list_objects_v2(Bucket=_BUCKET).get("Contents", [])]
+    assert f"audio/wav/{meow1_id}.wav" in bucket_keys
+    assert f"audio/mp3/{meow1_id}.mp3" in bucket_keys
+
+    db2 = MeowDB(db_path)
+    m1 = db2.get_by_id(meow1_id)
+    assert m1 is not None
+    assert m1["wav_path"] == f"audio/wav/{meow1_id}.wav"
+
+    # meow2 failed — DB path unchanged (still absolute)
+    m2 = db2.get_by_id(meow2_id)
+    assert m2 is not None
+    assert m2["wav_path"] == str(wav2)  # unchanged
     db2.close()

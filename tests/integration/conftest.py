@@ -15,7 +15,7 @@ from PIL import Image
 
 from meowdb import config
 from meowdb.api.app import create_app
-from meowdb.storage import reset_s3_client
+from meowdb.storage import _reset_s3_client
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -52,11 +52,11 @@ def s3_state(monkeypatch):
     monkeypatch.setattr(config, "S3_ENDPOINT_URL", None)
 
     with mock_aws():
-        reset_s3_client()
+        _reset_s3_client()
         s3 = boto3.client("s3", region_name=_S3_REGION)
         s3.create_bucket(Bucket=_S3_BUCKET)
         yield s3
-    reset_s3_client()
+    _reset_s3_client()
 
 
 @pytest.fixture

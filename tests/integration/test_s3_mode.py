@@ -6,6 +6,8 @@ import pytest
 
 from PIL import Image
 
+from meowdb.storage import mp3_key, wav_key
+
 _BUCKET = "test-meowdb"
 
 
@@ -15,6 +17,19 @@ def _png_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _s3_meow_row(wav_s3_key: str = "", mp3_s3_key: str = "") -> dict:
+    return {
+        "timestamp": "2026-01-01T00:00:00",
+        "duration_ms": 1000,
+        "labels": [],
+        "wav_path": wav_s3_key or "audio/wav/placeholder.wav",
+        "mp3_path": mp3_s3_key or "audio/mp3/placeholder.mp3",
+        "waveform_data": [],
+        "peak_dbfs": -10.0,
+        "cat_energy_ratio": 2.5,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Audio serve in S3 mode
 # ---------------------------------------------------------------------------
@@ -22,24 +37,13 @@ def _png_bytes() -> bytes:
 
 @pytest.mark.integration
 def test_audio_serve_full_body_from_s3(s3_api_client):
+    """MP3 is served from the key derived from the meow UUID, not the stored path value."""
     tc, app, s3 = s3_api_client
 
     content = b"fake-mp3-data" * 50
-    mp3_s3_key = "audio/mp3/serve-test.mp3"
-    s3.put_object(Bucket=_BUCKET, Key=mp3_s3_key, Body=content)
-
-    meow_id = app.state.db.add(
-        {
-            "timestamp": "2026-01-01T00:00:00",
-            "duration_ms": 1000,
-            "labels": [],
-            "wav_path": "audio/wav/serve-test.wav",
-            "mp3_path": mp3_s3_key,
-            "waveform_data": [],
-            "peak_dbfs": -10.0,
-            "cat_energy_ratio": 2.5,
-        }
-    )
+    # Add row first so we have the UUID, then put the object at the derived key.
+    meow_id = app.state.db.add(_s3_meow_row())
+    s3.put_object(Bucket=_BUCKET, Key=mp3_key(meow_id), Body=content)
 
     resp = tc.get(f"/api/audio/{meow_id}")
 
@@ -49,25 +53,28 @@ def test_audio_serve_full_body_from_s3(s3_api_client):
 
 
 @pytest.mark.integration
+def test_audio_serve_wav_from_s3(s3_api_client):
+    """WAV is served from the key derived from the meow UUID."""
+    tc, app, s3 = s3_api_client
+
+    content = b"fake-wav-data" * 30
+    meow_id = app.state.db.add(_s3_meow_row())
+    s3.put_object(Bucket=_BUCKET, Key=wav_key(meow_id), Body=content)
+
+    resp = tc.get(f"/api/audio/{meow_id}/wav")
+
+    assert resp.status_code == 200
+    assert resp.content == content
+    assert resp.headers["content-type"] == "audio/wav"
+
+
+@pytest.mark.integration
 def test_audio_serve_range_returns_206_with_correct_slice(s3_api_client):
     tc, app, s3 = s3_api_client
 
     content = bytes(range(256))  # 256 distinct bytes, one per offset
-    mp3_s3_key = "audio/mp3/range-test.mp3"
-    s3.put_object(Bucket=_BUCKET, Key=mp3_s3_key, Body=content)
-
-    meow_id = app.state.db.add(
-        {
-            "timestamp": "2026-01-01T00:00:00",
-            "duration_ms": 500,
-            "labels": [],
-            "wav_path": "audio/wav/range-test.wav",
-            "mp3_path": mp3_s3_key,
-            "waveform_data": [],
-            "peak_dbfs": -10.0,
-            "cat_energy_ratio": 2.5,
-        }
-    )
+    meow_id = app.state.db.add(_s3_meow_row())
+    s3.put_object(Bucket=_BUCKET, Key=mp3_key(meow_id), Body=content)
 
     resp = tc.get(f"/api/audio/{meow_id}", headers={"Range": "bytes=10-19"})
 
@@ -80,18 +87,8 @@ def test_audio_serve_range_returns_206_with_correct_slice(s3_api_client):
 def test_audio_serve_missing_s3_key_returns_404(s3_api_client):
     tc, app, _s3 = s3_api_client
 
-    meow_id = app.state.db.add(
-        {
-            "timestamp": "2026-01-01T00:00:00",
-            "duration_ms": 500,
-            "labels": [],
-            "wav_path": "audio/wav/ghost.wav",
-            "mp3_path": "audio/mp3/ghost.mp3",
-            "waveform_data": [],
-            "peak_dbfs": -10.0,
-            "cat_energy_ratio": 2.5,
-        }
-    )
+    meow_id = app.state.db.add(_s3_meow_row())
+    # No object put in S3 — derived key doesn't exist
 
     resp = tc.get(f"/api/audio/{meow_id}")
     assert resp.status_code == 404
@@ -241,29 +238,16 @@ def test_ingest_commit_uploads_to_s3_and_removes_local(s3_api_client, tmp_path, 
 
 @pytest.mark.integration
 def test_meow_delete_removes_wav_and_mp3_from_s3(s3_api_client):
+    """Delete uses wav_key/mp3_key derived from the DB row's meow UUID."""
     tc, app, s3 = s3_api_client
 
-    wav_s3_key = "audio/wav/del-test.wav"
-    mp3_s3_key = "audio/mp3/del-test.mp3"
-    s3.put_object(Bucket=_BUCKET, Key=wav_s3_key, Body=b"wav")
-    s3.put_object(Bucket=_BUCKET, Key=mp3_s3_key, Body=b"mp3")
-
-    meow_id = app.state.db.add(
-        {
-            "timestamp": "2026-01-01T00:00:00",
-            "duration_ms": 1000,
-            "labels": [],
-            "wav_path": wav_s3_key,
-            "mp3_path": mp3_s3_key,
-            "waveform_data": [],
-            "peak_dbfs": -10.0,
-            "cat_energy_ratio": 2.5,
-        }
-    )
+    meow_id = app.state.db.add(_s3_meow_row())
+    s3.put_object(Bucket=_BUCKET, Key=wav_key(meow_id), Body=b"wav")
+    s3.put_object(Bucket=_BUCKET, Key=mp3_key(meow_id), Body=b"mp3")
 
     del_resp = tc.delete(f"/api/meows/{meow_id}")
     assert del_resp.status_code == 204
 
     remaining_keys = [o["Key"] for o in s3.list_objects_v2(Bucket=_BUCKET).get("Contents", [])]
-    assert wav_s3_key not in remaining_keys
-    assert mp3_s3_key not in remaining_keys
+    assert wav_key(meow_id) not in remaining_keys
+    assert mp3_key(meow_id) not in remaining_keys

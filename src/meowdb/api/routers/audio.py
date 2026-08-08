@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from meowdb.api.streaming import safe_path, stream_file, stream_s3_object
 from meowdb.config import MP3_DIR, WAV_DIR
-from meowdb.storage import is_s3_enabled
+from meowdb.storage import is_s3_enabled, is_s3_key, mp3_key, wav_key
 
 router = APIRouter()
 
@@ -23,8 +23,8 @@ async def stream_wav_audio(meow_id: str, request: Request) -> StreamingResponse:
     if not wav_path_str:
         raise HTTPException(status_code=404, detail="WAV file not available")
 
-    if is_s3_enabled() and not wav_path_str.startswith("/"):
-        return await stream_s3_object(wav_path_str, request, "audio/wav")
+    if is_s3_enabled() and is_s3_key(wav_path_str):
+        return await stream_s3_object(wav_key(meow_id), request, "audio/wav")
 
     path = Path(wav_path_str)
     if not path.exists():
@@ -49,8 +49,8 @@ async def stream_audio(meow_id: str, request: Request) -> StreamingResponse:
     if not mp3_path_str:
         raise HTTPException(status_code=404, detail="Audio file not available")
 
-    if is_s3_enabled() and not mp3_path_str.startswith("/"):
-        return await stream_s3_object(mp3_path_str, request, "audio/mpeg")
+    if is_s3_enabled() and is_s3_key(mp3_path_str):
+        return await stream_s3_object(mp3_key(meow_id), request, "audio/mpeg")
 
     path = Path(mp3_path_str)
     if not path.exists():

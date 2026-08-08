@@ -24,7 +24,6 @@ from meowdb.storage import (
     download_from_s3,
     is_s3_enabled,
     photo_key,
-    s3_head_object,
     upload_to_s3,
 )
 
@@ -113,10 +112,25 @@ async def upload_photo(
 
     if is_s3_enabled():
         final_path = PHOTOS_DIR / dest_filename
-        await upload_to_s3(final_path, photo_key(dest_filename))
+        key = photo_key(dest_filename)
+        try:
+            await upload_to_s3(final_path, key)
+        except Exception:
+            final_path.unlink(missing_ok=True)
+            raise
+        try:
+            db.add_photo(dest_filename, photo_id=photo_id)
+        except Exception:
+            try:
+                await delete_from_s3(key)
+            except Exception:
+                pass
+            final_path.unlink(missing_ok=True)
+            raise
         final_path.unlink(missing_ok=True)
+    else:
+        db.add_photo(dest_filename, photo_id=photo_id)
 
-    db.add_photo(dest_filename, photo_id=photo_id)
     photo = db.get_photo(photo_id)
     return photo_to_response(photo)
 
@@ -133,6 +147,8 @@ async def serve_photo(photo_id: str, request: Request) -> StreamingResponse:
 
     if is_s3_enabled():
         local_path = PHOTOS_DIR / filename
+        # Migration fallback: photos have no path column, so local-file existence marks
+        # an unmigrated photo that has not yet been moved to S3.
         if local_path.exists():
             try:
                 local_path = safe_path(local_path, PHOTOS_DIR)
@@ -146,16 +162,12 @@ async def serve_photo(photo_id: str, request: Request) -> StreamingResponse:
                 media_type,
                 extra_headers={"Cache-Control": "public, max-age=86400", "ETag": etag},
             )
-        key = photo_key(filename)
-        try:
-            head = await s3_head_object(key)
-        except S3NotFoundError:
-            raise HTTPException(status_code=404, detail="Photo file not found") from None
+        # ETag comes from the GET response inside stream_s3_object; no prior HEAD needed.
         return await stream_s3_object(
-            key,
+            photo_key(filename),
             request,
             media_type,
-            extra_headers={"Cache-Control": "public, max-age=86400", "ETag": str(head["etag"])},
+            extra_headers={"Cache-Control": "public, max-age=86400"},
         )
 
     path = PHOTOS_DIR / filename
@@ -188,23 +200,16 @@ async def delete_photo(
     if photo is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
+    filename = photo["filename"]
+    path = PHOTOS_DIR / filename
+    if path.exists():
+        try:
+            safe_path(path, PHOTOS_DIR)
+            path.unlink(missing_ok=True)
+        except ValueError:
+            pass
     if is_s3_enabled():
-        path = PHOTOS_DIR / photo["filename"]
-        if path.exists():
-            try:
-                safe_path(path, PHOTOS_DIR)
-                path.unlink(missing_ok=True)
-            except ValueError:
-                pass
-        await delete_from_s3(photo_key(photo["filename"]))
-    else:
-        path = PHOTOS_DIR / photo["filename"]
-        if path.exists():
-            try:
-                safe_path(path, PHOTOS_DIR)
-                path.unlink(missing_ok=True)
-            except ValueError:
-                pass
+        await delete_from_s3(photo_key(filename))
 
     db.delete_photo(photo_id)
 
@@ -265,7 +270,10 @@ async def edit_photo(
         if orig_suffix not in _ALLOWED_SUFFIXES:
             orig_suffix = ".webp"
         PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-        tmp_path = PHOTOS_DIR / f"_edit_{uuid.uuid4().hex}{orig_suffix}"
+        with tempfile.NamedTemporaryFile(
+            dir=PHOTOS_DIR, prefix="_edit_", suffix=orig_suffix, delete=False
+        ) as _f:
+            tmp_path = Path(_f.name)
         edited_path: Path | None = None
         try:
             try:

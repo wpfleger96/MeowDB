@@ -56,36 +56,43 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
     manifest_photos = []
 
     with zipfile.ZipFile(out_path, "w") as zf:
-        from meowdb.storage import S3NotFoundError, download_from_s3_sync, is_s3_enabled, photo_key
+        from meowdb.storage import (
+            S3NotFoundError,
+            download_from_s3_sync,
+            is_s3_enabled,
+            is_s3_key,
+            photo_key,
+        )
 
         s3_enabled = is_s3_enabled()
 
         for meow in meows:
             wav_val = meow.get("wav_path") or ""
             arc_name = AUDIO_PREFIX + meow["id"] + ".wav"
-            if wav_val.startswith("/"):
+            if is_s3_key(wav_val):
+                if s3_enabled:
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                        tmp = Path(tf.name)
+                    try:
+                        download_from_s3_sync(wav_val, tmp)
+                        zf.write(tmp, arc_name, compress_type=zipfile.ZIP_STORED)
+                    except S3NotFoundError:
+                        print_warning(f"Missing WAV in S3 for {meow['id'][:8]}, skipping")
+                        skipped_meows += 1
+                        continue
+                    finally:
+                        tmp.unlink(missing_ok=True)
+                else:
+                    print_warning(f"Missing WAV for {meow['id'][:8]}, skipping")
+                    skipped_meows += 1
+                    continue
+            else:
                 wav_path = Path(wav_val)
                 if not wav_path.exists():
                     print_warning(f"Missing WAV for {meow['id'][:8]}, skipping")
                     skipped_meows += 1
                     continue
                 zf.write(wav_path, arc_name, compress_type=zipfile.ZIP_STORED)
-            elif s3_enabled:
-                with tempfile.NamedTemporaryFile(dir=DATA_DIR, suffix=".wav", delete=False) as tf:
-                    tmp = Path(tf.name)
-                try:
-                    download_from_s3_sync(wav_val, tmp)
-                    zf.write(tmp, arc_name, compress_type=zipfile.ZIP_STORED)
-                except S3NotFoundError:
-                    print_warning(f"Missing WAV in S3 for {meow['id'][:8]}, skipping")
-                    skipped_meows += 1
-                    continue
-                finally:
-                    tmp.unlink(missing_ok=True)
-            else:
-                print_warning(f"Missing WAV for {meow['id'][:8]}, skipping")
-                skipped_meows += 1
-                continue
             manifest_meows.append({k: v for k, v in meow.items() if k in _PORTABLE_FIELDS})
             exported_meows += 1
 
@@ -97,7 +104,7 @@ def export_meows(output: str | None, include_photos: bool, db_path: str | None) 
                 zf.write(photo_path, arc_name, compress_type=zipfile.ZIP_STORED)
             elif s3_enabled:
                 suffix = Path(filename).suffix or ".tmp"
-                with tempfile.NamedTemporaryFile(dir=DATA_DIR, suffix=suffix, delete=False) as tf:
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
                     tmp = Path(tf.name)
                 try:
                     download_from_s3_sync(photo_key(filename), tmp)

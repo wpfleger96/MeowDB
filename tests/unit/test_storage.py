@@ -10,12 +10,12 @@ from moto import mock_aws
 from meowdb import config
 from meowdb.storage import (
     S3NotFoundError,
+    _reset_s3_client,
     delete_from_s3_sync,
     download_from_s3_sync,
     is_s3_enabled,
     mp3_key,
     photo_key,
-    reset_s3_client,
     s3_head_object,
     upload_to_s3_sync,
     wav_key,
@@ -80,10 +80,10 @@ def s3_bucket(monkeypatch):
     monkeypatch.setattr(config, "S3_ENDPOINT_URL", None)
 
     with mock_aws():
-        reset_s3_client()
+        _reset_s3_client()
         boto3.client("s3", region_name=_REGION).create_bucket(Bucket=_BUCKET)
         yield _BUCKET
-    reset_s3_client()
+    _reset_s3_client()
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ def test_nonexistent_bucket_propagates_client_error_not_s3_not_found(monkeypatch
     monkeypatch.setattr(config, "S3_ENDPOINT_URL", None)
 
     with mock_aws():
-        reset_s3_client()
+        _reset_s3_client()
         # Intentionally do NOT create any bucket
         with pytest.raises(botocore.exceptions.ClientError) as exc_info:
             asyncio.run(s3_head_object("audio/wav/probe.wav"))
@@ -194,4 +194,4 @@ def test_nonexistent_bucket_propagates_client_error_not_s3_not_found(monkeypatch
             f"Expected NoSuchBucket/AccessDenied, got {code!r} — "
             "bucket misconfiguration should not be treated as a missing key"
         )
-    reset_s3_client()
+    _reset_s3_client()
