@@ -23,6 +23,8 @@ _MEDIA_TYPES = {
     ".png": "image/png",
     ".gif": "image/gif",
     ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
 }
 
 

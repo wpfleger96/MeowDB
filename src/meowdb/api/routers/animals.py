@@ -41,7 +41,7 @@ _logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/animals", tags=["animals"])
 
 _MAX_PHOTO_BYTES = 20 * 1024 * 1024
-_ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif"}
 
 
 def _animal_to_response(animal: dict) -> AnimalResponse:  # type: ignore[type-arg]

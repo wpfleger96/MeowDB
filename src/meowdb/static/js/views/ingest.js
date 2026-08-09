@@ -503,7 +503,10 @@ function ingestView() {
     onPhotoDrop(event) {
       event.preventDefault();
       this.photoIsDragOver = false;
-      const files = Array.from(event.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'));
+      // Some browsers report an empty MIME type for dragged HEIC files.
+      const files = Array.from(event.dataTransfer?.files || []).filter(
+        (f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
+      );
       if (files.length > 0) this._uploadPhotosForAnimal(files);
     },
 

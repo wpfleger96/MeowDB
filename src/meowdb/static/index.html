@@ -1085,13 +1085,13 @@
               <div class="upload-zone-title">Upload photos</div>
               <div class="upload-zone-body">
                 Tap to choose photos, or drag and drop<br>
-                Supports JPEG, PNG, GIF, and WebP
+                Supports JPEG, PNG, GIF, WebP, and HEIC
               </div>
               <button class="btn btn-primary" @click.stop="$refs.photoFileInput.click()">Choose photos</button>
             </div>
             <input
               type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif"
               multiple
               x-ref="photoFileInput"
               @change="onPhotoFileChange($event)"

@@ -1394,6 +1394,40 @@ def test_animal_photo_edit_rotate(client, tmp_dirs):
     assert edit_resp.json()["animal_id"] == animal_id
 
 
+@pytest.mark.integration
+def test_animal_photo_upload_heic_accepted_and_converted_to_webp(client, tmp_dirs):
+    photos_dir = tmp_dirs["data"] / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 48), (200, 100, 50)).save(buf, format="HEIF")
+    heic_bytes = buf.getvalue()
+
+    with (
+        patch("meowdb.api.routers.animals.PHOTOS_DIR", photos_dir),
+        patch("meowdb.api.routers.photos.PHOTOS_DIR", photos_dir),
+    ):
+        resp = client.post(
+            f"/api/animals/{animal_id}/photos",
+            files={"file": ("photo.heic", heic_bytes, "image/heic")},
+        )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["animal_id"] == animal_id
+    assert data["filename"].endswith(".webp")
+
+
+@pytest.mark.integration
+def test_animal_photo_upload_unsupported_suffix_returns_400(client):
+    animal_id = client.app.state.db.get_animals()[0]["id"]
+    resp = client.post(
+        f"/api/animals/{animal_id}/photos",
+        files={"file": ("doc.bmp", b"fake", "image/bmp")},
+    )
+    assert resp.status_code == 400
+
+
 # ---------------------------------------------------------------------------
 # Global /photos/random
 # ---------------------------------------------------------------------------

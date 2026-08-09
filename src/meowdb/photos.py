@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener  # type: ignore[import-untyped]
+
+register_heif_opener()
 
 
 def optimize_photo(src: Path) -> Path:

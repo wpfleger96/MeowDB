@@ -189,8 +189,9 @@ function profilesView() {
       this.isDragOver = false;
       if (!this.selectedAnimal) return;
       if (!this.requireAuth()) return;
+      // Some browsers report an empty MIME type for dragged HEIC files.
       const files = Array.from(event.dataTransfer?.files || []).filter(
-        f => f.type.startsWith('image/')
+        f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
       );
       if (files.length === 0) return;
       await this._uploadPhotos(files);
