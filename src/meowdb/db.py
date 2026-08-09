@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import shutil
 import sqlite3
 import threading
 import uuid
 
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 _CREATE_ANIMALS = """
 CREATE TABLE IF NOT EXISTS animals (
@@ -102,6 +106,7 @@ class MeowDB:
         self._lock = threading.RLock()
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
 
         # Run migration check before CREATE TABLE IF NOT EXISTS.
         # FK enforcement is intentionally OFF during migration so we can freely
@@ -158,6 +163,13 @@ class MeowDB:
 
         Trigger: user_version == 0 AND table 'meows' exists.
         Idempotent: stamps user_version = 2 on success.
+
+        The pre-migration backup is written to ``{db_path}.pre-v2-backup`` using
+        SQLite's online backup API, which captures a consistent snapshot including
+        un-checkpointed WAL frames and is safe with concurrent long-lived readers
+        (e.g. Litestream). (This replaced a raw file copy that required a WAL
+        checkpoint first — a checkpoint that can never complete while a long-lived
+        reader such as Litestream is attached.)
         """
         user_ver = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if user_ver != 0:
@@ -169,23 +181,23 @@ class MeowDB:
         if meows_exists is None:
             return  # Fresh DB — no migration needed.
 
-        # Checkpoint WAL before backup (must be outside any transaction).
-        busy, _log, _checkpointed = self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-        if busy != 0:
-            raise RuntimeError(
-                f"WAL checkpoint busy before migration backup ({busy} writer(s) still active). "
-                "Close all other connections to this database and retry."
-            )
-
         backup_path = Path(str(self._db_path) + ".pre-v2-backup")
         if not backup_path.exists():
             tmp = backup_path.with_suffix(backup_path.suffix + ".tmp")
+            if tmp.exists():
+                _logger.warning(
+                    "Stale pre-migration backup temp file %s found (prior crash?); overwriting", tmp
+                )
             try:
-                shutil.copy2(str(self._db_path), str(tmp))
+                with contextlib.closing(sqlite3.connect(str(tmp))) as dest_conn:
+                    # FULL so backup pages are fsynced before close/rename; a crash
+                    # must not leave a corrupt file that the exists() guard trusts.
+                    dest_conn.execute("PRAGMA synchronous=FULL")
+                    self._conn.backup(dest_conn)
                 tmp.rename(backup_path)
-            finally:
-                # No-op on success (tmp was renamed); cleans up a partial copy on failure.
+            except Exception:
                 tmp.unlink(missing_ok=True)
+                raise
 
         # Inspect which optional columns the old meows table actually has
         # (some were added via ALTER TABLE in later versions).
