@@ -101,7 +101,9 @@ test.describe('MeowDB views', () => {
     const fileInput = page.locator('input[type="file"]:not([accept^="image"])');
     await fileInput.setInputFiles(audioFile);
 
-    await page.waitForSelector('#clip-waveform-container canvas', { state: 'visible', timeout: 15000 });
+    await page.waitForSelector('#clip-waveform-0 canvas', { state: 'visible', timeout: 15000 });
+    await expect(page.locator('.clip-animal-context')).toBeVisible();
+    await expect(page.locator('.clip-animal-context')).toContainText('Adding sounds to Squishy (cat)');
     await page.waitForTimeout(1000);
     await screenshot(page, testInfo, '04b-ingest-waveform.png');
   });

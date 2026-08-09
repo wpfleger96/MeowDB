@@ -10,6 +10,9 @@ function ingestView() {
 
     animals: [],
     selectedAnimalId: '',
+    get selectedAnimal() {
+      return this.animals.find((a) => a.id === this.selectedAnimalId) || null;
+    },
 
     uploadProgress: { done: 0, total: 0, errors: [] },
 

@@ -965,6 +965,10 @@
 
           <!-- ── clipping: per-job waveform editors ── -->
           <div x-show="phase === 'clipping'">
+            <div class="clip-animal-context" style="padding: 0 var(--sp-4); margin-bottom: var(--sp-2);">
+              <span class="text-sm text-secondary">Adding sounds to</span>
+              <span class="text-sm font-medium" x-text="selectedAnimal ? selectedAnimal.name + ' (' + selectedAnimal.species + ')' : ''"></span>
+            </div>
             <template x-for="(job, idx) in jobs" :key="job.containerId">
               <div x-show="job.phase !== 'error'">
                 <div class="clip-section">
