@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.9.1](https://github.com/wpfleger96/MeowDB/compare/v0.9.0...v0.9.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **ui:** make About panel dismissable via X button and click-outside ([#96](https://github.com/wpfleger96/MeowDB/issues/96)) ([9d15efe](https://github.com/wpfleger96/MeowDB/commit/9d15efe20861dc525aeb9c10a49869479c050fc1))
+
+## [0.9.0](https://github.com/wpfleger96/MeowDB/compare/v0.8.1...v0.9.0) (2026-08-09)
+
+
+### Features
+
+* add S3-primary storage for committed media ([#94](https://github.com/wpfleger96/MeowDB/issues/94)) ([d805d44](https://github.com/wpfleger96/MeowDB/commit/d805d449f001baab03e6e625a8285798ced0ae85))
+* **ui:** replace sidebar version string with an About panel ([#95](https://github.com/wpfleger96/MeowDB/issues/95)) ([c83f681](https://github.com/wpfleger96/MeowDB/commit/c83f6817f0e0536d7ec28ae48460ff5b52cb5637))
+
+
+### Chores
+
+* **deps:** Lock file maintenance ([#82](https://github.com/wpfleger96/MeowDB/issues/82)) ([de6a311](https://github.com/wpfleger96/MeowDB/commit/de6a311e1c1e34f620d138c7f28db3dff41be3b4))
+* **deps:** Lock file maintenance ([#83](https://github.com/wpfleger96/MeowDB/issues/83)) ([45959b1](https://github.com/wpfleger96/MeowDB/commit/45959b16f8529169e2b9ccf3bc385849be67ac97))
+* **deps:** Lock file maintenance ([#85](https://github.com/wpfleger96/MeowDB/issues/85)) ([1d611a1](https://github.com/wpfleger96/MeowDB/commit/1d611a1e1becbec5ba8a28a359816b866c0e2c69))
+* **deps:** Lock file maintenance ([#86](https://github.com/wpfleger96/MeowDB/issues/86)) ([6d742d8](https://github.com/wpfleger96/MeowDB/commit/6d742d8c059c5028b85c254b7c394cdf7bf55d1a))
+* **deps:** Lock file maintenance ([#88](https://github.com/wpfleger96/MeowDB/issues/88)) ([20adeb0](https://github.com/wpfleger96/MeowDB/commit/20adeb096c8f8e9d3e157d236d6bd775e30071fc))
+* **deps:** Lock file maintenance ([#89](https://github.com/wpfleger96/MeowDB/issues/89)) ([b14cc25](https://github.com/wpfleger96/MeowDB/commit/b14cc2503f54dcf69d4e5ae939b647925a0b2312))
+* **deps:** Lock file maintenance ([#90](https://github.com/wpfleger96/MeowDB/issues/90)) ([ea62dd7](https://github.com/wpfleger96/MeowDB/commit/ea62dd7bfe6d2bf1d0ab4354d969869f990df58a))
+* **deps:** Lock file maintenance ([#92](https://github.com/wpfleger96/MeowDB/issues/92)) ([10354f4](https://github.com/wpfleger96/MeowDB/commit/10354f427ffc119b310f6382bb9f2d17047e80b2))
+* **deps:** Update astral-sh/setup-uv action to v8.3.2 ([#84](https://github.com/wpfleger96/MeowDB/issues/84)) ([f31b35f](https://github.com/wpfleger96/MeowDB/commit/f31b35f2e12243d7f7090eb098ee1147b1b42bde))
+* **deps:** Update dependency @playwright/test to v1.62.1 ([#91](https://github.com/wpfleger96/MeowDB/issues/91)) ([cdff698](https://github.com/wpfleger96/MeowDB/commit/cdff698703e0271092212eac8cd7c260b50086b3))
+
+
+### Continuous Integration
+
+* sync CI workflow ([5c0f36a](https://github.com/wpfleger96/MeowDB/commit/5c0f36ac5f3c775b78c375c9911c197af6742722))
+* sync CI workflow ([29e9e68](https://github.com/wpfleger96/MeowDB/commit/29e9e68a3c3082b1cb408c6276a1d8fcef0f1871))
+* sync release workflow ([c14feef](https://github.com/wpfleger96/MeowDB/commit/c14feef0b6d6a4cfbc9b9e83494d59df6811af85))
+* sync release workflow ([84a6cc9](https://github.com/wpfleger96/MeowDB/commit/84a6cc938b4798ed68ee8971b3166e53eb888ed4))
+
 ## [0.8.1](https://github.com/wpfleger96/MeowDB/compare/v0.8.0...v0.8.1) (2026-07-03)
 
 

@@ -20,6 +20,7 @@ from meowdb.cli.commands.play import play
 from meowdb.cli.commands.serve import serve
 from meowdb.cli.commands.stats import stats
 from meowdb.cli.groups.db import db
+from meowdb.cli.groups.storage import storage
 
 main.add_command(delete)
 main.add_command(export_meows, name="export")
@@ -30,6 +31,7 @@ main.add_command(play)
 main.add_command(serve)
 main.add_command(stats)
 main.add_command(db)
+main.add_command(storage)
 
 
 def cli_entrypoint() -> None:

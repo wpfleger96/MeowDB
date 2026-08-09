@@ -17,9 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from meowdb import __version__
 from meowdb.api import auth
-from meowdb.api.routers import audio, ingest, meows, photos, stats, uniqueness
+from meowdb.api.routers import about, audio, ingest, meows, photos, stats, uniqueness
 from meowdb.config import (
     _DEFAULT_SESSION_SECRET,
     CORS_ORIGINS,
@@ -127,16 +126,13 @@ def create_app() -> FastAPI:
     app.include_router(stats.router, prefix="/api")
     app.include_router(photos.router, prefix="/api")
     app.include_router(uniqueness.router, prefix="/api")
+    app.include_router(about.router, prefix="/api")
 
     @app.get("/health", include_in_schema=False, response_model=None)
     async def health(request: Request) -> JSONResponse:
         if not request.app.state.db.ping():
             return JSONResponse({"status": "error"}, status_code=503)
         return JSONResponse({"status": "ok"})
-
-    @app.get("/api/version", include_in_schema=False, response_model=None)
-    async def version_info() -> JSONResponse:
-        return JSONResponse({"version": __version__})
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_catch_all(full_path: str, request: Request) -> HTMLResponse:

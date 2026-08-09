@@ -10,6 +10,7 @@ from meowdb.api.models import FeedbackRequest, MeowListResponse, MeowResponse, U
 from meowdb.api.streaming import safe_path
 from meowdb.config import MP3_DIR, WAV_DIR
 from meowdb.similarity import update_library_uniqueness
+from meowdb.storage import delete_from_s3, is_s3_enabled, is_s3_key, mp3_key, wav_key
 
 router = APIRouter()
 
@@ -99,16 +100,23 @@ async def delete_meow(meow_id: str, request: Request, _: None = Depends(require_
 
     wav_path_str = meow.get("wav_path", "")
     mp3_path_str = meow.get("mp3_path", "")
+
     if wav_path_str:
-        try:
-            Path(safe_path(Path(wav_path_str), WAV_DIR)).unlink(missing_ok=True)
-        except ValueError:
-            pass
+        if is_s3_enabled() and is_s3_key(wav_path_str):
+            await delete_from_s3(wav_key(meow_id))
+        else:
+            try:
+                Path(safe_path(Path(wav_path_str), WAV_DIR)).unlink(missing_ok=True)
+            except ValueError:
+                pass
     if mp3_path_str:
-        try:
-            Path(safe_path(Path(mp3_path_str), MP3_DIR)).unlink(missing_ok=True)
-        except ValueError:
-            pass
+        if is_s3_enabled() and is_s3_key(mp3_path_str):
+            await delete_from_s3(mp3_key(meow_id))
+        else:
+            try:
+                Path(safe_path(Path(mp3_path_str), MP3_DIR)).unlink(missing_ok=True)
+            except ValueError:
+                pass
 
     db.delete(meow_id)
     await run_in_threadpool(update_library_uniqueness, db, [])

@@ -33,6 +33,16 @@ from meowdb.similarity import update_library_uniqueness
 @db_path_option
 def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: str | None) -> None:
     """Import meows from an export archive."""
+    from meowdb.storage import (
+        delete_from_s3_sync,
+        is_s3_enabled,
+        is_s3_key,
+        mp3_key,
+        photo_key,
+        upload_to_s3_sync,
+        wav_key,
+    )
+
     ctx = build_context(db_path)
 
     try:
@@ -73,9 +83,13 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
                     continue
                 elif on_conflict == "replace":
                     for field in ("wav_path", "mp3_path"):
-                        p = Path(existing.get(field) or "")
-                        if p.exists():
-                            p.unlink()
+                        value = existing.get(field) or ""
+                        if is_s3_enabled() and is_s3_key(value):
+                            delete_from_s3_sync(value)
+                        else:
+                            p = Path(value)
+                            if p.exists():
+                                p.unlink()
                     ctx.db.delete(archive_id)
                     replaced_meows += 1
 
@@ -91,6 +105,16 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
             audio.export(str(mp3_path), format="mp3", bitrate="192k")
 
             ctx.db.import_meow(meow_id, meow, str(wav_path), str(mp3_path))
+
+            if is_s3_enabled():
+                wk = wav_key(meow_id)
+                mk = mp3_key(meow_id)
+                upload_to_s3_sync(wav_path, wk)
+                upload_to_s3_sync(mp3_path, mk)
+                ctx.db.update_meow_paths(meow_id, wk, mk)
+                wav_path.unlink(missing_ok=True)
+                mp3_path.unlink(missing_ok=True)
+
             new_ids.append(meow_id)
             imported_meows += 1
 
@@ -125,9 +149,12 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
                             skipped_photos += 1
                             continue
                         elif on_conflict == "replace":
-                            old_file = PHOTOS_DIR / existing_photo["filename"]
+                            old_filename = existing_photo["filename"]
+                            old_file = PHOTOS_DIR / old_filename
                             if old_file.exists():
                                 old_file.unlink()
+                            if is_s3_enabled():
+                                delete_from_s3_sync(photo_key(old_filename))
                             ctx.db.delete_photo(original_id)
                             replaced_photos += 1
 
@@ -149,6 +176,11 @@ def import_meows(archive: str, on_conflict: str, include_photos: bool, db_path: 
                         bool(photo.get("is_default")),
                         photo.get("updated_at"),
                     )
+
+                    if is_s3_enabled():
+                        upload_to_s3_sync(dest, photo_key(filename))
+                        dest.unlink(missing_ok=True)
+
                     imported_photos += 1
 
     if new_ids:

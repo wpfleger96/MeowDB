@@ -47,11 +47,19 @@
   <!-- Toast container (aria-live so screen readers announce messages) -->
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
 
-  <!-- Shared mobile auth control — cloned into [data-nav-auth] placeholders by app.js -->
+  <!-- Shared mobile header controls — cloned into [data-nav-auth] placeholders
+       by app.js. About is always shown; the auth buttons gate themselves. -->
   <template id="nav-auth-mobile">
-    <div class="nav-auth-mobile" x-show="authRequired" x-cloak>
-      <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
-      <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+    <div class="nav-auth-mobile" x-cloak>
+      <button x-show="authRequired && authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+      <button x-show="authRequired && !authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+      <button class="btn-icon" @click="openAbout()" aria-label="About MeowDB">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="16" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+      </button>
     </div>
   </template>
 
@@ -70,10 +78,17 @@
     >
       <div class="play-view">
 
-        <!-- Auth control (top-right; Play has no header) -->
-        <div class="play-auth-mobile" x-show="authRequired" x-cloak>
-          <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
-          <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+        <!-- Auth + About controls (top-right; Play has no header) -->
+        <div class="play-auth-mobile" x-cloak>
+          <button x-show="authRequired && authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
+          <button x-show="authRequired && !authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+          <button class="btn-icon" @click="openAbout()" aria-label="About MeowDB">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="16" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+          </button>
         </div>
 
         <!-- Empty state (0 meows in library) -->
@@ -1071,12 +1086,17 @@
     ══════════════════════════════════════════════════ -->
     <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
 
-      <!-- Desktop sidebar brand (hidden on mobile via layout.css) -->
-      <div class="nav-brand" aria-hidden="true">
+      <!-- Desktop sidebar brand (hidden on mobile via layout.css; mobile
+           reaches About through the nav-auth-mobile template instead) -->
+      <button class="nav-brand" @click="openAbout()" aria-label="About MeowDB">
         <span class="nav-brand-icon">🐱</span>
         <span class="nav-brand-name">MeowDB</span>
-        <span class="app-version" x-show="appVersion" x-text="'v' + appVersion" x-cloak></span>
-      </div>
+        <svg class="nav-brand-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="16" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+      </button>
 
       <!-- Auth controls -->
       <div class="nav-auth" x-show="authRequired" x-cloak>
@@ -1210,6 +1230,73 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- About panel -->
+  <div
+    x-show="showAboutModal"
+    x-cloak
+    class="modal-backdrop"
+    @keydown.escape.window="showAboutModal = false"
+    role="dialog"
+    aria-modal="true"
+    aria-label="About MeowDB"
+  >
+    <div class="modal-sheet" @click.outside="showAboutModal = false">
+      <div class="modal-handle"></div>
+      <div class="modal-header">
+        <h2 class="modal-title">About</h2>
+        <button class="btn-icon" @click="showAboutModal = false" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="about-loading" x-show="aboutLoading && !aboutInfo">
+          <div class="spinner"></div>
+          <span>Loading…</span>
+        </div>
+
+        <p x-show="aboutError" x-text="aboutError" class="error-text"></p>
+
+        <template x-if="aboutInfo">
+          <div>
+            <h3 class="about-section">Build</h3>
+            <div class="about-row">
+              <span class="about-label">Version</span>
+              <span class="about-value" x-text="'v' + aboutInfo.version"></span>
+            </div>
+            <div class="about-row">
+              <span class="about-label">Commit</span>
+              <span class="about-value about-mono" x-text="aboutInfo.git_sha"></span>
+            </div>
+            <div class="about-row">
+              <span class="about-label">Built</span>
+              <span class="about-value about-mono" x-text="aboutInfo.build_time || '—'"></span>
+            </div>
+
+            <h3 class="about-section">Runtime</h3>
+            <div class="about-row">
+              <span class="about-label">Uptime</span>
+              <span class="about-value" x-text="MeowUtils.formatUptime(aboutInfo.uptime_seconds)"></span>
+            </div>
+            <div class="about-row">
+              <span class="about-label">Auth mode</span>
+              <span class="about-value" x-text="aboutInfo.auth_mode"></span>
+            </div>
+            <div class="about-row">
+              <span class="about-label">Python</span>
+              <span class="about-value about-mono" x-text="aboutInfo.python_version"></span>
+            </div>
+            <div class="about-row">
+              <span class="about-label">SQLite</span>
+              <span class="about-value about-mono" x-text="aboutInfo.sqlite_version"></span>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>

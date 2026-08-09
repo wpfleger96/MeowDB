@@ -70,7 +70,10 @@ function app() {
     loginPassword: '',
     loginError: '',
     loginLoading: false,
-    appVersion: null,
+    showAboutModal: false,
+    aboutInfo: null,
+    aboutError: '',
+    aboutLoading: false,
 
     get canWrite() {
       return !this.authRequired || this.authenticated;
@@ -115,8 +118,6 @@ function app() {
         }
       }
 
-      getVersion().then(data => { this.appVersion = data.version; }).catch(() => {});
-
       if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
         navigateTo('/');
       }
@@ -132,6 +133,20 @@ function app() {
 
     navClass(view) {
       return this.currentView === view ? 'nav-tab active' : 'nav-tab';
+    },
+
+    // Refetched on every open: uptime is live, so a cached payload goes stale.
+    async openAbout() {
+      this.showAboutModal = true;
+      this.aboutLoading = true;
+      this.aboutError = '';
+      try {
+        this.aboutInfo = await getAbout();
+      } catch (e) {
+        this.aboutError = e.message || 'Could not load build info';
+      } finally {
+        this.aboutLoading = false;
+      }
     },
 
     async doLogin() {

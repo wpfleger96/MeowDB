@@ -30,10 +30,16 @@ def delete(id: str, force: bool, db_path: str | None) -> None:
             return
 
     # Remove audio files before deleting the db record
+    from meowdb.storage import delete_from_s3_sync, is_s3_enabled, is_s3_key
+
     for field in ("wav_path", "mp3_path"):
-        file_path = meow.get(field)
-        if file_path:
-            p = Path(file_path)
+        value = meow.get(field)
+        if not value:
+            continue
+        if is_s3_enabled() and is_s3_key(value):
+            delete_from_s3_sync(value)
+        else:
+            p = Path(value)
             if p.exists():
                 p.unlink()
 
