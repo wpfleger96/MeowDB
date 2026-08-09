@@ -514,11 +514,25 @@ def test_migration_succeeds_with_concurrent_reader(tmp_path: Path) -> None:
     pre.execute("PRAGMA journal_mode=WAL")
     pre.close()
 
-    # Open a second connection that holds an uncommitted read transaction across
-    # the migration, simulating a long-lived WAL reader (e.g. Litestream).
+    # Open the long-lived reader BEFORE creating WAL frames.  The reader's open
+    # transaction blocks the auto-checkpoint that would otherwise run when the
+    # write connection closes, ensuring WAL frames persist into the migration.
+    # Without frames, wal_checkpoint(TRUNCATE) reports busy=0 even with an open
+    # reader (nothing to checkpoint), so the old checkpoint-guard code path would
+    # not have been exercised.
     reader = sqlite3.connect(str(db_path))
     reader.execute("BEGIN")
     reader.execute("SELECT * FROM meows").fetchall()
+
+    # Commit a real write so WAL frames exist.  SQLite optimises away no-op
+    # updates (e.g. "col = col"), so the value must actually change.  The
+    # open reader prevents the auto-checkpoint that normally fires on
+    # connection close, so the frames remain in the WAL when MeowDB.__init__
+    # runs.
+    stamp = sqlite3.connect(str(db_path))
+    stamp.execute("UPDATE meows SET play_count = play_count + 1")
+    stamp.commit()
+    stamp.close()
 
     db: MeowDB | None = None
     try:
