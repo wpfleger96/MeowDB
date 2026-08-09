@@ -76,12 +76,12 @@ test.describe('MeowDB views', () => {
 
   test('ingest upload', async ({ page }, testInfo) => {
     await page.goto('/upload', GOTO_OPTS);
-    await page.waitForSelector('.upload-zone', { state: 'visible' });
+    await page.waitForSelector('.ingest-idle .upload-zone', { state: 'visible' });
     await screenshot(page, testInfo, '04-ingest.png');
 
     if (isDesktop(page)) {
       // Upload zone and record section are side-by-side: different x positions
-      const uploadBox = await page.locator('.upload-zone').boundingBox();
+      const uploadBox = await page.locator('.ingest-idle .upload-zone').boundingBox();
       const recordBox = await page.locator('.record-section').boundingBox();
       expect(uploadBox!.x).toBeLessThan(recordBox!.x);
       // "or" divider is hidden
@@ -96,9 +96,9 @@ test.describe('MeowDB views', () => {
     test.skip(!fs.existsSync(audioFile), 'audio fixture not available');
 
     await page.goto('/upload', GOTO_OPTS);
-    await page.waitForSelector('.upload-zone', { state: 'visible' });
+    await page.waitForSelector('.ingest-idle .upload-zone', { state: 'visible' });
 
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.locator('input[type="file"]:not([accept^="image"])');
     await fileInput.setInputFiles(audioFile);
 
     await page.waitForSelector('#clip-waveform-container canvas', { state: 'visible', timeout: 15000 });
@@ -223,6 +223,30 @@ test.describe('MeowDB views', () => {
     await expect(select.locator('option', { hasText: 'Squishy' })).toHaveCount(1);
     await expect(select.locator('option', { hasText: 'Thrasher' })).toHaveCount(1);
     await expect(select.locator('option', { hasText: 'Slushie' })).toHaveCount(1);
+  });
+
+  test('upload hub tabs', async ({ page }, testInfo) => {
+    await page.goto('/upload', GOTO_OPTS);
+    await page.waitForSelector('.ingest-tabs', { state: 'visible' });
+    const tabs = page.locator('.ingest-tabs');
+    await expect(tabs.locator('.chip-filter', { hasText: 'Sounds' })).toBeVisible();
+    await expect(tabs.locator('.chip-filter', { hasText: 'Photos' })).toBeVisible();
+    await expect(tabs.locator('.chip-filter.active')).toHaveText('Sounds');
+
+    await tabs.locator('.chip-filter', { hasText: 'Photos' }).click();
+    await expect(tabs.locator('.chip-filter.active')).toHaveText('Photos');
+    await expect(page.locator('.ingest-idle .upload-zone')).toBeHidden();
+    const photoZone = page.locator('.upload-zone').last();
+    await expect(photoZone).toBeVisible();
+
+    await screenshot(page, testInfo, '11-upload-photos-tab.png');
+  });
+
+  test('upload hub photos deep link', async ({ page }) => {
+    await page.goto('/upload/photos', GOTO_OPTS);
+    await page.waitForSelector('.ingest-tabs', { state: 'visible' });
+    await expect(page.locator('.ingest-tabs .chip-filter.active')).toHaveText('Photos');
+    await expect(page.locator('.ingest-idle')).toBeHidden();
   });
 
   test('library animal filter chips', async ({ page }) => {

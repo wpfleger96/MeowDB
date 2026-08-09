@@ -707,6 +707,11 @@
             x-show="canWrite"
             @click="$refs.photoInput.click()"
           >Upload a photo</button>
+          <button
+            class="btn btn-ghost"
+            x-show="canWrite"
+            @click="navigateTo('/upload/photos', { animalId: selectedAnimal?.id })"
+          >Add via Upload page</button>
         </div>
 
         <!-- Photo grid -->
@@ -849,7 +854,7 @@
       <div class="ingest-view">
 
         <div class="view-header">
-          <h1 class="view-title">Add Sounds</h1>
+          <h1 class="view-title">Upload</h1>
           <div class="flex items-center gap-2">
             <button
               class="btn btn-ghost"
@@ -863,178 +868,260 @@
           </div>
         </div>
 
-        <!-- ── idle: upload UI ── -->
-        <div class="ingest-idle" x-show="phase === 'idle'">
+        <!-- Hoisted animal selector -->
+        <div class="ingest-animal-field" x-show="phase === 'idle'" style="padding: 0 var(--sp-4); margin-bottom: var(--sp-3);">
+          <label class="text-sm text-secondary" style="display:block;margin-bottom:var(--sp-2);" x-text="activeTab === 'photos' ? 'Who are these photos of?' : 'Who is this recording of?'"></label>
+          <select class="select" x-model="selectedAnimalId" style="width:100%;">
+            <option value="" disabled>Select an animal…</option>
+            <template x-for="animal in animals" :key="animal.id">
+              <option :value="animal.id" x-text="animal.name + ' (' + animal.species + ')'"></option>
+            </template>
+          </select>
+        </div>
 
-          <!-- Animal selector -->
-          <div class="ingest-animal-field" style="padding: 0 var(--sp-4); margin-bottom: var(--sp-3);">
-            <label class="text-sm text-secondary" style="display:block;margin-bottom:var(--sp-2);">Who is this recording of?</label>
-            <select class="select" x-model="selectedAnimalId" style="width:100%;">
-              <option value="" disabled>Select an animal…</option>
-              <template x-for="animal in animals" :key="animal.id">
-                <option :value="animal.id" x-text="animal.name + ' (' + animal.species + ')'"></option>
-              </template>
-            </select>
-          </div>
+        <!-- Tab strip -->
+        <div class="ingest-tabs" x-show="phase === 'idle'">
+          <button
+            class="chip chip-filter"
+            :class="{ active: activeTab === 'sounds' }"
+            :disabled="phase !== 'idle'"
+            @click="switchTab('sounds')"
+          >Sounds</button>
+          <button
+            class="chip chip-filter"
+            :class="{ active: activeTab === 'photos' }"
+            :disabled="phase !== 'idle'"
+            @click="switchTab('photos')"
+          >Photos</button>
+        </div>
 
-          <!-- Drop zone -->
-          <div
-            class="upload-zone"
-            :class="{ 'drag-over': isDragOver }"
-            @click="$refs.fileInput.click()"
-            @dragover.prevent="onDragOver($event)"
-            @dragleave="onDragLeave()"
-            @drop.prevent="onDrop($event)"
-            role="button"
-            tabindex="0"
-            aria-label="Upload audio or video files"
-            @keydown.enter="$refs.fileInput.click()"
-            @keydown.space.prevent="$refs.fileInput.click()"
-          >
-            <div class="upload-zone-icon">🎵</div>
-            <div class="upload-zone-title">Upload recordings</div>
-            <div class="upload-zone-body">
-              Tap to choose files, or drag and drop<br>
-              Supports audio and video files (.m4a, .mp3, .wav, .mp4, .mov, and more)
-            </div>
-            <button class="btn btn-primary" @click.stop="$refs.fileInput.click()">Choose files</button>
-          </div>
-          <input
-            type="file"
-            accept="{{UPLOAD_ACCEPT}}"
-            multiple
-            x-ref="fileInput"
-            @change="onFileChange($event)"
-            style="display:none"
-            aria-hidden="true"
-          >
+        <!-- ── Sounds tab ── -->
+        <div x-show="activeTab === 'sounds'">
 
-          <!-- Divider -->
-          <div class="ingest-or-divider flex items-center gap-3" style="padding:0 var(--sp-4); margin: var(--sp-2) 0;">
-            <div class="divider" style="flex:1;margin:0;"></div>
-            <span class="text-muted text-sm">or</span>
-            <div class="divider" style="flex:1;margin:0;"></div>
-          </div>
+          <!-- ── idle: upload UI ── -->
+          <div class="ingest-idle" x-show="phase === 'idle'">
 
-          <!-- Record section -->
-          <div class="record-section">
-            <button
-              class="record-btn"
-              :class="{ recording: isRecording }"
-              @click="isRecording ? stopRecording() : startRecording()"
-              :aria-label="isRecording ? 'Stop recording' : 'Start recording'"
+            <!-- Drop zone -->
+            <div
+              class="upload-zone"
+              :class="{ 'drag-over': isDragOver }"
+              @click="$refs.fileInput.click()"
+              @dragover.prevent="onDragOver($event)"
+              @dragleave="onDragLeave()"
+              @drop.prevent="onDrop($event)"
+              role="button"
+              tabindex="0"
+              aria-label="Upload audio or video files"
+              @keydown.enter="$refs.fileInput.click()"
+              @keydown.space.prevent="$refs.fileInput.click()"
             >
-              <div class="record-btn-inner"></div>
-            </button>
-            <p class="text-sm text-secondary" x-show="!isRecording">Record now</p>
-            <p class="record-timer" x-show="isRecording" x-text="formatRecordTime(recordSeconds)"></p>
-            <p class="text-xs text-muted" x-show="isRecording">Tap again to stop</p>
-          </div>
-        </div>
-
-        <!-- ── uploading ── -->
-        <div class="upload-progress" x-show="phase === 'uploading'">
-          <div class="spinner spinner-lg"></div>
-          <p class="text-lg font-medium" x-text="'Uploading ' + uploadProgress.done + ' / ' + uploadProgress.total + '…'"></p>
-          <p class="text-sm text-secondary">This may take a few seconds</p>
-        </div>
-
-        <!-- ── clipping: per-job waveform editors ── -->
-        <div x-show="phase === 'clipping'">
-          <template x-for="(job, idx) in jobs" :key="job.containerId">
-            <div x-show="job.phase !== 'error'">
-              <div class="clip-section">
-                <div class="clip-section-header">
-                  <span class="clip-section-title" x-text="job.filename"></span>
-                  <span class="badge badge-default" x-show="job.phase === 'done'">Saved</span>
-                  <span class="badge badge-default" x-show="job.phase === 'processing'">Processing…</span>
-                </div>
-
-                <div class="clip-container" x-show="job.phase === 'clipping'">
-                  <div class="clip-waveform-wrap">
-                    <div :id="job.containerId"></div>
-                  </div>
-                  <div class="clip-timecode" x-show="job.duration > 0">
-                    <span class="clip-timecode-current" x-text="formatTimecode(job.currentTime)"></span>
-                    <span class="clip-timecode-sep">/</span>
-                    <span x-text="formatTimecode(job.duration)"></span>
-                  </div>
-                  <p class="text-sm text-muted text-center">Click and drag on the waveform to mark sound regions</p>
-                  <div class="clip-transport">
-                    <button class="btn btn-ghost" @click="zoomOut(job)" :disabled="job.zoomLevel === 0" aria-label="Zoom out">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                        <line x1="8" y1="11" x2="14" y2="11"/>
-                      </svg>
-                    </button>
-                    <button class="btn btn-ghost" @click="togglePlayPause(job)" aria-label="Play / Pause">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    </button>
-                    <button class="btn btn-ghost" @click="zoomIn(job)" :disabled="job.zoomLevel >= 10" aria-label="Zoom in">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                        <line x1="11" y1="8" x2="11" y2="14"/>
-                        <line x1="8" y1="11" x2="14" y2="11"/>
-                      </svg>
-                    </button>
-                    <button
-                      class="btn btn-ghost"
-                      @click="autoDetect(job)"
-                      :disabled="job.isAutoDetecting"
-                      x-text="job.isAutoDetecting ? 'Detecting…' : 'Auto-detect'"
-                    ></button>
-                  </div>
-                  <div class="clip-actions">
-                    <button
-                      class="btn btn-primary btn-full"
-                      @click="saveClips(job)"
-                      :disabled="job.regionCount === 0"
-                      x-text="job.regionCount === 0 ? 'Draw regions to save' : 'Save ' + job.regionCount + (job.regionCount === 1 ? ' clip' : ' clips')"
-                    ></button>
-                  </div>
-
-                  <div class="clip-list" x-show="job.clips.length > 0">
-                    <template x-for="(clip, ci) in job.clips" :key="clip.id">
-                      <div class="clip-list-item">
-                        <span class="clip-list-number" x-text="'#' + (ci + 1)"></span>
-                        <span class="clip-list-range" x-text="formatTimecode(clip.start) + ' – ' + formatTimecode(clip.end)"></span>
-                        <button class="btn-icon clip-list-play" @click="playClip(job, clip)" aria-label="Play clip">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                        </button>
-                        <button class="btn-icon clip-list-delete" @click="removeClip(job, clip)" aria-label="Delete clip">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                        </button>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-
-                <div class="upload-progress" x-show="job.phase === 'processing'" style="padding:var(--sp-4);">
-                  <div class="spinner"></div>
-                  <p class="text-sm text-secondary">Processing clips…</p>
-                </div>
-
-                <div class="clip-section-done" x-show="job.phase === 'done'">Saved</div>
+              <div class="upload-zone-icon">🎵</div>
+              <div class="upload-zone-title">Upload recordings</div>
+              <div class="upload-zone-body">
+                Tap to choose files, or drag and drop<br>
+                Supports audio and video files (.m4a, .mp3, .wav, .mp4, .mov, and more)
               </div>
-
-              <div class="divider" x-show="idx < jobs.length - 1 && jobs[idx + 1]?.phase !== 'error'" style="margin:0 var(--sp-4);"></div>
+              <button class="btn btn-primary" @click.stop="$refs.fileInput.click()">Choose files</button>
             </div>
-          </template>
+            <input
+              type="file"
+              accept="{{UPLOAD_ACCEPT}}"
+              multiple
+              x-ref="fileInput"
+              @change="onFileChange($event)"
+              style="display:none"
+              aria-hidden="true"
+            >
 
-          <div class="clip-actions" x-show="jobs.filter(j => j.phase === 'clipping').length > 1" style="padding:var(--sp-3) var(--sp-4) var(--sp-4);">
-            <button class="btn btn-secondary btn-full" @click="saveAllClips()">Save All Clips</button>
+            <!-- Divider -->
+            <div class="ingest-or-divider flex items-center gap-3" style="padding:0 var(--sp-4); margin: var(--sp-2) 0;">
+              <div class="divider" style="flex:1;margin:0;"></div>
+              <span class="text-muted text-sm">or</span>
+              <div class="divider" style="flex:1;margin:0;"></div>
+            </div>
+
+            <!-- Record section -->
+            <div class="record-section">
+              <button
+                class="record-btn"
+                :class="{ recording: isRecording }"
+                @click="isRecording ? stopRecording() : startRecording()"
+                :aria-label="isRecording ? 'Stop recording' : 'Start recording'"
+              >
+                <div class="record-btn-inner"></div>
+              </button>
+              <p class="text-sm text-secondary" x-show="!isRecording">Record now</p>
+              <p class="record-timer" x-show="isRecording" x-text="formatRecordTime(recordSeconds)"></p>
+              <p class="text-xs text-muted" x-show="isRecording">Tap again to stop</p>
+            </div>
           </div>
+
+          <!-- ── uploading ── -->
+          <div class="upload-progress" x-show="phase === 'uploading'">
+            <div class="spinner spinner-lg"></div>
+            <p class="text-lg font-medium" x-text="'Uploading ' + uploadProgress.done + ' / ' + uploadProgress.total + '…'"></p>
+            <p class="text-sm text-secondary">This may take a few seconds</p>
+          </div>
+
+          <!-- ── clipping: per-job waveform editors ── -->
+          <div x-show="phase === 'clipping'">
+            <template x-for="(job, idx) in jobs" :key="job.containerId">
+              <div x-show="job.phase !== 'error'">
+                <div class="clip-section">
+                  <div class="clip-section-header">
+                    <span class="clip-section-title" x-text="job.filename"></span>
+                    <span class="badge badge-default" x-show="job.phase === 'done'">Saved</span>
+                    <span class="badge badge-default" x-show="job.phase === 'processing'">Processing…</span>
+                  </div>
+
+                  <div class="clip-container" x-show="job.phase === 'clipping'">
+                    <div class="clip-waveform-wrap">
+                      <div :id="job.containerId"></div>
+                    </div>
+                    <div class="clip-timecode" x-show="job.duration > 0">
+                      <span class="clip-timecode-current" x-text="formatTimecode(job.currentTime)"></span>
+                      <span class="clip-timecode-sep">/</span>
+                      <span x-text="formatTimecode(job.duration)"></span>
+                    </div>
+                    <p class="text-sm text-muted text-center">Click and drag on the waveform to mark sound regions</p>
+                    <div class="clip-transport">
+                      <button class="btn btn-ghost" @click="zoomOut(job)" :disabled="job.zoomLevel === 0" aria-label="Zoom out">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="11" cy="11" r="8"/>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                      </button>
+                      <button class="btn btn-ghost" @click="togglePlayPause(job)" aria-label="Play / Pause">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      </button>
+                      <button class="btn btn-ghost" @click="zoomIn(job)" :disabled="job.zoomLevel >= 10" aria-label="Zoom in">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="11" cy="11" r="8"/>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          <line x1="11" y1="8" x2="11" y2="14"/>
+                          <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                      </button>
+                      <button
+                        class="btn btn-ghost"
+                        @click="autoDetect(job)"
+                        :disabled="job.isAutoDetecting"
+                        x-text="job.isAutoDetecting ? 'Detecting…' : 'Auto-detect'"
+                      ></button>
+                    </div>
+                    <div class="clip-actions">
+                      <button
+                        class="btn btn-primary btn-full"
+                        @click="saveClips(job)"
+                        :disabled="job.regionCount === 0"
+                        x-text="job.regionCount === 0 ? 'Draw regions to save' : 'Save ' + job.regionCount + (job.regionCount === 1 ? ' clip' : ' clips')"
+                      ></button>
+                    </div>
+
+                    <div class="clip-list" x-show="job.clips.length > 0">
+                      <template x-for="(clip, ci) in job.clips" :key="clip.id">
+                        <div class="clip-list-item">
+                          <span class="clip-list-number" x-text="'#' + (ci + 1)"></span>
+                          <span class="clip-list-range" x-text="formatTimecode(clip.start) + ' – ' + formatTimecode(clip.end)"></span>
+                          <button class="btn-icon clip-list-play" @click="playClip(job, clip)" aria-label="Play clip">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                          </button>
+                          <button class="btn-icon clip-list-delete" @click="removeClip(job, clip)" aria-label="Delete clip">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div class="upload-progress" x-show="job.phase === 'processing'" style="padding:var(--sp-4);">
+                    <div class="spinner"></div>
+                    <p class="text-sm text-secondary">Processing clips…</p>
+                  </div>
+
+                  <div class="clip-section-done" x-show="job.phase === 'done'">Saved</div>
+                </div>
+
+                <div class="divider" x-show="idx < jobs.length - 1 && jobs[idx + 1]?.phase !== 'error'" style="margin:0 var(--sp-4);"></div>
+              </div>
+            </template>
+
+            <div class="clip-actions" x-show="jobs.filter(j => j.phase === 'clipping').length > 1" style="padding:var(--sp-3) var(--sp-4) var(--sp-4);">
+              <button class="btn btn-secondary btn-full" @click="saveAllClips()">Save All Clips</button>
+            </div>
+          </div>
+
+          <!-- ── done ── -->
+          <div class="empty-state" x-show="phase === 'done'">
+            <div class="empty-state-icon">🐱</div>
+            <div class="empty-state-title">Sounds saved!</div>
+            <div class="empty-state-body">They're now in your library.</div>
+            <button class="btn btn-primary" @click="navigateTo('/library')">Go to library</button>
+            <button class="btn btn-ghost" @click="reset()">Add more</button>
+          </div>
+
         </div>
 
-        <!-- ── done ── -->
-        <div class="empty-state" x-show="phase === 'done'">
-          <div class="empty-state-icon">🐱</div>
-          <div class="empty-state-title">Sounds saved!</div>
-          <div class="empty-state-body">They're now in your library.</div>
-          <button class="btn btn-primary" @click="navigateTo('/library')">Go to library</button>
-          <button class="btn btn-ghost" @click="reset()">Add more</button>
+        <!-- ── Photos tab ── -->
+        <div x-show="activeTab === 'photos'">
+
+          <!-- idle -->
+          <div x-show="photoPhase === 'idle'">
+            <div
+              class="upload-zone"
+              :class="{ 'drag-over': photoIsDragOver }"
+              @click="$refs.photoFileInput.click()"
+              @dragover.prevent="onPhotoDragOver($event)"
+              @dragleave="onPhotoDragLeave()"
+              @drop.prevent="onPhotoDrop($event)"
+              role="button"
+              tabindex="0"
+              aria-label="Upload photo files"
+              @keydown.enter="$refs.photoFileInput.click()"
+              @keydown.space.prevent="$refs.photoFileInput.click()"
+            >
+              <div class="upload-zone-icon">📷</div>
+              <div class="upload-zone-title">Upload photos</div>
+              <div class="upload-zone-body">
+                Tap to choose photos, or drag and drop<br>
+                Supports JPEG, PNG, GIF, and WebP
+              </div>
+              <button class="btn btn-primary" @click.stop="$refs.photoFileInput.click()">Choose photos</button>
+            </div>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              multiple
+              x-ref="photoFileInput"
+              @change="onPhotoFileChange($event)"
+              style="display:none"
+              aria-hidden="true"
+            >
+          </div>
+
+          <!-- uploading -->
+          <div class="upload-progress" x-show="photoPhase === 'uploading'">
+            <div class="spinner spinner-lg"></div>
+            <p class="text-lg font-medium" x-text="'Uploading ' + photoUploadProgress.done + ' / ' + photoUploadProgress.total + '…'"></p>
+            <p class="text-sm text-secondary">This may take a few seconds</p>
+          </div>
+
+          <!-- done -->
+          <div class="empty-state" x-show="photoPhase === 'done'">
+            <div class="empty-state-icon">📷</div>
+            <div class="empty-state-title" x-text="uploadedPhotoUrls.length + (uploadedPhotoUrls.length === 1 ? ' photo uploaded!' : ' photos uploaded!')"></div>
+            <div class="photo-grid" x-show="uploadedPhotoUrls.length > 0">
+              <template x-for="url in uploadedPhotoUrls" :key="url">
+                <div class="photo-thumb">
+                  <img :src="url" alt="Uploaded photo" loading="lazy">
+                </div>
+              </template>
+            </div>
+            <button class="btn btn-primary" @click="navigateTo('/profiles')">Manage photos in Profiles</button>
+            <button class="btn btn-ghost" @click="resetPhotoTab()">Upload more</button>
+          </div>
+
         </div>
 
       </div>

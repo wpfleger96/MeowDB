@@ -21,6 +21,12 @@ function ingestView() {
 
     _wavesurferLoaded: false,
 
+    activeTab: 'sounds',
+    photoPhase: 'idle',
+    photoUploadProgress: { done: 0, total: 0, errors: [] },
+    uploadedPhotoUrls: [],
+    photoIsDragOver: false,
+
     /* ──────────────────────────────────────────────────────
        Lifecycle
     ────────────────────────────────────────────────────── */
@@ -33,6 +39,19 @@ function ingestView() {
       } catch (e) {
         console.error('ingestView init error:', e);
       }
+
+      if (location.pathname === '/upload/photos') this.activeTab = 'photos';
+
+      window.addEventListener('route-change', (e) => {
+        const { path, animalId } = e.detail || {};
+        // Ignore while a sounds session is in progress so it can't be hidden mid-clip.
+        if ((path === '/upload' || path === '/upload/photos') && this.phase === 'idle') {
+          this.activeTab = path === '/upload/photos' ? 'photos' : 'sounds';
+          if (animalId && this.animals.some((a) => a.id === animalId)) {
+            this.selectedAnimalId = animalId;
+          }
+        }
+      });
 
       const boot = window.__BOOTSTRAP__ || {};
       if (boot.animals) {
@@ -426,6 +445,68 @@ function ingestView() {
       }
     },
 
+    /* ──────────────────────────────────────────────────────
+       Photos tab
+    ────────────────────────────────────────────────────── */
+
+    switchTab(tab) {
+      if (this.phase !== 'idle') return;
+      this.activeTab = tab;
+      this.resetPhotoTab();
+    },
+
+    resetPhotoTab() {
+      this.photoPhase = 'idle';
+      this.uploadedPhotoUrls = [];
+      this.photoUploadProgress = { done: 0, total: 0, errors: [] };
+    },
+
+    async _uploadPhotosForAnimal(files) {
+      if (this.photoPhase === 'uploading') return;
+      if (!this.requireAuth()) return;
+      if (!this.selectedAnimalId) {
+        showToast('Select an animal before uploading', 'error');
+        return;
+      }
+      this.photoPhase = 'uploading';
+      this.photoUploadProgress = { done: 0, total: files.length, errors: [] };
+      this.uploadedPhotoUrls = [];
+      for (const file of files) {
+        try {
+          const photo = await uploadAnimalPhoto(this.selectedAnimalId, file);
+          this.uploadedPhotoUrls.push(photo.image_url);
+        } catch {
+          this.photoUploadProgress.errors.push(file.name);
+        }
+        this.photoUploadProgress.done++;
+      }
+      const failed = this.photoUploadProgress.errors.length;
+      const succeeded = files.length - failed;
+      if (succeeded === 0) {
+        showToast('All uploads failed', 'error');
+      } else if (failed === 0) {
+        showToast(`Uploaded ${succeeded} photo${succeeded !== 1 ? 's' : ''}!`, 'success');
+      } else {
+        showToast(`Uploaded ${succeeded} of ${files.length} (${failed} failed)`, 'error');
+      }
+      this.photoPhase = succeeded === 0 ? 'idle' : 'done';
+    },
+
+    onPhotoFileChange(event) {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      if (files.length > 0) this._uploadPhotosForAnimal(files);
+    },
+
+    onPhotoDragOver(event) { event.preventDefault(); this.photoIsDragOver = true; },
+    onPhotoDragLeave() { this.photoIsDragOver = false; },
+    onPhotoDrop(event) {
+      event.preventDefault();
+      this.photoIsDragOver = false;
+      const files = Array.from(event.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'));
+      if (files.length > 0) this._uploadPhotosForAnimal(files);
+    },
+
     reset() {
       this._resetting = true;
       if (this.isRecording) this.stopRecording();
@@ -436,6 +517,7 @@ function ingestView() {
       this.jobs = [];
       this.phase = 'idle';
       this.uploadProgress = { done: 0, total: 0, errors: [] };
+      this.resetPhotoTab();
       this._resetting = false;
     },
 
