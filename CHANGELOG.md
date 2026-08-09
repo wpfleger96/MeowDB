@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/wpfleger96/MeowDB/compare/v0.10.0...v0.10.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **db:** use online backup API for pre-migration snapshot ([#100](https://github.com/wpfleger96/MeowDB/issues/100)) ([4a65b68](https://github.com/wpfleger96/MeowDB/commit/4a65b68c460b2ccb10b3d5fdcdbeeb4913ce3b44))
+
 ## [0.10.0](https://github.com/wpfleger96/MeowDB/compare/v0.9.1...v0.10.0) (2026-08-09)
 
 
