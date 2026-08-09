@@ -52,6 +52,8 @@ def main() -> None:
 
         sounds = [
             # Squishy (cat) — 3 sounds
+            # animal_uniqueness: within Squishy's 3-sound pool
+            # species_uniqueness: within cats pool (Squishy 3 + Thrasher 2 = 5 sounds)
             {
                 "animal_id": squishy_id,
                 "timestamp": "2026-01-01T10:00:00",
@@ -60,6 +62,8 @@ def main() -> None:
                 "peak_dbfs": -8.0,
                 "species_energy_ratio": 3.1,
                 "plays": 12,
+                "animal_uniqueness": 90.0,
+                "species_uniqueness": 85.0,
             },
             {
                 "animal_id": squishy_id,
@@ -69,6 +73,8 @@ def main() -> None:
                 "peak_dbfs": -5.0,
                 "species_energy_ratio": 2.8,
                 "plays": 7,
+                "animal_uniqueness": 55.0,
+                "species_uniqueness": 60.0,
             },
             {
                 "animal_id": squishy_id,
@@ -78,6 +84,8 @@ def main() -> None:
                 "peak_dbfs": -12.0,
                 "species_energy_ratio": 2.2,
                 "plays": 3,
+                "animal_uniqueness": 20.0,
+                "species_uniqueness": 42.0,
             },
             # Thrasher (cat) — 2 sounds
             {
@@ -88,6 +96,8 @@ def main() -> None:
                 "peak_dbfs": -15.0,
                 "species_energy_ratio": 1.8,
                 "plays": 0,
+                "animal_uniqueness": 75.0,
+                "species_uniqueness": 28.0,
             },
             {
                 "animal_id": thrasher_id,
@@ -97,8 +107,11 @@ def main() -> None:
                 "peak_dbfs": -20.0,
                 "species_energy_ratio": 1.5,
                 "plays": 1,
+                "animal_uniqueness": 25.0,
+                "species_uniqueness": 12.0,
             },
             # Slushie (dog) — 2 sounds
+            # species_uniqueness: within dogs pool (Slushie's 2 sounds)
             {
                 "animal_id": slushie_id,
                 "timestamp": "2026-01-06T10:00:00",
@@ -107,6 +120,8 @@ def main() -> None:
                 "peak_dbfs": -10.0,
                 "species_energy_ratio": 2.5,
                 "plays": 4,
+                "animal_uniqueness": 80.0,
+                "species_uniqueness": 92.0,
             },
             {
                 "animal_id": slushie_id,
@@ -116,9 +131,12 @@ def main() -> None:
                 "peak_dbfs": -18.0,
                 "species_energy_ratio": 1.2,
                 "plays": 0,
+                "animal_uniqueness": 18.0,
+                "species_uniqueness": 22.0,
             },
         ]
 
+        sound_ids: list[str] = []
         for i, sound in enumerate(sounds):
             stem = f"sound-{i + 1:02d}"
             wav_path = wav_dir / f"{stem}.wav"
@@ -140,9 +158,14 @@ def main() -> None:
                     "species_energy_ratio": sound["species_energy_ratio"],
                 }
             )
+            sound_ids.append(sound_id)
 
             for _ in range(sound["plays"]):
                 db.increment_play_count(sound_id)
+
+        animal_scores = {sound_ids[i]: s["animal_uniqueness"] for i, s in enumerate(sounds)}
+        species_scores = {sound_ids[i]: s["species_uniqueness"] for i, s in enumerate(sounds)}
+        db.update_uniqueness_scores_bulk(animal_scores, species_scores)
 
         animals = db.get_animals()
         print(

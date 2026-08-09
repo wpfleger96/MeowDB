@@ -183,9 +183,19 @@
                 x-text="Math.round(currentSound?.species_uniqueness_score ?? 0) + '% unique among ' + (currentSound?.animal_species ?? 'species') + 's'"
               ></span>
               <span
+                x-show="currentSound && currentSound.species_uniqueness_score == null"
+                class="badge badge-default"
+                x-text="'Needs more ' + (currentSound?.animal_species ?? '') + ' sounds to score'"
+              ></span>
+              <span
                 x-show="currentSound?.animal_uniqueness_score != null"
                 class="badge badge-default"
                 x-text="Math.round(currentSound?.animal_uniqueness_score ?? 0) + '% unique for ' + (currentSound?.animal_name ?? 'animal')"
+              ></span>
+              <span
+                x-show="currentSound && currentSound.animal_uniqueness_score == null"
+                class="badge badge-default"
+                x-text="'Needs more ' + (currentSound?.animal_name ?? '') + ' sounds to score'"
               ></span>
             </div>
 
@@ -346,6 +356,11 @@
                     x-show="sound.species_uniqueness_score != null"
                     x-text="Math.round(sound.species_uniqueness_score) + '% unique'"
                   ></span>
+                  <span
+                    class="badge badge-default"
+                    x-show="sound.species_uniqueness_score == null"
+                    title="Needs more sounds in this pool to compare against"
+                  >no score yet</span>
                   <span x-show="animalName(sound.animal_id)" x-text="animalName(sound.animal_id)"></span>
                   <span x-text="MeowUtils.formatDate(sound.created_at)"></span>
                   <span x-show="sound.play_count > 0" x-text="sound.play_count + ' plays'"></span>
