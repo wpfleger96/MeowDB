@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/wpfleger96/MeowDB/compare/v0.9.0...v0.9.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* **ui:** make About panel dismissable via X button and click-outside ([#96](https://github.com/wpfleger96/MeowDB/issues/96)) ([9d15efe](https://github.com/wpfleger96/MeowDB/commit/9d15efe20861dc525aeb9c10a49869479c050fc1))
+
 ## [0.9.0](https://github.com/wpfleger96/MeowDB/compare/v0.8.1...v0.9.0) (2026-08-09)
 
 
