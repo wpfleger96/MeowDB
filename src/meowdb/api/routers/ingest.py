@@ -6,6 +6,7 @@ import shutil
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -24,11 +25,29 @@ from meowdb.api.models import (
 from meowdb.api.streaming import safe_path, save_upload, stream_file
 from meowdb.config import ALLOWED_MEDIA_SUFFIXES, MP3_DIR, STAGING_DIR, VIDEO_SUFFIXES, WAV_DIR
 from meowdb.similarity import update_library_uniqueness
+from meowdb.storage import is_s3_enabled, mp3_key, upload_to_s3, wav_key
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 logger = logging.getLogger(__name__)
 
 _MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+
+
+async def _upload_committed_to_s3(db: Any, meow_ids: list[str]) -> None:
+    for meow_id in meow_ids:
+        wav_local = WAV_DIR / f"{meow_id}.wav"
+        mp3_local = MP3_DIR / f"{meow_id}.mp3"
+        try:
+            if not wav_local.exists() or not mp3_local.exists():
+                logger.warning("Missing audio files for meow %s; skipping S3 upload", meow_id)
+                continue
+            await upload_to_s3(wav_local, wav_key(meow_id))
+            await upload_to_s3(mp3_local, mp3_key(meow_id))
+            db.update_meow_paths(meow_id, wav_key(meow_id), mp3_key(meow_id))
+            wav_local.unlink(missing_ok=True)
+            mp3_local.unlink(missing_ok=True)
+        except Exception:
+            logger.warning("S3 upload failed for meow %s; keeping local files", meow_id)
 
 
 def _seg_to_response(seg: dict, job_id: str) -> IngestSegmentResponse:  # type: ignore[type-arg]
@@ -209,6 +228,8 @@ async def commit_ingest_job(
 
     if meow_ids:
         await run_in_threadpool(update_library_uniqueness, db, meow_ids)
+        if is_s3_enabled():
+            await _upload_committed_to_s3(db, meow_ids)
 
     return CommitResponse(meow_ids=meow_ids, rejected_count=len(body.rejected_ids))
 
@@ -300,5 +321,7 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
 
     if meow_ids:
         await run_in_threadpool(update_library_uniqueness, db, meow_ids)
+        if is_s3_enabled():
+            await _upload_committed_to_s3(db, meow_ids)
 
     return CommitResponse(meow_ids=meow_ids, rejected_count=0)
