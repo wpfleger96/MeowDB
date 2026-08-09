@@ -112,3 +112,12 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 | Frontend changes | `static/js/views/*.js`, `static/index.html`, `static/css/views.css` |
 | Add E2E view test | `ui/views.spec.ts`, `ui/seed.py` (if new data needed) |
 | Config/paths | `config.py` (single source), patch all import sites in tests |
+
+## Deployment & Storage (cross-repo)
+
+Deploy and backup infrastructure lives in the `homelabconfigs` repo under `ansible/playbooks/files/meowdb/` and `templates/meowdb/` — not here. Key facts agents get wrong:
+
+1. **Merging a release-please PR deploys to prod unattended** — `deploy.yml` builds `ghcr.io/wpfleger96/meowdb:latest` on release events, and a watchtower container on the homelab polls every 5 min and restarts the stack with the new image
+2. **The SQLite DB is always local; the app never writes it to S3** — `storage.py` handles media objects only (`wav_key`, `mp3_key`, `photo_key`), gated by `MEOWDB_S3_BUCKET` (prod bucket: `wpfleger-meow-media`)
+3. **DB backups are Litestream, not app code** — a `litestream` sidecar (homelabconfigs `docker-compose.yml` + `litestream.yml`) replicates `/data/meowdb.sqlite` to `s3://wpfleger-meow-media/db/meowdb.sqlite` (1s sync, 24h snapshots, 72h retention)
+4. **Prod env is templated** from homelabconfigs `templates/meowdb/env.j2`; `MEOWDB_S3_BUCKET` is optional there and gates media storage only
