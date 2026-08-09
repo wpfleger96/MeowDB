@@ -350,6 +350,14 @@
   flex-direction: column;
 }
 
+/* Upload hub tab strip */
+.ingest-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
 /* Phase 1: Upload */
 .upload-zone {
   margin: var(--sp-6) var(--sp-4);

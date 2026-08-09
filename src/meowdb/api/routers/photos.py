@@ -1,38 +1,21 @@
 from __future__ import annotations
 
 import logging
-import os
-import tempfile
-import uuid
 
-from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from PIL import Image, ImageOps
-from starlette.concurrency import run_in_threadpool
 
-from meowdb.api.auth import require_auth
-from meowdb.api.models import PhotoEditRequest, PhotoListResponse, PhotoResponse
-from meowdb.api.streaming import safe_path, save_upload, stream_file, stream_s3_object
+from meowdb.api.converters import photo_to_response
+from meowdb.api.models import PhotoResponse
+from meowdb.api.streaming import safe_path, stream_file, stream_s3_object
 from meowdb.config import PHOTOS_DIR
-from meowdb.photos import optimize_photo
-from meowdb.storage import (
-    S3NotFoundError,
-    delete_from_s3,
-    download_from_s3,
-    is_s3_enabled,
-    photo_key,
-    upload_to_s3,
-)
+from meowdb.storage import is_s3_enabled, photo_key
 
 _logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_MAX_PHOTO_BYTES = 20 * 1024 * 1024
-_ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 _MEDIA_TYPES = {
     ".jpg": "image/jpeg",
@@ -40,33 +23,9 @@ _MEDIA_TYPES = {
     ".png": "image/png",
     ".gif": "image/gif",
     ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
 }
-
-
-def _cache_version(dt_str: str) -> int:
-    try:
-        return int(datetime.fromisoformat(dt_str).replace(tzinfo=UTC).timestamp())
-    except (ValueError, TypeError):
-        return 0
-
-
-def photo_to_response(photo: dict) -> PhotoResponse:  # type: ignore[type-arg]
-    v = _cache_version(photo.get("updated_at") or photo.get("created_at", ""))
-    return PhotoResponse(
-        id=photo["id"],
-        filename=photo["filename"],
-        created_at=photo.get("created_at", ""),
-        updated_at=photo.get("updated_at") or "",
-        image_url=f"/api/photos/{photo['id']}/image?v={v}",
-        is_default=bool(photo.get("is_default", False)),
-    )
-
-
-@router.get("/photos", response_model=PhotoListResponse)
-async def list_photos(request: Request) -> PhotoListResponse:
-    db = request.app.state.db
-    photos = db.get_photos()
-    return PhotoListResponse(items=[photo_to_response(p) for p in photos])
 
 
 @router.get("/photos/random", response_model=PhotoResponse)
@@ -75,63 +34,6 @@ async def get_random_photo(request: Request, exclude: str | None = None) -> Phot
     photo = db.get_random_photo(exclude_id=exclude)
     if photo is None:
         raise HTTPException(status_code=404, detail="No photos available")
-    return photo_to_response(photo)
-
-
-@router.post("/photos", response_model=PhotoResponse, status_code=201)
-async def upload_photo(
-    request: Request,
-    file: UploadFile,
-    _: None = Depends(require_auth),
-) -> PhotoResponse:
-    db = request.app.state.db
-
-    source_filename = file.filename or "photo"
-    suffix = Path(source_filename).suffix.lower()
-    if suffix not in _ALLOWED_SUFFIXES:
-        raise HTTPException(status_code=400, detail=f"Unsupported image type: {suffix!r}")
-
-    PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-    photo_id = str(uuid.uuid4())
-    dest_filename = f"{photo_id}{suffix}"
-    dest_path = PHOTOS_DIR / dest_filename
-
-    try:
-        await save_upload(file, dest_path, _MAX_PHOTO_BYTES, "Photo exceeds 20 MB limit")
-    except HTTPException:
-        dest_path.unlink(missing_ok=True)
-        raise
-
-    try:
-        optimized_path = optimize_photo(dest_path)
-        dest_filename = optimized_path.name
-        if dest_path != optimized_path:
-            dest_path.unlink(missing_ok=True)
-    except Exception:
-        _logger.warning("Photo optimization failed for %s, using original", dest_filename)
-
-    if is_s3_enabled():
-        final_path = PHOTOS_DIR / dest_filename
-        key = photo_key(dest_filename)
-        try:
-            await upload_to_s3(final_path, key)
-        except Exception:
-            final_path.unlink(missing_ok=True)
-            raise
-        try:
-            db.add_photo(dest_filename, photo_id=photo_id)
-        except Exception:
-            try:
-                await delete_from_s3(key)
-            except Exception:
-                pass
-            final_path.unlink(missing_ok=True)
-            raise
-        final_path.unlink(missing_ok=True)
-    else:
-        db.add_photo(dest_filename, photo_id=photo_id)
-
-    photo = db.get_photo(photo_id)
     return photo_to_response(photo)
 
 
@@ -187,133 +89,3 @@ async def serve_photo(photo_id: str, request: Request) -> StreamingResponse:
         media_type,
         extra_headers={"Cache-Control": "public, max-age=86400", "ETag": etag},
     )
-
-
-@router.delete("/photos/{photo_id}", status_code=204)
-async def delete_photo(
-    photo_id: str,
-    request: Request,
-    _: None = Depends(require_auth),
-) -> None:
-    db = request.app.state.db
-    photo = db.get_photo(photo_id)
-    if photo is None:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    filename = photo["filename"]
-    path = PHOTOS_DIR / filename
-    if path.exists():
-        try:
-            safe_path(path, PHOTOS_DIR)
-            path.unlink(missing_ok=True)
-        except ValueError:
-            pass
-    if is_s3_enabled():
-        await delete_from_s3(photo_key(filename))
-
-    db.delete_photo(photo_id)
-
-
-def _apply_edit(path: Path, body: PhotoEditRequest) -> tuple[Path, str | None]:
-    """Returns (final_path, new_filename_if_changed)."""
-    with Image.open(path) as raw:
-        img = ImageOps.exif_transpose(raw)
-        if body.action == "rotate":
-            method = (
-                Image.Transpose.ROTATE_270 if body.direction == "cw" else Image.Transpose.ROTATE_90
-            )
-            result = img.transpose(method)
-        elif body.action == "flip":
-            method = (
-                Image.Transpose.FLIP_LEFT_RIGHT
-                if body.axis == "horizontal"
-                else Image.Transpose.FLIP_TOP_BOTTOM
-            )
-            result = img.transpose(method)
-        else:  # crop
-            w, h = img.size
-            left = round(body.x * w)  # type: ignore[operator]
-            upper = round(body.y * h)  # type: ignore[operator]
-            right = round((body.x + body.width) * w)  # type: ignore[operator]
-            lower = round((body.y + body.height) * h)  # type: ignore[operator]
-            result = img.crop((left, upper, right, lower))
-
-    if path.suffix.lower() != ".webp":
-        new_path = path.with_suffix(".webp")
-        result.save(new_path, format="WEBP", quality=85)
-        path.unlink(missing_ok=True)
-        return new_path, new_path.name
-    else:
-        with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".webp", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-        result.save(tmp_path, format="WEBP", quality=85)
-        os.replace(tmp_path, path)
-        return path, None
-
-
-@router.post("/photos/{photo_id}/edit", response_model=PhotoResponse)
-async def edit_photo(
-    photo_id: str,
-    body: PhotoEditRequest,
-    request: Request,
-    _: None = Depends(require_auth),
-) -> PhotoResponse:
-    db = request.app.state.db
-    photo = db.get_photo(photo_id)
-    if photo is None:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    new_filename: str | None = None
-
-    if is_s3_enabled():
-        orig_suffix = Path(photo["filename"]).suffix.lower()
-        if orig_suffix not in _ALLOWED_SUFFIXES:
-            orig_suffix = ".webp"
-        PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            dir=PHOTOS_DIR, prefix="_edit_", suffix=orig_suffix, delete=False
-        ) as _f:
-            tmp_path = Path(_f.name)
-        edited_path: Path | None = None
-        try:
-            try:
-                await download_from_s3(photo_key(photo["filename"]), tmp_path)
-            except S3NotFoundError:
-                raise HTTPException(status_code=404, detail="Photo file not found") from None
-            try:
-                edit_result, tmp_new_filename = await run_in_threadpool(_apply_edit, tmp_path, body)
-            except (OSError, ValueError) as exc:
-                _logger.warning("Photo edit failed for %s: %s", photo_id, exc)
-                raise HTTPException(status_code=500, detail="Failed to edit photo") from exc
-            edited_path = edit_result
-            if tmp_new_filename is not None:
-                new_filename = f"{Path(photo['filename']).stem}.webp"
-            target_filename = new_filename or photo["filename"]
-            await upload_to_s3(edit_result, photo_key(target_filename))
-            if new_filename is not None:
-                await delete_from_s3(photo_key(photo["filename"]))
-        finally:
-            tmp_path.unlink(missing_ok=True)
-            if edited_path is not None and edited_path != tmp_path:
-                edited_path.unlink(missing_ok=True)
-    else:
-        path = PHOTOS_DIR / photo["filename"]
-        if not path.exists():
-            raise HTTPException(status_code=404, detail="Photo file not found on disk")
-
-        try:
-            path = safe_path(path, PHOTOS_DIR)
-        except ValueError:
-            raise HTTPException(status_code=403, detail="Access denied") from None
-
-        try:
-            _final_path, new_filename = await run_in_threadpool(_apply_edit, path, body)
-        except (OSError, ValueError) as exc:
-            _logger.warning("Photo edit failed for %s: %s", photo_id, exc)
-            raise HTTPException(status_code=500, detail="Failed to edit photo") from exc
-
-    if new_filename is not None:
-        db.update_photo_filename(photo_id, new_filename)
-    else:
-        db.touch_photo(photo_id)
-    return photo_to_response(db.get_photo(photo_id))

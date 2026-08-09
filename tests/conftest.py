@@ -21,6 +21,12 @@ def tmp_db(tmp_path: Path) -> Generator[MeowDB]:
 
 
 @pytest.fixture
+def default_animal_id(tmp_db: MeowDB) -> str:
+    """Return the auto-seeded Squishy animal's id."""
+    return str(tmp_db.get_animals()[0]["id"])
+
+
+@pytest.fixture
 def cli_runner() -> CliRunner:
     return CliRunner()
 

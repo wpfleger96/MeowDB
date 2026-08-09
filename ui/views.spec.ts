@@ -76,12 +76,12 @@ test.describe('MeowDB views', () => {
 
   test('ingest upload', async ({ page }, testInfo) => {
     await page.goto('/upload', GOTO_OPTS);
-    await page.waitForSelector('.upload-zone', { state: 'visible' });
+    await page.waitForSelector('.ingest-idle .upload-zone', { state: 'visible' });
     await screenshot(page, testInfo, '04-ingest.png');
 
     if (isDesktop(page)) {
       // Upload zone and record section are side-by-side: different x positions
-      const uploadBox = await page.locator('.upload-zone').boundingBox();
+      const uploadBox = await page.locator('.ingest-idle .upload-zone').boundingBox();
       const recordBox = await page.locator('.record-section').boundingBox();
       expect(uploadBox!.x).toBeLessThan(recordBox!.x);
       // "or" divider is hidden
@@ -96,12 +96,14 @@ test.describe('MeowDB views', () => {
     test.skip(!fs.existsSync(audioFile), 'audio fixture not available');
 
     await page.goto('/upload', GOTO_OPTS);
-    await page.waitForSelector('.upload-zone', { state: 'visible' });
+    await page.waitForSelector('.ingest-idle .upload-zone', { state: 'visible' });
 
-    const fileInput = page.locator('input[type="file"]');
+    const fileInput = page.locator('input[type="file"]:not([accept^="image"])');
     await fileInput.setInputFiles(audioFile);
 
-    await page.waitForSelector('#clip-waveform-container canvas', { state: 'visible', timeout: 15000 });
+    await page.waitForSelector('#clip-waveform-0 canvas', { state: 'visible', timeout: 15000 });
+    await expect(page.locator('.clip-animal-context')).toBeVisible();
+    await expect(page.locator('.clip-animal-context')).toContainText('Adding sounds to Squishy (cat)');
     await page.waitForTimeout(1000);
     await screenshot(page, testInfo, '04b-ingest-waveform.png');
   });
@@ -163,5 +165,102 @@ test.describe('MeowDB views', () => {
       expect(boxes[1]!.x).toBeLessThan(boxes[2]!.x);
       expect(boxes[2]!.x).toBeLessThan(boxes[3]!.x);
     }
+  });
+
+  test('profiles list', async ({ page }, testInfo) => {
+    await page.goto('/profiles', GOTO_OPTS);
+    // Scope to the profiles view: other views stay in the DOM (x-show) and the
+    // hidden play-view bio also contains "Squishy".
+    const view = page.locator('.profiles-view');
+    await expect(view.getByText('Squishy')).toBeVisible();
+    await screenshot(page, testInfo, '08-profiles.png');
+
+    // All three seeded animals render with names.
+    await expect(view.getByText('Thrasher')).toBeVisible();
+    await expect(view.getByText('Slushie')).toBeVisible();
+
+    // Species labels are visible alongside animal names.
+    await expect(view.getByText('Cat').first()).toBeVisible();
+    await expect(view.getByText('Dog').first()).toBeVisible();
+
+    // Clicking an animal opens a photo pane with a back button.
+    await view.getByText('Squishy').first().click();
+    await expect(view.getByRole('button', { name: /back/i })).toBeVisible();
+    await screenshot(page, testInfo, '07b-profiles-detail.png');
+  });
+
+  test('play view null-photo state after MEOW press', async ({ page }, testInfo) => {
+    // Seed has no photos for any animal, so pressing MEOW always yields a null photo
+    // regardless of which random sound is selected.
+    await page.goto('/', GOTO_OPTS);
+
+    // Scope all selectors to the play view so hidden views (x-show) are not matched.
+    const playView = page.locator('.play-view');
+    await playView.waitFor({ state: 'visible' });
+
+    const meowBtn = playView.locator('.meow-btn');
+    await meowBtn.waitFor({ state: 'visible' });
+
+    await meowBtn.click();
+
+    // The replay button (x-show="currentSound") becomes visible once the sound
+    // response is processed — at that point currentPhoto is already settled.
+    await expect(playView.locator('.replay-btn')).toBeVisible({ timeout: 10000 });
+
+    // Null-photo state: no has-photo class and no background-image inline style.
+    await expect(meowBtn).not.toHaveClass(/has-photo/);
+    const style = await meowBtn.getAttribute('style');
+    expect(style ?? '').not.toContain('background-image');
+
+    await screenshot(page, testInfo, '09-play-null-photo.png');
+  });
+
+  test('ingest animal selector', async ({ page }) => {
+    await page.goto('/upload', GOTO_OPTS);
+    await page.waitForSelector('.upload-zone', { state: 'visible' });
+
+    // Animal selector is present and populated with all seeded animals.
+    const select = page.locator('select[x-model="selectedAnimalId"]');
+    await expect(select).toBeVisible();
+    await expect(select.locator('option', { hasText: 'Squishy' })).toHaveCount(1);
+    await expect(select.locator('option', { hasText: 'Thrasher' })).toHaveCount(1);
+    await expect(select.locator('option', { hasText: 'Slushie' })).toHaveCount(1);
+  });
+
+  test('upload hub tabs', async ({ page }, testInfo) => {
+    await page.goto('/upload', GOTO_OPTS);
+    await page.waitForSelector('.ingest-tabs', { state: 'visible' });
+    const tabs = page.locator('.ingest-tabs');
+    await expect(tabs.locator('.chip-filter', { hasText: 'Sounds' })).toBeVisible();
+    await expect(tabs.locator('.chip-filter', { hasText: 'Photos' })).toBeVisible();
+    await expect(tabs.locator('.chip-filter.active')).toHaveText('Sounds');
+
+    await tabs.locator('.chip-filter', { hasText: 'Photos' }).click();
+    await expect(tabs.locator('.chip-filter.active')).toHaveText('Photos');
+    await expect(page.locator('.ingest-idle .upload-zone')).toBeHidden();
+    const photoZone = page.locator('.upload-zone').last();
+    await expect(photoZone).toBeVisible();
+
+    await screenshot(page, testInfo, '11-upload-photos-tab.png');
+  });
+
+  test('upload hub photos deep link', async ({ page }) => {
+    await page.goto('/upload/photos', GOTO_OPTS);
+    await page.waitForSelector('.ingest-tabs', { state: 'visible' });
+    await expect(page.locator('.ingest-tabs .chip-filter.active')).toHaveText('Photos');
+    await expect(page.locator('.ingest-idle')).toBeHidden();
+  });
+
+  test('library animal filter chips', async ({ page }) => {
+    await page.goto('/library', GOTO_OPTS);
+    await page.waitForSelector('.list-row', { state: 'visible' });
+
+    // Filter chips render for All + each seeded animal (scoped: the hidden
+    // play-view bio also contains "Squishy").
+    const chips = page.locator('.library-filters');
+    await expect(chips.getByText('All')).toBeVisible();
+    await expect(chips.getByText('Squishy')).toBeVisible();
+    await expect(chips.getByText('Thrasher')).toBeVisible();
+    await expect(chips.getByText('Slushie')).toBeVisible();
   });
 });

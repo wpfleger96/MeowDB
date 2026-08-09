@@ -50,7 +50,7 @@ def stats(db_path: str | None) -> None:
 
     instance = MeowDB(path)
     db_stats = instance.get_stats()
-    count = db_stats["total_meows"]
+    count = db_stats["total_sounds"]
     total_ms = db_stats["total_duration_ms"]
     avg_ms = db_stats["avg_duration_ms"]
     instance.close()
@@ -61,7 +61,7 @@ def stats(db_path: str | None) -> None:
 
     print_info(f"Path:           {path}")
     print_info(f"File size:      {_format_bytes(size)}")
-    print_info(f"Meows:          {count}")
+    print_info(f"Sounds:         {count}")
     if count > 0:
         print_info(f"Total duration: {total_sec // 60}m {total_sec % 60}s")
         print_info(f"Avg duration:   {avg_sec:.1f}s")
@@ -112,7 +112,7 @@ def drop(force: bool, db_path: str | None) -> None:
     instance.close()
 
     size = path.stat().st_size
-    print_warning(f"This will permanently delete {count} meow(s) and the database file.")
+    print_warning(f"This will permanently delete {count} sound(s) and the database file.")
     print_info(f"  File: {path}")
     print_info(f"  Size: {_format_bytes(size)}")
 

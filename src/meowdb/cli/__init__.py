@@ -8,14 +8,14 @@ from meowdb import __version__
 @click.group()
 @click.version_option(version=__version__, prog_name="meowdb")
 def main() -> None:
-    """MeowDB — a personal cat meow library."""
+    """MeowDB — a personal animal sound library."""
 
 
 from meowdb.cli.commands.delete import delete
-from meowdb.cli.commands.export_cmd import export_meows
-from meowdb.cli.commands.import_cmd import import_meows
+from meowdb.cli.commands.export_cmd import export_sounds
+from meowdb.cli.commands.import_cmd import import_sounds
 from meowdb.cli.commands.ingest import ingest
-from meowdb.cli.commands.list import list_meows
+from meowdb.cli.commands.list import list_sounds
 from meowdb.cli.commands.play import play
 from meowdb.cli.commands.serve import serve
 from meowdb.cli.commands.stats import stats
@@ -23,10 +23,10 @@ from meowdb.cli.groups.db import db
 from meowdb.cli.groups.storage import storage
 
 main.add_command(delete)
-main.add_command(export_meows, name="export")
-main.add_command(import_meows, name="import")
+main.add_command(export_sounds, name="export")
+main.add_command(import_sounds, name="import")
 main.add_command(ingest)
-main.add_command(list_meows, name="list")
+main.add_command(list_sounds, name="list")
 main.add_command(play)
 main.add_command(serve)
 main.add_command(stats)

@@ -7,12 +7,13 @@
 ────────────────────────────────────────────────────────── */
 
 const ROUTES = {
-  '/':        'play',
-  '/library': 'library',
-  '/photos':  'photos',
-  '/upload':  'ingest',
-  '/stats':   'stats',
-  '/algorithm': 'algorithm',
+  '/':               'play',
+  '/library':        'library',
+  '/profiles':       'profiles',
+  '/upload':         'ingest',
+  '/upload/photos':  'ingest',
+  '/stats':          'stats',
+  '/algorithm':      'algorithm',
 };
 
 function pathToView(path) {
@@ -23,13 +24,13 @@ function pathToView(path) {
    Global navigation helper (called by view components)
 ────────────────────────────────────────────────────────── */
 
-function navigateTo(path) {
-  history.pushState({}, '', path);
-  dispatchRouteChange(path);
+function navigateTo(path, state = {}) {
+  history.pushState(state, '', path);
+  dispatchRouteChange(path, state);
 }
 
-function dispatchRouteChange(path) {
-  window.dispatchEvent(new CustomEvent('route-change', { detail: { path } }));
+function dispatchRouteChange(path, state = {}) {
+  window.dispatchEvent(new CustomEvent('route-change', { detail: { path, ...state } }));
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ function app() {
       // Handle browser back/forward
       window.addEventListener('popstate', () => {
         this.currentView = pathToView(location.pathname);
+        dispatchRouteChange(location.pathname, history.state || {});
       });
 
       // Handle programmatic navigation
@@ -198,7 +200,7 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('app', app);
   Alpine.data('playView', playView);
   Alpine.data('libraryView', libraryView);
-  Alpine.data('photosView', photosView);
+  Alpine.data('profilesView', profilesView);
   Alpine.data('ingestView', ingestView);
   Alpine.data('statsView', statsView);
   Alpine.data('algorithmView', algorithmView);

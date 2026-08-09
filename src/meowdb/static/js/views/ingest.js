@@ -8,6 +8,12 @@ function ingestView() {
 
     jobs: [],
 
+    animals: [],
+    selectedAnimalId: '',
+    get selectedAnimal() {
+      return this.animals.find((a) => a.id === this.selectedAnimalId) || null;
+    },
+
     uploadProgress: { done: 0, total: 0, errors: [] },
 
     isDragOver: false,
@@ -18,17 +24,51 @@ function ingestView() {
 
     _wavesurferLoaded: false,
 
+    activeTab: 'sounds',
+    photoPhase: 'idle',
+    photoUploadProgress: { done: 0, total: 0, errors: [] },
+    uploadedPhotoUrls: [],
+    photoIsDragOver: false,
+
     /* ──────────────────────────────────────────────────────
        Lifecycle
     ────────────────────────────────────────────────────── */
 
-    init() {
+    async init() {
       this._wavesurfers = new Map();
       try {
         micRecorder.onTick = (s) => { this.recordSeconds = s; };
         micRecorder.onStop = (blob) => { this._uploadBlob(blob); };
       } catch (e) {
         console.error('ingestView init error:', e);
+      }
+
+      if (location.pathname === '/upload/photos') this.activeTab = 'photos';
+
+      window.addEventListener('route-change', (e) => {
+        const { path, animalId } = e.detail || {};
+        // Ignore while a sounds session is in progress so it can't be hidden mid-clip.
+        if ((path === '/upload' || path === '/upload/photos') && this.phase === 'idle') {
+          this.activeTab = path === '/upload/photos' ? 'photos' : 'sounds';
+          if (animalId && this.animals.some((a) => a.id === animalId)) {
+            this.selectedAnimalId = animalId;
+          }
+        }
+      });
+
+      const boot = window.__BOOTSTRAP__ || {};
+      if (boot.animals) {
+        this.animals = boot.animals;
+      } else {
+        try {
+          const res = await getAnimals();
+          this.animals = res.items;
+        } catch {
+          this.animals = [];
+        }
+      }
+      if (this.animals.length > 0) {
+        this.selectedAnimalId = this.animals[0].id;
       }
     },
 
@@ -79,6 +119,11 @@ function ingestView() {
       if (this._resetting) return;
       if (!this.requireAuth()) return;
 
+      if (!this.selectedAnimalId) {
+        showToast('Select an animal before uploading', 'error');
+        return;
+      }
+
       this.phase = 'uploading';
       this.uploadProgress = { done: 0, total: files.length, errors: [] };
       for (const job of this.jobs) {
@@ -108,7 +153,7 @@ function ingestView() {
         const job = this.jobs[i];
 
         try {
-          const result = await createIngestJob(file);
+          const result = await createIngestJob(file, this.selectedAnimalId);
           job.jobId = result.job_id;
           job.phase = 'clipping';
         } catch (err) {
@@ -343,7 +388,7 @@ function ingestView() {
           job.regionCount = entry.regions.getRegions().length;
         }
         if (result.regions.length === 0) {
-          showToast('No meows detected — draw regions manually', 'info');
+          showToast('No sounds detected — draw regions manually', 'info');
         }
       } catch (err) {
         showToast(err.message || 'Auto-detect failed', 'error');
@@ -382,7 +427,7 @@ function ingestView() {
         const result = await clipAndCommit(job.jobId, regionData);
         this._destroyWaveSurferForJob(job);
         job.phase = 'done';
-        showToast('Saved ' + result.meow_ids.length + ' meow' + (result.meow_ids.length !== 1 ? 's' : ''), 'success');
+        showToast('Saved ' + result.sound_ids.length + ' sound' + (result.sound_ids.length !== 1 ? 's' : ''), 'success');
         if (this.jobs.every(j => j.phase === 'done' || j.phase === 'error')) {
           this.phase = 'done';
         }
@@ -403,6 +448,71 @@ function ingestView() {
       }
     },
 
+    /* ──────────────────────────────────────────────────────
+       Photos tab
+    ────────────────────────────────────────────────────── */
+
+    switchTab(tab) {
+      if (this.phase !== 'idle') return;
+      this.activeTab = tab;
+      this.resetPhotoTab();
+    },
+
+    resetPhotoTab() {
+      this.photoPhase = 'idle';
+      this.uploadedPhotoUrls = [];
+      this.photoUploadProgress = { done: 0, total: 0, errors: [] };
+    },
+
+    async _uploadPhotosForAnimal(files) {
+      if (this.photoPhase === 'uploading') return;
+      if (!this.requireAuth()) return;
+      if (!this.selectedAnimalId) {
+        showToast('Select an animal before uploading', 'error');
+        return;
+      }
+      this.photoPhase = 'uploading';
+      this.photoUploadProgress = { done: 0, total: files.length, errors: [] };
+      this.uploadedPhotoUrls = [];
+      for (const file of files) {
+        try {
+          const photo = await uploadAnimalPhoto(this.selectedAnimalId, file);
+          this.uploadedPhotoUrls.push(photo.image_url);
+        } catch {
+          this.photoUploadProgress.errors.push(file.name);
+        }
+        this.photoUploadProgress.done++;
+      }
+      const failed = this.photoUploadProgress.errors.length;
+      const succeeded = files.length - failed;
+      if (succeeded === 0) {
+        showToast('All uploads failed', 'error');
+      } else if (failed === 0) {
+        showToast(`Uploaded ${succeeded} photo${succeeded !== 1 ? 's' : ''}!`, 'success');
+      } else {
+        showToast(`Uploaded ${succeeded} of ${files.length} (${failed} failed)`, 'error');
+      }
+      this.photoPhase = succeeded === 0 ? 'idle' : 'done';
+    },
+
+    onPhotoFileChange(event) {
+      const files = Array.from(event.target.files || []);
+      event.target.value = '';
+      if (files.length > 0) this._uploadPhotosForAnimal(files);
+    },
+
+    onPhotoDragOver(event) { event.preventDefault(); this.photoIsDragOver = true; },
+    onPhotoDragLeave() { this.photoIsDragOver = false; },
+    onPhotoDrop(event) {
+      event.preventDefault();
+      this.photoIsDragOver = false;
+      // Some browsers report an empty MIME type for dragged HEIC files.
+      const files = Array.from(event.dataTransfer?.files || []).filter(
+        (f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
+      );
+      if (files.length > 0) this._uploadPhotosForAnimal(files);
+    },
+
     reset() {
       this._resetting = true;
       if (this.isRecording) this.stopRecording();
@@ -413,6 +523,7 @@ function ingestView() {
       this.jobs = [];
       this.phase = 'idle';
       this.uploadProgress = { done: 0, total: 0, errors: [] };
+      this.resetPhotoTab();
       this._resetting = false;
     },
 

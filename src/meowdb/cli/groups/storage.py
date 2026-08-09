@@ -43,52 +43,52 @@ def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> Non
         sys.exit(1)
 
     ctx = build_context(db_path)
-    meows = ctx.db.get_all_for_export()
+    sounds = ctx.db.get_all_for_export()
     photos = ctx.db.get_photos()
 
-    meows_migrated = 0
-    meows_skipped = 0
-    meows_failed = 0
+    sounds_migrated = 0
+    sounds_skipped = 0
+    sounds_failed = 0
     photos_migrated = 0
     photos_skipped = 0
     photos_failed = 0
 
-    for meow in meows:
-        meow_id: str = meow["id"]
-        wav_path: str | None = meow.get("wav_path")
-        mp3_path: str | None = meow.get("mp3_path")
+    for sound in sounds:
+        sound_id: str = sound["id"]
+        wav_path: str | None = sound.get("wav_path")
+        mp3_path: str | None = sound.get("mp3_path")
 
         if not wav_path or is_s3_key(wav_path):
-            print_info(f"Meow {meow_id[:8]}: already migrated, skipping")
-            meows_skipped += 1
+            print_info(f"Sound {sound_id[:8]}: already migrated, skipping")
+            sounds_skipped += 1
             continue
 
-        wk = wav_key(meow_id)
-        mk = mp3_key(meow_id)
+        wk = wav_key(sound_id)
+        mk = mp3_key(sound_id)
 
         if dry_run:
-            print_info(f"Meow {meow_id[:8]}: would upload {wav_path} → {wk}")
+            print_info(f"Sound {sound_id[:8]}: would upload {wav_path} → {wk}")
             if mp3_path:
-                print_info(f"Meow {meow_id[:8]}: would upload {mp3_path} → {mk}")
-            meows_migrated += 1
+                print_info(f"Sound {sound_id[:8]}: would upload {mp3_path} → {mk}")
+            sounds_migrated += 1
             continue
 
         try:
             upload_to_s3_sync(Path(wav_path), wk)
             if mp3_path:
                 upload_to_s3_sync(Path(mp3_path), mk)
-            ctx.db.update_meow_paths(meow_id, wk, mk if mp3_path else (mp3_path or ""))
+            ctx.db.update_sound_paths(sound_id, wk, mk if mp3_path else (mp3_path or ""))
             if delete_local:
                 Path(wav_path).unlink(missing_ok=True)
                 if mp3_path:
                     Path(mp3_path).unlink(missing_ok=True)
         except (FileNotFoundError, botocore.exceptions.ClientError) as exc:
-            print_warning(f"Meow {meow_id[:8]}: migration failed: {exc}")
-            meows_failed += 1
+            print_warning(f"Sound {sound_id[:8]}: migration failed: {exc}")
+            sounds_failed += 1
             continue
 
-        print_info(f"Meow {meow_id[:8]}: migrated")
-        meows_migrated += 1
+        print_info(f"Sound {sound_id[:8]}: migrated")
+        sounds_migrated += 1
 
     for photo in photos:
         filename: str = photo["filename"]
@@ -121,13 +121,13 @@ def migrate_to_s3(dry_run: bool, delete_local: bool, db_path: str | None) -> Non
     ctx.db.close()
 
     action = "would migrate" if dry_run else "migrated"
-    meow_summary = f"{meows_migrated} meow(s) {action}, {meows_skipped} skipped"
-    if meows_failed:
-        meow_summary += f", {meows_failed} failed"
+    sound_summary = f"{sounds_migrated} sound(s) {action}, {sounds_skipped} skipped"
+    if sounds_failed:
+        sound_summary += f", {sounds_failed} failed"
     photo_summary = f"{photos_migrated} photo(s) {action}, {photos_skipped} skipped"
     if photos_failed:
         photo_summary += f", {photos_failed} failed"
-    print_success(f"{meow_summary} | {photo_summary}")
+    print_success(f"{sound_summary} | {photo_summary}")
 
 
 @storage.command(name="restore-from-s3")
@@ -151,21 +151,21 @@ def restore_from_s3(db_path: str | None) -> None:
         sys.exit(1)
 
     ctx = build_context(db_path)
-    meows = ctx.db.get_all_for_export()
+    sounds = ctx.db.get_all_for_export()
     photos = ctx.db.get_photos()
 
-    meows_restored = 0
-    meows_failed = 0
+    sounds_restored = 0
+    sounds_failed = 0
     photos_restored = 0
     photos_failed = 0
 
     WAV_DIR.mkdir(parents=True, exist_ok=True)
     MP3_DIR.mkdir(parents=True, exist_ok=True)
 
-    for meow in meows:
-        meow_id: str = meow["id"]
-        wav_path: str | None = meow.get("wav_path")
-        mp3_path: str | None = meow.get("mp3_path")
+    for sound in sounds:
+        sound_id: str = sound["id"]
+        wav_path: str | None = sound.get("wav_path")
+        mp3_path: str | None = sound.get("mp3_path")
 
         wav_is_s3 = is_s3_key(wav_path or "")
         mp3_is_s3 = is_s3_key(mp3_path or "")
@@ -178,30 +178,30 @@ def restore_from_s3(db_path: str | None) -> None:
         new_mp3 = mp3_path or ""
 
         if wav_is_s3:
-            local_wav = WAV_DIR / f"{meow_id}.wav"
+            local_wav = WAV_DIR / f"{sound_id}.wav"
             try:
-                download_from_s3_sync(wav_key(meow_id), local_wav)
+                download_from_s3_sync(wav_key(sound_id), local_wav)
                 new_wav = str(local_wav)
             except (S3NotFoundError, botocore.exceptions.ClientError) as exc:
-                print_error(f"Meow {meow_id[:8]}: WAV failed: {exc}")
+                print_error(f"Sound {sound_id[:8]}: WAV failed: {exc}")
                 failed = True
 
         if mp3_is_s3:
-            local_mp3 = MP3_DIR / f"{meow_id}.mp3"
+            local_mp3 = MP3_DIR / f"{sound_id}.mp3"
             try:
-                download_from_s3_sync(mp3_key(meow_id), local_mp3)
+                download_from_s3_sync(mp3_key(sound_id), local_mp3)
                 new_mp3 = str(local_mp3)
             except (S3NotFoundError, botocore.exceptions.ClientError) as exc:
-                print_error(f"Meow {meow_id[:8]}: MP3 failed: {exc}")
+                print_error(f"Sound {sound_id[:8]}: MP3 failed: {exc}")
                 failed = True
 
         if failed:
-            meows_failed += 1
+            sounds_failed += 1
             continue
 
-        ctx.db.update_meow_paths(meow_id, new_wav, new_mp3)
-        print_info(f"Meow {meow_id[:8]}: restored")
-        meows_restored += 1
+        ctx.db.update_sound_paths(sound_id, new_wav, new_mp3)
+        print_info(f"Sound {sound_id[:8]}: restored")
+        sounds_restored += 1
 
     PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -225,9 +225,9 @@ def restore_from_s3(db_path: str | None) -> None:
     ctx.db.close()
 
     print_success(
-        f"{meows_restored} meow(s) restored, {meows_failed} failed"
+        f"{sounds_restored} sound(s) restored, {sounds_failed} failed"
         f" | {photos_restored} photo(s) restored, {photos_failed} failed"
     )
 
-    if meows_failed or photos_failed:
+    if sounds_failed or photos_failed:
         sys.exit(1)

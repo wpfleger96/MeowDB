@@ -33,7 +33,7 @@
   <script src="/static/js/views/library.js" defer></script>
   <script src="/static/js/views/ingest.js" defer></script>
   <script src="/static/js/views/stats.js" defer></script>
-  <script src="/static/js/views/photos.js" defer></script>
+  <script src="/static/js/views/profiles.js" defer></script>
   <!-- Algorithm page: MathJax config up-front; vendored renderers lazy-loaded by algorithm.js -->
   <script>window.MathJax = { startup: { typeset: false }, options: { enableMenu: false } };</script>
   <script src="/static/js/views/algorithm.js" defer></script>
@@ -91,18 +91,18 @@
           </button>
         </div>
 
-        <!-- Empty state (0 meows in library) -->
-        <div class="empty-state" x-show="meowCount === 0 && meowCount !== null">
-          <div class="empty-state-icon">🐱</div>
-          <div class="empty-state-title">No meows yet</div>
-          <div class="empty-state-body">Add your first meow to get started</div>
+        <!-- Empty state (0 sounds in library) -->
+        <div class="empty-state" x-show="soundCount === 0 && soundCount !== null">
+          <div class="empty-state-icon">🐾</div>
+          <div class="empty-state-title">No sounds yet</div>
+          <div class="empty-state-body">Add your first sound to get started</div>
           <button class="btn btn-primary" @click="goTo('/upload')">
-            Add your first meow
+            Add your first sound
           </button>
         </div>
 
         <!-- Main play area -->
-        <template x-if="meowCount > 0 || isLoading">
+        <template x-if="soundCount > 0 || isLoading">
           <div
             class="flex flex-col items-center gap-4"
             style="width:100%; max-width:360px;"
@@ -113,7 +113,7 @@
               :class="{ playing: isPlaying, 'has-photo': currentPhoto }"
               :style="currentPhoto ? 'background-image: url(' + currentPhoto.image_url + '); background-size: cover; background-position: center;' : ''"
               @click="onMeowPress()"
-              aria-label="Play a random meow"
+              aria-label="Play a random sound"
             >
               <span class="meow-btn-label">MEOW</span>
               <span class="meow-btn-sub" x-show="isLoading">loading…</span>
@@ -125,18 +125,18 @@
               id="play-waveform"
               x-ref="waveformCanvas"
               class="play-waveform"
-              :class="{ visible: isPlaying || currentMeow }"
+              :class="{ visible: isPlaying || currentSound }"
               aria-hidden="true"
             ></canvas>
 
-            <!-- Replay button (re-play the meow just heard, without advancing) -->
+            <!-- Replay button (re-play the sound just heard, without advancing) -->
             <button
               class="btn btn-ghost btn-sm replay-btn"
-              x-show="currentMeow"
+              x-show="currentSound"
               x-cloak
               :disabled="isLoading"
-              @click="replayMeow()"
-              aria-label="Replay the last meow"
+              @click="replaySound()"
+              aria-label="Replay the last sound"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -146,8 +146,8 @@
               <span>Replay</span>
             </button>
 
-            <!-- Feedback buttons (thumbs up/down for the meow just played) -->
-            <div class="play-feedback" x-show="currentMeow" x-cloak>
+            <!-- Feedback buttons (thumbs up/down for the sound just played) -->
+            <div class="play-feedback" x-show="currentSound" x-cloak>
               <button
                 class="feedback-btn feedback-up"
                 :class="{ active: feedbackGiven === 'up', voted: feedbackGiven }"
@@ -174,32 +174,49 @@
               </button>
             </div>
 
-            <!-- Uniqueness badge (shown when current meow has a score) -->
-            <div x-show="currentMeow?.uniqueness_score != null" style="min-height:1.5rem;">
+            <!-- Uniqueness badges (species primary, animal secondary) -->
+            <div style="min-height:1.5rem;display:flex;flex-direction:column;align-items:center;gap:4px;">
               <span
+                x-show="currentSound?.species_uniqueness_score != null"
                 class="badge"
-                :class="MeowUtils.uniquenessBadgeClass(currentMeow?.uniqueness_score)"
-                x-text="Math.round(currentMeow?.uniqueness_score ?? 0) + '% unique'"
+                :class="MeowUtils.uniquenessBadgeClass(currentSound?.species_uniqueness_score)"
+                x-text="Math.round(currentSound?.species_uniqueness_score ?? 0) + '% unique among ' + (currentSound?.animal_species ?? 'species') + 's'"
+              ></span>
+              <span
+                x-show="currentSound && currentSound.species_uniqueness_score == null"
+                class="badge badge-default"
+                x-text="'Needs more ' + (currentSound?.animal_species ?? '') + ' sounds to score'"
+              ></span>
+              <span
+                x-show="currentSound?.animal_uniqueness_score != null"
+                class="badge badge-default"
+                x-text="Math.round(currentSound?.animal_uniqueness_score ?? 0) + '% unique for ' + (currentSound?.animal_name ?? 'animal')"
+              ></span>
+              <span
+                x-show="currentSound && currentSound.animal_uniqueness_score == null"
+                class="badge badge-default"
+                x-text="'Needs more ' + (currentSound?.animal_name ?? '') + ' sounds to score'"
               ></span>
             </div>
 
-            <!-- Meow ID and date added -->
-            <div x-show="currentMeow" class="play-meow-meta">
-              <span class="play-meow-meta-id" x-text="MeowUtils.formatId(currentMeow?.id || '')"></span>
-              <span x-text="MeowUtils.formatDate(currentMeow?.created_at)"></span>
+            <!-- Sound ID, animal name, and date added -->
+            <div x-show="currentSound" class="play-meow-meta">
+              <span class="play-meow-meta-id" x-text="MeowUtils.formatId(currentSound?.id || '')"></span>
+              <span x-show="currentSound?.animal_name" x-text="currentSound?.animal_name"></span>
+              <span x-text="MeowUtils.formatDate(currentSound?.created_at)"></span>
             </div>
 
-            <!-- Meow count. Counter + bio keep their layout box while hidden
+            <!-- Sound count. Counter + bio keep their layout box while hidden
                  (visibility, not x-show/display) so appearing can't re-center
                  the play stack — a layout shift. -->
-            <p class="meow-counter" :class="{ invisible: !(meowCount > 0) }">
-              <strong x-text="meowCount"></strong>
-              <span x-text="meowCount === 1 ? ' meow' : ' meows'"></span>
+            <p class="meow-counter" :class="{ invisible: !(soundCount > 0) }">
+              <strong x-text="soundCount"></strong>
+              <span x-text="soundCount === 1 ? ' sound' : ' sounds'"></span>
               in library
             </p>
 
             <!-- Squishy bio -->
-            <p class="cat-bio" :class="{ invisible: !(meowCount > 0) }">
+            <p class="cat-bio" :class="{ invisible: !(soundCount > 0) }">
               Squishy is a very vocal cat. This is her personal meow archive.
             </p>
 
@@ -268,65 +285,88 @@
           </template>
         </div>
 
+        <!-- Animal filter chips (horizontal scroll) -->
+        <div class="library-filters" x-show="animals && animals.length > 0">
+          <button
+            class="chip chip-filter"
+            :class="{ active: !filterAnimal }"
+            @click="setAnimalFilter('')"
+          >All</button>
+          <template x-for="animal in animals" :key="animal.id">
+            <button
+              class="chip chip-filter"
+              :class="{ active: filterAnimal === animal.id }"
+              @click="setAnimalFilter(animal.id)"
+              x-text="animal.name"
+            ></button>
+          </template>
+        </div>
+
         <!-- Loading state -->
         <div class="upload-progress" x-show="isLoading">
           <div class="spinner spinner-lg"></div>
-          <p class="text-secondary">Loading meows…</p>
+          <p class="text-secondary">Loading sounds…</p>
         </div>
 
         <!-- Empty state -->
-        <div class="empty-state" x-show="!isLoading && meows.length === 0">
+        <div class="empty-state" x-show="!isLoading && sounds.length === 0">
           <div class="empty-state-icon">🎙️</div>
           <div class="empty-state-title">
-            <span x-text="filterLabel ? 'No meows with this label' : 'Library is empty'"></span>
+            <span x-text="filterLabel ? 'No sounds with this label' : 'Library is empty'"></span>
           </div>
           <div class="empty-state-body" x-show="!filterLabel">
-            Upload or record a meow to get started
+            Upload or record a sound to get started
           </div>
           <button
             class="btn btn-primary"
             x-show="!filterLabel"
             @click="navigateTo('/upload')"
           >
-            Add a meow
+            Add a sound
           </button>
         </div>
 
-        <!-- Meow list rows -->
-        <div class="library-list" x-show="!isLoading && meows.length > 0">
-          <template x-for="meow in meows" :key="meow.id">
-            <div class="list-row" @click="openDetail(meow)">
+        <!-- Sound list rows -->
+        <div class="library-list" x-show="!isLoading && sounds.length > 0">
+          <template x-for="sound in sounds" :key="sound.id">
+            <div class="list-row" @click="openDetail(sound)">
               <!-- Play/pause icon button -->
               <button
                 class="list-row-icon"
-                :class="{ playing: playingId === meow.id }"
-                @click.stop="togglePlay(meow, $event)"
-                :aria-label="playingId === meow.id ? 'Pause' : 'Play'"
+                :class="{ playing: playingId === sound.id }"
+                @click.stop="togglePlay(sound, $event)"
+                :aria-label="playingId === sound.id ? 'Pause' : 'Play'"
               >
-                <svg x-show="playingId !== meow.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <svg x-show="playingId !== sound.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z"/>
                 </svg>
-                <svg x-show="playingId === meow.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <svg x-show="playingId === sound.id" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                 </svg>
               </button>
 
               <!-- Row content -->
               <div class="list-row-main">
-                <div class="list-row-title" x-text="'Meow ' + MeowUtils.formatId(meow.id)"></div>
+                <div class="list-row-title" x-text="'Sound ' + MeowUtils.formatId(sound.id)"></div>
                 <div class="list-row-meta">
-                  <span class="badge badge-default" x-text="MeowUtils.formatDuration(meow.duration_ms)"></span>
+                  <span class="badge badge-default" x-text="MeowUtils.formatDuration(sound.duration_ms)"></span>
                   <span
                     class="badge"
-                    :class="MeowUtils.uniquenessBadgeClass(meow.uniqueness_score)"
-                    x-show="meow.uniqueness_score != null"
-                    x-text="Math.round(meow.uniqueness_score) + '% unique'"
+                    :class="MeowUtils.uniquenessBadgeClass(sound.species_uniqueness_score)"
+                    x-show="sound.species_uniqueness_score != null"
+                    x-text="Math.round(sound.species_uniqueness_score) + '% unique'"
                   ></span>
-                  <span x-text="MeowUtils.formatDate(meow.created_at)"></span>
-                  <span x-show="meow.play_count > 0" x-text="meow.play_count + ' plays'"></span>
-                  <span class="badge badge-green" x-show="meow.upvote_count > 0" x-text="meow.upvote_count + (meow.upvote_count === 1 ? ' upvote' : ' upvotes')"></span>
-                  <span class="badge badge-red" x-show="meow.downvote_count > 0" x-text="meow.downvote_count + (meow.downvote_count === 1 ? ' downvote' : ' downvotes')"></span>
-                  <template x-for="label in (meow.labels || []).slice(0, 2)" :key="label">
+                  <span
+                    class="badge badge-default"
+                    x-show="sound.species_uniqueness_score == null"
+                    title="Needs more sounds in this pool to compare against"
+                  >no score yet</span>
+                  <span x-show="animalName(sound.animal_id)" x-text="animalName(sound.animal_id)"></span>
+                  <span x-text="MeowUtils.formatDate(sound.created_at)"></span>
+                  <span x-show="sound.play_count > 0" x-text="sound.play_count + ' plays'"></span>
+                  <span class="badge badge-green" x-show="sound.upvote_count > 0" x-text="sound.upvote_count + (sound.upvote_count === 1 ? ' upvote' : ' upvotes')"></span>
+                  <span class="badge badge-red" x-show="sound.downvote_count > 0" x-text="sound.downvote_count + (sound.downvote_count === 1 ? ' downvote' : ' downvotes')"></span>
+                  <template x-for="label in (sound.labels || []).slice(0, 2)" :key="label">
                     <span class="badge badge-accent" x-text="label"></span>
                   </template>
                 </div>
@@ -374,16 +414,16 @@
               x-show="canWrite"
               type="text"
               class="modal-title-input"
-              :placeholder="'Meow ' + MeowUtils.formatId(detailMeow?.id || '')"
+              :placeholder="'Sound ' + MeowUtils.formatId(detailSound?.id || '')"
               x-model="detailTitle"
               @blur="saveTitle()"
               @keydown.enter="saveTitle(); $event.target.blur()"
-              aria-label="Meow title"
+              aria-label="Sound title"
             >
             <span
               x-show="authRequired && !authenticated"
               class="modal-title-input"
-              x-text="detailTitle || ('Meow ' + MeowUtils.formatId(detailMeow?.id || ''))"
+              x-text="detailTitle || ('Sound ' + MeowUtils.formatId(detailSound?.id || ''))"
             ></span>
             <button class="btn-icon" @click="closeDetail()" aria-label="Close">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -392,7 +432,7 @@
             </button>
           </div>
 
-          <div class="modal-body" x-show="detailMeow">
+          <div class="modal-body" x-show="detailSound">
             <!-- Waveform canvas -->
             <div class="detail-waveform">
               <canvas x-ref="detailWaveformCanvas" style="display:block;width:100%;height:80px;" aria-hidden="true"></canvas>
@@ -400,7 +440,7 @@
 
             <!-- Play button -->
             <div class="flex justify-center" style="margin-bottom: var(--sp-4);">
-              <button class="btn btn-primary" @click="playDetailMeow()">
+              <button class="btn btn-primary" @click="playDetailSound()">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z"/>
                 </svg>
@@ -412,40 +452,51 @@
             <div class="detail-meta-grid">
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Duration</span>
-                <span class="detail-meta-value" x-text="MeowUtils.formatDuration(detailMeow?.duration_ms)"></span>
+                <span class="detail-meta-value" x-text="MeowUtils.formatDuration(detailSound?.duration_ms)"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Date Added</span>
-                <span class="detail-meta-value" x-text="MeowUtils.formatDate(detailMeow?.created_at)"></span>
+                <span class="detail-meta-value" x-text="MeowUtils.formatDate(detailSound?.created_at)"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Recorded</span>
-                <span class="detail-meta-value" x-text="detailMeow?.recorded_at ? MeowUtils.formatDate(detailMeow.recorded_at) : '—'"></span>
+                <span class="detail-meta-value" x-text="detailSound?.recorded_at ? MeowUtils.formatDate(detailSound.recorded_at) : '—'"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Plays</span>
-                <span class="detail-meta-value" x-text="detailMeow?.play_count ?? 0"></span>
+                <span class="detail-meta-value" x-text="detailSound?.play_count ?? 0"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">Votes</span>
                 <span class="detail-meta-value" style="display:flex;gap:var(--sp-3);">
-                  <span class="text-green" x-text="(detailMeow?.upvote_count ?? 0) + ' ↑'"></span>
-                  <span class="text-red" x-text="(detailMeow?.downvote_count ?? 0) + ' ↓'"></span>
+                  <span class="text-green" x-text="(detailSound?.upvote_count ?? 0) + ' ↑'"></span>
+                  <span class="text-red" x-text="(detailSound?.downvote_count ?? 0) + ' ↓'"></span>
                 </span>
               </div>
               <div class="detail-meta-item">
-                <span class="detail-meta-label">Uniqueness</span>
+                <span class="detail-meta-label">Species unique</span>
                 <span
                   class="detail-meta-value"
-                  x-text="detailMeow?.uniqueness_score != null ? Math.round(detailMeow.uniqueness_score) + '%' : '—'"
+                  x-text="detailSound?.species_uniqueness_score != null ? Math.round(detailSound.species_uniqueness_score) + '%' : '—'"
                 ></span>
+              </div>
+              <div class="detail-meta-item">
+                <span class="detail-meta-label">Animal unique</span>
+                <span
+                  class="detail-meta-value"
+                  x-text="detailSound?.animal_uniqueness_score != null ? Math.round(detailSound.animal_uniqueness_score) + '%' : '—'"
+                ></span>
+              </div>
+              <div class="detail-meta-item">
+                <span class="detail-meta-label">Animal</span>
+                <span class="detail-meta-value" x-text="animalName(detailSound?.animal_id) || '—'"></span>
               </div>
               <div class="detail-meta-item">
                 <span class="detail-meta-label">ID</span>
                 <span
                   class="detail-meta-value"
                   style="font-family:var(--font-mono);font-size:var(--text-sm);"
-                  x-text="MeowUtils.formatId(detailMeow?.id || '')"
+                  x-text="MeowUtils.formatId(detailSound?.id || '')"
                 ></span>
               </div>
             </div>
@@ -454,7 +505,7 @@
             <div class="label-editor">
               <div class="label-editor-title">Labels</div>
               <div class="label-chips">
-                <template x-for="label in (detailMeow?.labels || [])" :key="label">
+                <template x-for="label in (detailSound?.labels || [])" :key="label">
                   <div class="chip">
                     <span x-text="label"></span>
                     <button class="chip-remove" x-show="canWrite" @click="removeLabel(label)" aria-label="Remove label">×</button>
@@ -482,7 +533,7 @@
 
             <!-- Delete -->
             <button class="btn btn-danger btn-full" x-show="canWrite" @click="confirmDelete()">
-              Delete meow
+              Delete sound
             </button>
           </div>
         </div>
@@ -493,13 +544,13 @@
           x-show="showDeleteConfirm"
         >
           <div class="modal-confirm-card">
-            <h2 class="modal-title">Delete this meow?</h2>
+            <h2 class="modal-title">Delete this sound?</h2>
             <p class="text-secondary">
               This cannot be undone. The audio files will be permanently deleted.
             </p>
             <div class="flex gap-3">
               <button class="btn btn-ghost" @click="showDeleteConfirm = false">Cancel</button>
-              <button class="btn btn-danger" @click="deleteMeowConfirmed()">Delete</button>
+              <button class="btn btn-danger" @click="deleteSoundConfirmed()">Delete</button>
             </div>
           </div>
         </div>
@@ -509,20 +560,114 @@
 
 
     <!-- ══════════════════════════════════════════════════
-         View: Photos
+         View: Profiles
     ══════════════════════════════════════════════════ -->
     <div
-      class="view-container"
-      x-show="isView('photos')"
-      x-data="photosView()"
+      class="view-container profiles-view"
+      x-show="isView('profiles')"
+      x-data="profilesView()"
       x-init="init()"
       x-cloak
     >
-      <div class="photos-view" :class="{ 'detail-open': showDetail, 'drag-over': isDragOver }" @dragover.prevent="onPhotoDragOver($event)" @dragleave="onPhotoDragLeave()" @drop.prevent="onPhotoDrop($event)">
 
-        <!-- Header with upload button -->
+      <!-- ── Animals pane (no animal selected) ── -->
+      <div x-show="selectedAnimal === null">
+
         <div class="view-header">
-          <h1 class="view-title">Photos</h1>
+          <h1 class="view-title">Profiles</h1>
+          <div data-nav-auth></div>
+        </div>
+
+        <!-- Loading state -->
+        <div class="upload-progress" x-show="isLoading">
+          <div class="spinner spinner-lg"></div>
+          <p class="text-secondary">Loading profiles…</p>
+        </div>
+
+        <!-- Empty state -->
+        <div class="empty-state" x-show="!isLoading && animals.length === 0">
+          <div class="empty-state-icon">🐾</div>
+          <div class="empty-state-title">No animal profiles yet</div>
+          <div class="empty-state-body" x-show="canWrite">Add a profile to start organizing photos</div>
+        </div>
+
+        <!-- Animal list -->
+        <div class="library-list" x-show="!isLoading && animals.length > 0">
+          <template x-for="animal in animals" :key="animal.id">
+            <div class="list-row" @click="selectAnimal(animal)">
+              <div class="list-row-main">
+                <div class="list-row-title" x-text="animal.name"></div>
+                <div class="list-row-meta">
+                  <span class="badge badge-default" x-text="animal.species.charAt(0).toUpperCase() + animal.species.slice(1)"></span>
+                  <span x-text="animal.sound_count + ' sound' + (animal.sound_count !== 1 ? 's' : '')"></span>
+                  <span x-text="animal.photo_count + ' photo' + (animal.photo_count !== 1 ? 's' : '')"></span>
+                </div>
+              </div>
+              <button
+                class="btn-icon"
+                x-show="canWrite"
+                @click.stop="deleteAnimal(animal)"
+                aria-label="Delete animal profile"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+              </button>
+              <svg class="meow-row-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </div>
+          </template>
+        </div>
+
+        <!-- Add profile form (auth-gated) -->
+        <div class="label-editor" x-show="canWrite" style="margin: var(--sp-4);">
+          <div class="label-editor-title">Add profile</div>
+          <div class="label-add-form" style="flex-wrap:wrap;gap:var(--sp-2);">
+            <input
+              type="text"
+              class="label-add-input"
+              placeholder="Name…"
+              x-model="newAnimalName"
+              @keydown.enter="createAnimal()"
+              maxlength="64"
+              style="flex:1;min-width:120px;"
+            >
+            <select class="select" x-model="newAnimalSpecies" style="height:36px;">
+              <option value="cat">Cat</option>
+              <option value="dog">Dog</option>
+            </select>
+            <button
+              class="btn btn-secondary"
+              @click="createAnimal()"
+              :disabled="isCreatingAnimal || !newAnimalName.trim()"
+              style="height:36px;padding:0 12px;"
+            >Add</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── Photos pane (animal selected) ── -->
+      <div
+        x-show="selectedAnimal !== null"
+        class="photos-view"
+        :class="{ 'detail-open': showDetail, 'drag-over': isDragOver }"
+        @dragover.prevent="onPhotoDragOver($event)"
+        @dragleave="onPhotoDragLeave()"
+        @drop.prevent="onPhotoDrop($event)"
+      >
+
+        <!-- Header with back button and upload -->
+        <div class="view-header">
+          <div class="flex items-center gap-3">
+            <button class="btn-icon" @click="backToAnimals()" aria-label="Back to profiles">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+            </button>
+            <h1 class="view-title" x-text="selectedAnimal?.name"></h1>
+          </div>
           <div class="flex items-center gap-2">
             <div x-show="canWrite">
               <button class="btn btn-secondary btn-sm" @click="$refs.photoInput.click()">Upload</button>
@@ -556,12 +701,17 @@
         <div class="empty-state" x-show="!isLoading && photos.length === 0">
           <div class="empty-state-icon">📷</div>
           <div class="empty-state-title">No photos yet</div>
-          <div class="empty-state-body">Upload cat photos to use as MEOW button backgrounds</div>
+          <div class="empty-state-body">Upload photos for <span x-text="selectedAnimal?.name"></span> to use as MEOW button backgrounds</div>
           <button
             class="btn btn-primary"
             x-show="canWrite"
             @click="$refs.photoInput.click()"
           >Upload a photo</button>
+          <button
+            class="btn btn-ghost"
+            x-show="canWrite"
+            @click="navigateTo('/upload/photos', { animalId: selectedAnimal?.id })"
+          >Add via Upload page</button>
         </div>
 
         <!-- Photo grid -->
@@ -704,7 +854,7 @@
       <div class="ingest-view">
 
         <div class="view-header">
-          <h1 class="view-title">Add Meows</h1>
+          <h1 class="view-title">Upload</h1>
           <div class="flex items-center gap-2">
             <button
               class="btn btn-ghost"
@@ -718,166 +868,264 @@
           </div>
         </div>
 
-        <!-- ── idle: upload UI ── -->
-        <div class="ingest-idle" x-show="phase === 'idle'">
-          <!-- Drop zone -->
-          <div
-            class="upload-zone"
-            :class="{ 'drag-over': isDragOver }"
-            @click="$refs.fileInput.click()"
-            @dragover.prevent="onDragOver($event)"
-            @dragleave="onDragLeave()"
-            @drop.prevent="onDrop($event)"
-            role="button"
-            tabindex="0"
-            aria-label="Upload audio or video files"
-            @keydown.enter="$refs.fileInput.click()"
-            @keydown.space.prevent="$refs.fileInput.click()"
-          >
-            <div class="upload-zone-icon">🎵</div>
-            <div class="upload-zone-title">Upload recordings</div>
-            <div class="upload-zone-body">
-              Tap to choose files, or drag and drop<br>
-              Supports audio and video files (.m4a, .mp3, .wav, .mp4, .mov, and more)
-            </div>
-            <button class="btn btn-primary" @click.stop="$refs.fileInput.click()">Choose files</button>
-          </div>
-          <input
-            type="file"
-            accept="{{UPLOAD_ACCEPT}}"
-            multiple
-            x-ref="fileInput"
-            @change="onFileChange($event)"
-            style="display:none"
-            aria-hidden="true"
-          >
+        <!-- Hoisted animal selector -->
+        <div class="ingest-animal-field" x-show="phase === 'idle'" style="padding: 0 var(--sp-4); margin-bottom: var(--sp-3);">
+          <label class="text-sm text-secondary" style="display:block;margin-bottom:var(--sp-2);" x-text="activeTab === 'photos' ? 'Who are these photos of?' : 'Who is this recording of?'"></label>
+          <select class="select" x-model="selectedAnimalId" style="width:100%;">
+            <option value="" disabled>Select an animal…</option>
+            <template x-for="animal in animals" :key="animal.id">
+              <option :value="animal.id" x-text="animal.name + ' (' + animal.species + ')'"></option>
+            </template>
+          </select>
+        </div>
 
-          <!-- Divider -->
-          <div class="ingest-or-divider flex items-center gap-3" style="padding:0 var(--sp-4); margin: var(--sp-2) 0;">
-            <div class="divider" style="flex:1;margin:0;"></div>
-            <span class="text-muted text-sm">or</span>
-            <div class="divider" style="flex:1;margin:0;"></div>
-          </div>
+        <!-- Tab strip -->
+        <div class="ingest-tabs" x-show="phase === 'idle'">
+          <button
+            class="chip chip-filter"
+            :class="{ active: activeTab === 'sounds' }"
+            :disabled="phase !== 'idle'"
+            @click="switchTab('sounds')"
+          >Sounds</button>
+          <button
+            class="chip chip-filter"
+            :class="{ active: activeTab === 'photos' }"
+            :disabled="phase !== 'idle'"
+            @click="switchTab('photos')"
+          >Photos</button>
+        </div>
 
-          <!-- Record section -->
-          <div class="record-section">
-            <button
-              class="record-btn"
-              :class="{ recording: isRecording }"
-              @click="isRecording ? stopRecording() : startRecording()"
-              :aria-label="isRecording ? 'Stop recording' : 'Start recording'"
+        <!-- ── Sounds tab ── -->
+        <div x-show="activeTab === 'sounds'">
+
+          <!-- ── idle: upload UI ── -->
+          <div class="ingest-idle" x-show="phase === 'idle'">
+
+            <!-- Drop zone -->
+            <div
+              class="upload-zone"
+              :class="{ 'drag-over': isDragOver }"
+              @click="$refs.fileInput.click()"
+              @dragover.prevent="onDragOver($event)"
+              @dragleave="onDragLeave()"
+              @drop.prevent="onDrop($event)"
+              role="button"
+              tabindex="0"
+              aria-label="Upload audio or video files"
+              @keydown.enter="$refs.fileInput.click()"
+              @keydown.space.prevent="$refs.fileInput.click()"
             >
-              <div class="record-btn-inner"></div>
-            </button>
-            <p class="text-sm text-secondary" x-show="!isRecording">Record now</p>
-            <p class="record-timer" x-show="isRecording" x-text="formatRecordTime(recordSeconds)"></p>
-            <p class="text-xs text-muted" x-show="isRecording">Tap again to stop</p>
-          </div>
-        </div>
-
-        <!-- ── uploading ── -->
-        <div class="upload-progress" x-show="phase === 'uploading'">
-          <div class="spinner spinner-lg"></div>
-          <p class="text-lg font-medium" x-text="'Uploading ' + uploadProgress.done + ' / ' + uploadProgress.total + '…'"></p>
-          <p class="text-sm text-secondary">This may take a few seconds</p>
-        </div>
-
-        <!-- ── clipping: per-job waveform editors ── -->
-        <div x-show="phase === 'clipping'">
-          <template x-for="(job, idx) in jobs" :key="job.containerId">
-            <div x-show="job.phase !== 'error'">
-              <div class="clip-section">
-                <div class="clip-section-header">
-                  <span class="clip-section-title" x-text="job.filename"></span>
-                  <span class="badge badge-default" x-show="job.phase === 'done'">Saved</span>
-                  <span class="badge badge-default" x-show="job.phase === 'processing'">Processing…</span>
-                </div>
-
-                <div class="clip-container" x-show="job.phase === 'clipping'">
-                  <div class="clip-waveform-wrap">
-                    <div :id="job.containerId"></div>
-                  </div>
-                  <div class="clip-timecode" x-show="job.duration > 0">
-                    <span class="clip-timecode-current" x-text="formatTimecode(job.currentTime)"></span>
-                    <span class="clip-timecode-sep">/</span>
-                    <span x-text="formatTimecode(job.duration)"></span>
-                  </div>
-                  <p class="text-sm text-muted text-center">Click and drag on the waveform to mark meow regions</p>
-                  <div class="clip-transport">
-                    <button class="btn btn-ghost" @click="zoomOut(job)" :disabled="job.zoomLevel === 0" aria-label="Zoom out">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                        <line x1="8" y1="11" x2="14" y2="11"/>
-                      </svg>
-                    </button>
-                    <button class="btn btn-ghost" @click="togglePlayPause(job)" aria-label="Play / Pause">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    </button>
-                    <button class="btn btn-ghost" @click="zoomIn(job)" :disabled="job.zoomLevel >= 10" aria-label="Zoom in">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                        <line x1="11" y1="8" x2="11" y2="14"/>
-                        <line x1="8" y1="11" x2="14" y2="11"/>
-                      </svg>
-                    </button>
-                    <button
-                      class="btn btn-ghost"
-                      @click="autoDetect(job)"
-                      :disabled="job.isAutoDetecting"
-                      x-text="job.isAutoDetecting ? 'Detecting…' : 'Auto-detect'"
-                    ></button>
-                  </div>
-                  <div class="clip-actions">
-                    <button
-                      class="btn btn-primary btn-full"
-                      @click="saveClips(job)"
-                      :disabled="job.regionCount === 0"
-                      x-text="job.regionCount === 0 ? 'Draw regions to save' : 'Save ' + job.regionCount + (job.regionCount === 1 ? ' clip' : ' clips')"
-                    ></button>
-                  </div>
-
-                  <div class="clip-list" x-show="job.clips.length > 0">
-                    <template x-for="(clip, ci) in job.clips" :key="clip.id">
-                      <div class="clip-list-item">
-                        <span class="clip-list-number" x-text="'#' + (ci + 1)"></span>
-                        <span class="clip-list-range" x-text="formatTimecode(clip.start) + ' – ' + formatTimecode(clip.end)"></span>
-                        <button class="btn-icon clip-list-play" @click="playClip(job, clip)" aria-label="Play clip">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                        </button>
-                        <button class="btn-icon clip-list-delete" @click="removeClip(job, clip)" aria-label="Delete clip">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                        </button>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-
-                <div class="upload-progress" x-show="job.phase === 'processing'" style="padding:var(--sp-4);">
-                  <div class="spinner"></div>
-                  <p class="text-sm text-secondary">Processing clips…</p>
-                </div>
-
-                <div class="clip-section-done" x-show="job.phase === 'done'">Saved</div>
+              <div class="upload-zone-icon">🎵</div>
+              <div class="upload-zone-title">Upload recordings</div>
+              <div class="upload-zone-body">
+                Tap to choose files, or drag and drop<br>
+                Supports audio and video files (.m4a, .mp3, .wav, .mp4, .mov, and more)
               </div>
-
-              <div class="divider" x-show="idx < jobs.length - 1 && jobs[idx + 1]?.phase !== 'error'" style="margin:0 var(--sp-4);"></div>
+              <button class="btn btn-primary" @click.stop="$refs.fileInput.click()">Choose files</button>
             </div>
-          </template>
+            <input
+              type="file"
+              accept="{{UPLOAD_ACCEPT}}"
+              multiple
+              x-ref="fileInput"
+              @change="onFileChange($event)"
+              style="display:none"
+              aria-hidden="true"
+            >
 
-          <div class="clip-actions" x-show="jobs.filter(j => j.phase === 'clipping').length > 1" style="padding:var(--sp-3) var(--sp-4) var(--sp-4);">
-            <button class="btn btn-secondary btn-full" @click="saveAllClips()">Save All Clips</button>
+            <!-- Divider -->
+            <div class="ingest-or-divider flex items-center gap-3" style="padding:0 var(--sp-4); margin: var(--sp-2) 0;">
+              <div class="divider" style="flex:1;margin:0;"></div>
+              <span class="text-muted text-sm">or</span>
+              <div class="divider" style="flex:1;margin:0;"></div>
+            </div>
+
+            <!-- Record section -->
+            <div class="record-section">
+              <button
+                class="record-btn"
+                :class="{ recording: isRecording }"
+                @click="isRecording ? stopRecording() : startRecording()"
+                :aria-label="isRecording ? 'Stop recording' : 'Start recording'"
+              >
+                <div class="record-btn-inner"></div>
+              </button>
+              <p class="text-sm text-secondary" x-show="!isRecording">Record now</p>
+              <p class="record-timer" x-show="isRecording" x-text="formatRecordTime(recordSeconds)"></p>
+              <p class="text-xs text-muted" x-show="isRecording">Tap again to stop</p>
+            </div>
           </div>
+
+          <!-- ── uploading ── -->
+          <div class="upload-progress" x-show="phase === 'uploading'">
+            <div class="spinner spinner-lg"></div>
+            <p class="text-lg font-medium" x-text="'Uploading ' + uploadProgress.done + ' / ' + uploadProgress.total + '…'"></p>
+            <p class="text-sm text-secondary">This may take a few seconds</p>
+          </div>
+
+          <!-- ── clipping: per-job waveform editors ── -->
+          <div x-show="phase === 'clipping'">
+            <div class="clip-animal-context" style="padding: 0 var(--sp-4); margin-bottom: var(--sp-2);">
+              <span class="text-sm text-secondary">Adding sounds to</span>
+              <span class="text-sm font-medium" x-text="selectedAnimal ? selectedAnimal.name + ' (' + selectedAnimal.species + ')' : ''"></span>
+            </div>
+            <template x-for="(job, idx) in jobs" :key="job.containerId">
+              <div x-show="job.phase !== 'error'">
+                <div class="clip-section">
+                  <div class="clip-section-header">
+                    <span class="clip-section-title" x-text="job.filename"></span>
+                    <span class="badge badge-default" x-show="job.phase === 'done'">Saved</span>
+                    <span class="badge badge-default" x-show="job.phase === 'processing'">Processing…</span>
+                  </div>
+
+                  <div class="clip-container" x-show="job.phase === 'clipping'">
+                    <div class="clip-waveform-wrap">
+                      <div :id="job.containerId"></div>
+                    </div>
+                    <div class="clip-timecode" x-show="job.duration > 0">
+                      <span class="clip-timecode-current" x-text="formatTimecode(job.currentTime)"></span>
+                      <span class="clip-timecode-sep">/</span>
+                      <span x-text="formatTimecode(job.duration)"></span>
+                    </div>
+                    <p class="text-sm text-muted text-center">Click and drag on the waveform to mark sound regions</p>
+                    <div class="clip-transport">
+                      <button class="btn btn-ghost" @click="zoomOut(job)" :disabled="job.zoomLevel === 0" aria-label="Zoom out">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="11" cy="11" r="8"/>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                      </button>
+                      <button class="btn btn-ghost" @click="togglePlayPause(job)" aria-label="Play / Pause">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      </button>
+                      <button class="btn btn-ghost" @click="zoomIn(job)" :disabled="job.zoomLevel >= 10" aria-label="Zoom in">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="11" cy="11" r="8"/>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                          <line x1="11" y1="8" x2="11" y2="14"/>
+                          <line x1="8" y1="11" x2="14" y2="11"/>
+                        </svg>
+                      </button>
+                      <button
+                        class="btn btn-ghost"
+                        @click="autoDetect(job)"
+                        :disabled="job.isAutoDetecting"
+                        x-text="job.isAutoDetecting ? 'Detecting…' : 'Auto-detect'"
+                      ></button>
+                    </div>
+                    <div class="clip-actions">
+                      <button
+                        class="btn btn-primary btn-full"
+                        @click="saveClips(job)"
+                        :disabled="job.regionCount === 0"
+                        x-text="job.regionCount === 0 ? 'Draw regions to save' : 'Save ' + job.regionCount + (job.regionCount === 1 ? ' clip' : ' clips')"
+                      ></button>
+                    </div>
+
+                    <div class="clip-list" x-show="job.clips.length > 0">
+                      <template x-for="(clip, ci) in job.clips" :key="clip.id">
+                        <div class="clip-list-item">
+                          <span class="clip-list-number" x-text="'#' + (ci + 1)"></span>
+                          <span class="clip-list-range" x-text="formatTimecode(clip.start) + ' – ' + formatTimecode(clip.end)"></span>
+                          <button class="btn-icon clip-list-play" @click="playClip(job, clip)" aria-label="Play clip">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                          </button>
+                          <button class="btn-icon clip-list-delete" @click="removeClip(job, clip)" aria-label="Delete clip">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div class="upload-progress" x-show="job.phase === 'processing'" style="padding:var(--sp-4);">
+                    <div class="spinner"></div>
+                    <p class="text-sm text-secondary">Processing clips…</p>
+                  </div>
+
+                  <div class="clip-section-done" x-show="job.phase === 'done'">Saved</div>
+                </div>
+
+                <div class="divider" x-show="idx < jobs.length - 1 && jobs[idx + 1]?.phase !== 'error'" style="margin:0 var(--sp-4);"></div>
+              </div>
+            </template>
+
+            <div class="clip-actions" x-show="jobs.filter(j => j.phase === 'clipping').length > 1" style="padding:var(--sp-3) var(--sp-4) var(--sp-4);">
+              <button class="btn btn-secondary btn-full" @click="saveAllClips()">Save All Clips</button>
+            </div>
+          </div>
+
+          <!-- ── done ── -->
+          <div class="empty-state" x-show="phase === 'done'">
+            <div class="empty-state-icon">🐱</div>
+            <div class="empty-state-title">Sounds saved!</div>
+            <div class="empty-state-body">They're now in your library.</div>
+            <button class="btn btn-primary" @click="navigateTo('/library')">Go to library</button>
+            <button class="btn btn-ghost" @click="reset()">Add more</button>
+          </div>
+
         </div>
 
-        <!-- ── done ── -->
-        <div class="empty-state" x-show="phase === 'done'">
-          <div class="empty-state-icon">🐱</div>
-          <div class="empty-state-title">Meows saved!</div>
-          <div class="empty-state-body">They're now in your library.</div>
-          <button class="btn btn-primary" @click="navigateTo('/library')">Go to library</button>
-          <button class="btn btn-ghost" @click="reset()">Add more</button>
+        <!-- ── Photos tab ── -->
+        <div x-show="activeTab === 'photos'">
+
+          <!-- idle -->
+          <div x-show="photoPhase === 'idle'">
+            <div
+              class="upload-zone"
+              :class="{ 'drag-over': photoIsDragOver }"
+              @click="$refs.photoFileInput.click()"
+              @dragover.prevent="onPhotoDragOver($event)"
+              @dragleave="onPhotoDragLeave()"
+              @drop.prevent="onPhotoDrop($event)"
+              role="button"
+              tabindex="0"
+              aria-label="Upload photo files"
+              @keydown.enter="$refs.photoFileInput.click()"
+              @keydown.space.prevent="$refs.photoFileInput.click()"
+            >
+              <div class="upload-zone-icon">📷</div>
+              <div class="upload-zone-title">Upload photos</div>
+              <div class="upload-zone-body">
+                Tap to choose photos, or drag and drop<br>
+                Supports JPEG, PNG, GIF, WebP, and HEIC
+              </div>
+              <button class="btn btn-primary" @click.stop="$refs.photoFileInput.click()">Choose photos</button>
+            </div>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif"
+              multiple
+              x-ref="photoFileInput"
+              @change="onPhotoFileChange($event)"
+              style="display:none"
+              aria-hidden="true"
+            >
+          </div>
+
+          <!-- uploading -->
+          <div class="upload-progress" x-show="photoPhase === 'uploading'">
+            <div class="spinner spinner-lg"></div>
+            <p class="text-lg font-medium" x-text="'Uploading ' + photoUploadProgress.done + ' / ' + photoUploadProgress.total + '…'"></p>
+            <p class="text-sm text-secondary">This may take a few seconds</p>
+          </div>
+
+          <!-- done -->
+          <div class="empty-state" x-show="photoPhase === 'done'">
+            <div class="empty-state-icon">📷</div>
+            <div class="empty-state-title" x-text="uploadedPhotoUrls.length + (uploadedPhotoUrls.length === 1 ? ' photo uploaded!' : ' photos uploaded!')"></div>
+            <div class="photo-grid" x-show="uploadedPhotoUrls.length > 0">
+              <template x-for="url in uploadedPhotoUrls" :key="url">
+                <div class="photo-thumb">
+                  <img :src="url" alt="Uploaded photo" loading="lazy">
+                </div>
+              </template>
+            </div>
+            <button class="btn btn-primary" @click="navigateTo('/profiles')">Manage photos in Profiles</button>
+            <button class="btn btn-ghost" @click="resetPhotoTab()">Upload more</button>
+          </div>
+
         </div>
 
       </div>
@@ -921,8 +1169,8 @@
             <!-- 2×2 stat tile grid -->
             <div class="stats-grid">
               <div class="stat-tile">
-                <div class="stat-tile-label">Total meows</div>
-                <div class="stat-tile-value" x-text="stats.total_meows"></div>
+                <div class="stat-tile-label">Total sounds</div>
+                <div class="stat-tile-value" x-text="stats.total_sounds"></div>
               </div>
               <div class="stat-tile">
                 <div class="stat-tile-label">Total duration</div>
@@ -933,22 +1181,35 @@
                 <div class="stat-tile-value" x-text="avgDurationFormatted"></div>
               </div>
               <div class="stat-tile">
-                <div class="stat-tile-label">First meow</div>
-                <div class="stat-tile-value" style="font-size:var(--text-lg);" x-text="firstMeowDate"></div>
+                <div class="stat-tile-label">First sound</div>
+                <div class="stat-tile-value" style="font-size:var(--text-lg);" x-text="firstSoundDate"></div>
               </div>
+            </div>
+
+            <!-- Per-species sound counts -->
+            <div class="stats-section" x-show="stats.species_counts && Object.keys(stats.species_counts).length > 0">
+              <div class="stats-section-header">By species</div>
+              <template x-for="[species, count] in Object.entries(stats.species_counts || {})" :key="species">
+                <div class="leaderboard-item">
+                  <div class="leaderboard-main">
+                    <div class="leaderboard-id" x-text="species.charAt(0).toUpperCase() + species.slice(1)"></div>
+                  </div>
+                  <div class="leaderboard-plays" x-text="count + ' sound' + (count !== 1 ? 's' : '')"></div>
+                </div>
+              </template>
             </div>
 
             <!-- Most played leaderboard -->
             <div class="stats-section" x-show="stats.most_played && stats.most_played.length > 0">
               <div class="stats-section-header">Most played</div>
-              <template x-for="(meow, index) in stats.most_played" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="(sound, index) in stats.most_played" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div class="leaderboard-rank" :class="{ top: index === 0 }" x-text="index + 1"></div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                   </div>
-                  <div class="leaderboard-plays" x-text="meow.play_count + ' plays'"></div>
+                  <div class="leaderboard-plays" x-text="sound.play_count + ' plays'"></div>
                 </div>
               </template>
             </div>
@@ -956,8 +1217,8 @@
             <!-- Recent additions -->
             <div class="stats-section" x-show="stats.recent && stats.recent.length > 0">
               <div class="stats-section-header">Recent additions</div>
-              <template x-for="meow in stats.recent" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="sound in stats.recent" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div
                     style="width:32px;height:32px;border-radius:50%;background:var(--bg-elevated);display:flex;align-items:center;justify-content:center;flex-shrink:0;"
                   >
@@ -966,10 +1227,10 @@
                     </svg>
                   </div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDate(meow.created_at)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDate(sound.created_at)"></div>
                   </div>
-                  <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                  <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                 </div>
               </template>
             </div>
@@ -977,14 +1238,14 @@
             <!-- Most upvoted leaderboard -->
             <div class="stats-section" x-show="stats.most_upvoted && stats.most_upvoted.length > 0">
               <div class="stats-section-header">Most upvoted</div>
-              <template x-for="(meow, index) in stats.most_upvoted" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="(sound, index) in stats.most_upvoted" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div class="leaderboard-rank" :class="{ top: index === 0 }" x-text="index + 1"></div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                   </div>
-                  <div class="leaderboard-plays text-green" x-text="meow.upvote_count + ' ↑'"></div>
+                  <div class="leaderboard-plays text-green" x-text="sound.upvote_count + ' ↑'"></div>
                 </div>
               </template>
             </div>
@@ -992,23 +1253,23 @@
             <!-- Most downvoted leaderboard -->
             <div class="stats-section" x-show="stats.most_downvoted && stats.most_downvoted.length > 0">
               <div class="stats-section-header">Most downvoted</div>
-              <template x-for="(meow, index) in stats.most_downvoted" :key="meow.id">
-                <div class="leaderboard-item" @click="playLeaderboardMeow(meow)">
+              <template x-for="(sound, index) in stats.most_downvoted" :key="sound.id">
+                <div class="leaderboard-item" @click="playLeaderboardSound(sound)">
                   <div class="leaderboard-rank" :class="{ top: index === 0 }" x-text="index + 1"></div>
                   <div class="leaderboard-main">
-                    <div class="leaderboard-id" x-text="MeowUtils.formatId(meow.id)"></div>
-                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(meow.duration_ms)"></div>
+                    <div class="leaderboard-id" x-text="MeowUtils.formatId(sound.id)"></div>
+                    <div class="leaderboard-duration" x-text="MeowUtils.formatDuration(sound.duration_ms)"></div>
                   </div>
-                  <div class="leaderboard-plays text-red" x-text="meow.downvote_count + ' ↓'"></div>
+                  <div class="leaderboard-plays text-red" x-text="sound.downvote_count + ' ↓'"></div>
                 </div>
               </template>
             </div>
 
             <!-- Empty library -->
-            <div class="empty-state" x-show="stats.total_meows === 0">
+            <div class="empty-state" x-show="stats.total_sounds === 0">
               <div class="empty-state-icon">📊</div>
               <div class="empty-state-title">No data yet</div>
-              <div class="empty-state-body">Add some meows to see your stats</div>
+              <div class="empty-state-body">Add some sounds to see your stats</div>
             </div>
 
             <!-- Footer link to the scoring-algorithm write-up -->
@@ -1054,8 +1315,8 @@
 
         <p class="algorithm-intro">
           <strong>How uniqueness scores are computed.</strong>
-          Every meow in your library is distilled into a 120-number acoustic fingerprint,
-          then compared against every other meow to measure how distinctive it sounds.
+          Every sound in your library is distilled into a 120-number acoustic fingerprint,
+          then compared against every other sound to measure how distinctive it sounds.
           Below is the full technical write-up of that pipeline — from the raw waveform
           through the spectral features to the final 0–100 percentile score.
           Skim the headings; the equations are there for the curious.
@@ -1134,19 +1395,19 @@
         <span class="nav-tab-label">Library</span>
       </button>
 
-      <!-- Photos tab -->
+      <!-- Profiles tab -->
       <button
-        :class="navClass('photos')"
-        @click="goTo('/photos')"
-        aria-label="Photos"
-        :aria-current="isView('photos') ? 'page' : null"
+        :class="navClass('profiles')"
+        @click="goTo('/profiles')"
+        aria-label="Profiles"
+        :aria-current="isView('profiles') ? 'page' : null"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
           <circle cx="8.5" cy="8.5" r="1.5"/>
           <polyline points="21 15 16 10 5 21"/>
         </svg>
-        <span class="nav-tab-label">Photos</span>
+        <span class="nav-tab-label">Profiles</span>
       </button>
 
       <!-- Upload tab -->

@@ -1,9 +1,19 @@
 /* ============================================================
-   views/photos.js — Photos Alpine component
+   views/profiles.js — Profiles Alpine component
+   Two panes: Animals list (selectedAnimal === null) and
+   Photos pane (selectedAnimal set) for the selected animal.
    ============================================================ */
 
-function photosView() {
+function profilesView() {
   return {
+    // Animals pane state
+    animals: [],
+    selectedAnimal: null,
+    newAnimalName: '',
+    newAnimalSpecies: 'cat',
+    isCreatingAnimal: false,
+
+    // Photos pane state
     photos: [],
     isLoading: false,
     showDetail: false,
@@ -20,13 +30,73 @@ function photosView() {
     cropRect: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
 
     async init() {
+      await this._loadAnimals();
+    },
+
+    // ── Animals pane ────────────────────────────────────────
+
+    async _loadAnimals() {
+      this.isLoading = true;
+      try {
+        const res = await getAnimals();
+        this.animals = res.items;
+      } catch (err) {
+        showToast(err.message || 'Failed to load profiles', 'error');
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    async createAnimal() {
+      const name = this.newAnimalName.trim();
+      if (!name) return;
+      if (!this.requireAuth()) return;
+      this.isCreatingAnimal = true;
+      try {
+        await createAnimal(name, this.newAnimalSpecies);
+        this.newAnimalName = '';
+        this.newAnimalSpecies = 'cat';
+        await this._loadAnimals();
+      } catch (err) {
+        showToast(err.message || 'Failed to create profile', 'error');
+      } finally {
+        this.isCreatingAnimal = false;
+      }
+    },
+
+    async deleteAnimal(animal) {
+      const soundLabel = animal.sound_count + ' sound' + (animal.sound_count !== 1 ? 's' : '');
+      const photoLabel = animal.photo_count + ' photo' + (animal.photo_count !== 1 ? 's' : '');
+      const msg = `Delete ${animal.name}? This will permanently delete ${soundLabel} and ${photoLabel}.`;
+      if (!confirm(msg)) return;
+      if (!this.requireAuth()) return;
+      try {
+        await deleteAnimal(animal.id);
+        this.animals = this.animals.filter(a => a.id !== animal.id);
+        showToast(animal.name + ' deleted', 'success');
+      } catch (err) {
+        showToast(err.message || 'Failed to delete profile', 'error');
+      }
+    },
+
+    async selectAnimal(animal) {
+      this.selectedAnimal = animal;
       await this._loadPhotos();
     },
 
+    backToAnimals() {
+      this.selectedAnimal = null;
+      this.closeDetail();
+      this.photos = [];
+    },
+
+    // ── Photos pane ─────────────────────────────────────────
+
     async _loadPhotos() {
+      if (!this.selectedAnimal) return;
       this.isLoading = true;
       try {
-        const res = await getPhotos();
+        const res = await getAnimalPhotos(this.selectedAnimal.id);
         this.photos = res.items;
       } catch (err) {
         showToast(err.message || 'Failed to load photos', 'error');
@@ -36,12 +106,12 @@ function photosView() {
     },
 
     async _uploadPhotos(files) {
-      if (this.uploadingPhotos) return;
+      if (!this.selectedAnimal || this.uploadingPhotos) return;
       this.uploadingPhotos = true;
       this.photoUploadProgress = { done: 0, total: files.length, errors: [] };
       for (const file of files) {
         try {
-          await uploadPhoto(file);
+          await uploadAnimalPhoto(this.selectedAnimal.id, file);
         } catch {
           this.photoUploadProgress.errors.push(file.name);
         }
@@ -83,11 +153,11 @@ function photosView() {
     },
 
     async deletePhotoConfirmed() {
-      if (!this.detailPhoto) return;
+      if (!this.detailPhoto || !this.selectedAnimal) return;
       if (!this.requireAuth()) return;
       const id = this.detailPhoto.id;
       try {
-        await deletePhoto(id);
+        await deleteAnimalPhoto(this.selectedAnimal.id, id);
         this.photos = this.photos.filter((p) => p.id !== id);
         this.closeDetail();
         showToast('Photo deleted', 'success');
@@ -117,19 +187,21 @@ function photosView() {
     async onPhotoDrop(event) {
       event.preventDefault();
       this.isDragOver = false;
+      if (!this.selectedAnimal) return;
       if (!this.requireAuth()) return;
+      // Some browsers report an empty MIME type for dragged HEIC files.
       const files = Array.from(event.dataTransfer?.files || []).filter(
-        f => f.type.startsWith('image/')
+        f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)
       );
       if (files.length === 0) return;
       await this._uploadPhotos(files);
     },
 
     async doEdit(body) {
-      if (!this.detailPhoto) return;
+      if (!this.detailPhoto || !this.selectedAnimal) return;
       const id = this.detailPhoto.id;
       try {
-        const updated = await editPhoto(id, body);
+        const updated = await editAnimalPhoto(this.selectedAnimal.id, id, body);
         this.detailPhoto = { ...this.detailPhoto, image_url: updated.image_url };
         const idx = this.photos.findIndex(p => p.id === id);
         if (idx !== -1) {
@@ -146,10 +218,10 @@ function photosView() {
       try { await this.doEdit(body); } finally { this.isEditing = false; }
     },
 
-    async rotateCW() { await this._runEdit({ action: 'rotate', direction: 'cw' }); },
+    async rotateCW()  { await this._runEdit({ action: 'rotate', direction: 'cw' });  },
     async rotateCCW() { await this._runEdit({ action: 'rotate', direction: 'ccw' }); },
-    async flipH() { await this._runEdit({ action: 'flip', axis: 'horizontal' }); },
-    async flipV() { await this._runEdit({ action: 'flip', axis: 'vertical' }); },
+    async flipH()     { await this._runEdit({ action: 'flip',   axis: 'horizontal' }); },
+    async flipV()     { await this._runEdit({ action: 'flip',   axis: 'vertical' });   },
 
     startCrop() {
       this.isCropping = true;
@@ -303,14 +375,14 @@ function photosView() {
       const MIN = 0.05;
 
       if (this._cropDrag.type === 'move') {
-        const nx = Math.max(0, Math.min(1 - orig.width, orig.x + dfx));
+        const nx = Math.max(0, Math.min(1 - orig.width,  orig.x + dfx));
         const ny = Math.max(0, Math.min(1 - orig.height, orig.y + dfy));
         this.cropRect = { ...orig, x: nx, y: ny };
       } else if (this._cropDrag.type === 'resize') {
         let { x: rx, y: ry, width: rw, height: rh } = orig;
         const h = this._cropDrag.handle;
         if (h === 'br') {
-          rw = Math.max(MIN, Math.min(1 - rx, orig.width + dfx));
+          rw = Math.max(MIN, Math.min(1 - rx, orig.width  + dfx));
           rh = Math.max(MIN, Math.min(1 - ry, orig.height + dfy));
         } else if (h === 'tr') {
           const newTop = Math.max(0, Math.min(ry + rh - MIN, orig.y + dfy));
@@ -342,7 +414,7 @@ function photosView() {
       this._drawCrop();
     },
 
-    onCropPointerUp(e) {
+    onCropPointerUp(_e) {
       this._cropDrag = null;
     },
   };

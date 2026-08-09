@@ -7,18 +7,26 @@ from pathlib import Path
 import click
 
 from meowdb.cli.context import Context
-from meowdb.cli.helpers import build_context, die, format_duration, play_audio
+from meowdb.cli.helpers import build_context, die, format_duration, play_audio, resolve_animal
 from meowdb.cli.options import db_path_option
 from meowdb.config import ALLOWED_MEDIA_SUFFIXES, MP3_DIR, STAGING_DIR, WAV_DIR
 from meowdb.display import console, print_error, print_hint, print_info, print_success
 from meowdb.models import ProcessingResult
+from meowdb.processor import SoundProcessor
+from meowdb.species import processor_config_for_species
 
-# Files shorter than this are treated as single-meow clips
-_SINGLE_MEOW_THRESHOLD_MS = 8000
+# Files shorter than this are treated as single-sound clips
+_SINGLE_SOUND_THRESHOLD_MS = 8000
 
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True))
+@click.option(
+    "--animal",
+    "animal_name_or_id",
+    default=None,
+    help="Animal name or ID to assign sounds to (defaults to first animal).",
+)
 @click.option(
     "--segment/--no-segment",
     default=None,
@@ -39,13 +47,16 @@ _SINGLE_MEOW_THRESHOLD_MS = 8000
 @db_path_option
 def ingest(
     path: str,
+    animal_name_or_id: str | None,
     segment: bool | None,
     review: bool,
     dry_run: bool,
     db_path: str | None,
 ) -> None:
-    """Ingest an audio or video file or directory into the meow library."""
+    """Ingest an audio or video file or directory into the sound library."""
     ctx = build_context(db_path)
+    animal = resolve_animal(ctx, animal_name_or_id)
+    processor = SoundProcessor(processor_config_for_species(animal["species"]))
 
     source = Path(path)
     if source.is_dir():
@@ -55,9 +66,9 @@ def ingest(
         if not audio_files:
             die(ctx, f"No audio files found in {source}")
         for audio_file in audio_files:
-            _ingest_file(audio_file, segment, review, dry_run, ctx)
+            _ingest_file(audio_file, segment, review, dry_run, ctx, animal, processor)
     else:
-        _ingest_file(source, segment, review, dry_run, ctx)
+        _ingest_file(source, segment, review, dry_run, ctx, animal, processor)
 
     ctx.db.close()
 
@@ -68,20 +79,22 @@ def _ingest_file(
     review: bool,
     dry_run: bool,
     ctx: Context,
+    animal: dict,  # type: ignore[type-arg]
+    processor: SoundProcessor,
 ) -> None:
 
     print_info(f"Processing {path.name} …")
 
     if dry_run:
-        _dry_run_file(path, segment, ctx)
+        _dry_run_file(path, segment, processor)
         return
 
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
-    job_id = ctx.db.create_job(path.name)
+    job_id = ctx.db.create_job(path.name, animal["id"])
     ctx.db.update_job_status(job_id, "processing")
 
     try:
-        result = _run_processor(path, segment, ctx)
+        result = _run_processor(path, segment, processor)
     except Exception as exc:
         ctx.db.update_job_status(job_id, "error", str(exc))
         print_error(f"Processing failed: {exc}")
@@ -89,7 +102,7 @@ def _ingest_file(
         return
 
     if not result.segments:
-        print_error("No meow segments detected.")
+        print_error("No sound segments detected.")
         ctx.db.delete_job(job_id)
         return
 
@@ -121,15 +134,15 @@ def _detect_mode(path: Path, segment: bool | None) -> tuple[bool, int]:
     audio = PydubSegment.from_file(str(path))
     duration_ms = len(audio)
     del audio
-    use_single = segment is False or (segment is None and duration_ms < _SINGLE_MEOW_THRESHOLD_MS)
+    use_single = segment is False or (segment is None and duration_ms < _SINGLE_SOUND_THRESHOLD_MS)
     return use_single, duration_ms
 
 
-def _run_processor(path: Path, segment: bool | None, ctx: Context) -> ProcessingResult:
+def _run_processor(path: Path, segment: bool | None, processor: SoundProcessor) -> ProcessingResult:
     use_single, _ = _detect_mode(path, segment)
 
     if use_single:
-        seg = ctx.processor.process_single(path, staging_dir=STAGING_DIR)
+        seg = processor.process_single(path, staging_dir=STAGING_DIR)
         return ProcessingResult(
             source_path=path,
             segments=[seg],
@@ -137,13 +150,13 @@ def _run_processor(path: Path, segment: bool | None, ctx: Context) -> Processing
             total_candidates=1,
             elapsed_seconds=0.0,
         )
-    return ctx.processor.process_file(path, staging_dir=STAGING_DIR)
+    return processor.process_file(path, staging_dir=STAGING_DIR)
 
 
-def _dry_run_file(path: Path, segment: bool | None, ctx: Context) -> None:
+def _dry_run_file(path: Path, segment: bool | None, processor: SoundProcessor) -> None:
     use_single, duration_ms = _detect_mode(path, segment)
 
-    mode = "single meow" if use_single else "multi-segment"
+    mode = "single sound" if use_single else "multi-segment"
     console.print(
         f"  [dim]dry-run:[/dim] {path.name} — {format_duration(duration_ms)} — mode: {mode}"
     )
@@ -203,7 +216,7 @@ def _print_summary(
 ) -> None:
     console.print()
     print_success(
-        f"{path.name}: {accepted_count} meow(s) added"
+        f"{path.name}: {accepted_count} sound(s) added"
         + (f", {rejected_count} rejected" if rejected_count else "")
     )
     if result.elapsed_seconds:
