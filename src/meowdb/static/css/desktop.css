@@ -49,13 +49,18 @@
     align-items: center;
     gap: var(--sp-3);
     padding: var(--sp-5);
+    font-family: inherit;
     font-size: var(--text-lg);
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--text-primary);
+    background: none;
+    border: none;
     border-bottom: 1px solid var(--border);
     margin-bottom: var(--sp-2);
-    pointer-events: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
   }
 
   .nav-brand-icon {
@@ -63,8 +68,12 @@
     line-height: 1;
   }
 
-  .nav-brand .app-version {
+  .nav-brand-info {
+    width: 16px;
+    height: 16px;
     margin-left: auto;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .nav-tab {
@@ -224,6 +233,10 @@
 
 /* Hover states: only for pointer (non-touch) devices */
 @media (min-width: 768px) and (hover: hover) {
+
+  .nav-brand:hover .nav-brand-info {
+    color: var(--text-primary);
+  }
 
   .nav-tab:hover {
     color: var(--text-primary);
