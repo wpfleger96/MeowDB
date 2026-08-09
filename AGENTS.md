@@ -24,13 +24,13 @@ just screenshots-post <pr> # Post screenshots to a PR comment (local.just)
 src/meowdb/
   config.py              # All paths from MEOWDB_DATA_DIR env var
   db.py                  # MeowDB: sqlite3 CRUD, job staging, stats
-  processor.py           # MeowProcessor: frequency-band segmentation pipeline
-  models.py              # Dataclasses (MeowSegment, ProcessingResult, ProcessorConfig)
+  processor.py           # SoundProcessor: frequency-band segmentation pipeline
+  models.py              # Dataclasses (SoundSegment, ProcessingResult, ProcessorConfig)
   api/
     app.py               # FastAPI factory, lifespan, static mount, SPA catch-all
     streaming.py          # Shared range-header streaming + safe_path containment
     models.py             # Pydantic request/response schemas
-    routers/{meows,ingest,audio,stats}.py
+    routers/{sounds,animals,photos,ingest,audio,stats,uniqueness}.py
   cli/
     commands/{ingest,serve,play,list,delete,stats}.py
   static/                # Vanilla JS + Alpine.js SPA (no build step)
@@ -63,7 +63,7 @@ ui/                       # Playwright E2E & screenshot tests (Node/TypeScript)
 ```python
 # ✅ Patch at every import site
 patch("meowdb.api.routers.audio.MP3_DIR", tmp_mp3)
-patch("meowdb.api.routers.meows.WAV_DIR", tmp_wav)
+patch("meowdb.api.routers.sounds.WAV_DIR", tmp_wav)
 
 # ❌ Only patching app.py — routers still use production paths
 patch("meowdb.api.app.MP3_DIR", tmp_mp3)
@@ -75,7 +75,7 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 
 **Archive format constants** -- `cli/archive.py` defines `MANIFEST_PATH`, `AUDIO_PREFIX`, `PHOTOS_PREFIX`, `FORMAT_VERSION`, and `SUPPORTED_FORMAT_VERSIONS`.
 
-**Staging dict** -- `MeowSegment.to_db_dict()` in `models.py` produces the 6-key dict used by both CLI ingest and the API clip-and-commit route.
+**Staging dict** -- `SoundSegment.to_db_dict()` in `models.py` produces the 6-key dict used by both CLI ingest and the API clip-and-commit route.
 
 **Chunked upload writer** -- `save_upload(file, dest, max_bytes, detail)` in `api/streaming.py` handles chunked streaming and raises 413 on overflow.
 
@@ -93,12 +93,12 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 ## Common Gotchas
 
 1. **numpy clip before multiply** -- `np.clip(arr, -1, 1)` THEN `* 32768` THEN cast int16. Reversed order causes silent overflow
-2. **FastAPI route order** -- `/meows/random` must register BEFORE `/{id}` or "random" matches as path param
+2. **FastAPI route order** -- `/sounds/random` must register BEFORE `/{id}` or "random" matches as path param
 3. **CORS port** -- `app.py` allows `:8000` only. Screenshot tests use `:8001` (same-origin, CORS irrelevant)
-4. **`x-if` vs `x-show`** -- play view uses `<template x-if="meowCount > 0">` which removes DOM elements entirely until condition is true. Don't wait for elements inside `x-if` until the async data has loaded
+4. **`x-if` vs `x-show`** -- play view uses `<template x-if="soundCount > 0 || isLoading">` which removes DOM elements entirely until condition is true. Don't wait for elements inside `x-if` until the async data has loaded
 5. **Upload size** -- capped at 500MB with chunked streaming. `await file.read()` is prohibited
 6. **`get_job` segments key** -- `GET /ingest/jobs/{id}` only includes `segments` when `status == "ready"`. Accessing `job["segments"]` before that raises `KeyError`
-7. **`MeowProcessor` is sync** -- always wrap in `run_in_threadpool` when calling from an async route; calling it directly blocks the event loop
+7. **`SoundProcessor` is sync** -- always wrap in `run_in_threadpool` when calling from an async route; calling it directly blocks the event loop
 8. **Playwright E2E setup** -- `just e2e` requires `npm ci` inside `ui/` first; `seed.py` raises `RuntimeError` if `MEOWDB_DATA_DIR` is not set
 
 ## Key Files by Task

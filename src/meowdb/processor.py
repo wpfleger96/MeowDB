@@ -12,10 +12,10 @@ from pydub import AudioSegment
 from pydub.silence import detect_leading_silence
 from scipy.signal import butter, sosfilt
 
-from meowdb.models import MeowSegment, ProcessingResult, ProcessorConfig
+from meowdb.models import ProcessingResult, ProcessorConfig, SoundSegment
 
 
-class MeowProcessor:
+class SoundProcessor:
     def __init__(self, config: ProcessorConfig | None = None) -> None:
         self.config = config or ProcessorConfig()
 
@@ -23,10 +23,10 @@ class MeowProcessor:
         start = time.monotonic()
 
         audio, samples, sr = self._load(path)
-        cat_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, low_band = self._build_discriminator_signals(samples, sr)
 
-        candidates = self._detect_segments(cat_band, sr)
-        classified = self._classify_segments(candidates, cat_band, low_band, sr)
+        candidates = self._detect_segments(species_band, sr)
+        classified = self._classify_segments(candidates, species_band, low_band, sr)
         padded = self._apply_padding(classified, len(samples), sr)
 
         rejected_count = len(candidates) - len(classified)
@@ -35,7 +35,7 @@ class MeowProcessor:
         output_dir = staging_dir or Path(f"/tmp/meowdb_{uuid.uuid4().hex}")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        segments: list[MeowSegment] = []
+        segments: list[SoundSegment] = []
         for i, (start_sample, end_sample, ratio) in enumerate(padded):
             start_ms = int(start_sample / sr * 1000)
             end_ms = int(end_sample / sr * 1000)
@@ -62,11 +62,11 @@ class MeowProcessor:
             elapsed_seconds=elapsed,
         )
 
-    def process_single(self, path: Path, staging_dir: Path | None = None) -> MeowSegment:
+    def process_single(self, path: Path, staging_dir: Path | None = None) -> SoundSegment:
         audio, samples, sr = self._load(path)
-        cat_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, low_band = self._build_discriminator_signals(samples, sr)
 
-        cat_rms = float(np.sqrt(np.mean(cat_band**2)))
+        cat_rms = float(np.sqrt(np.mean(species_band**2)))
         low_rms = float(np.sqrt(np.mean(low_band**2)))
         ratio = cat_rms / (low_rms + 1e-10)
 
@@ -80,13 +80,13 @@ class MeowProcessor:
         waveform = self._compute_waveform(processed)
 
         duration_ms = len(processed)
-        return MeowSegment(
+        return SoundSegment(
             index=0,
             source_path=path,
             start_ms=0,
             end_ms=duration_ms,
             duration_ms=duration_ms,
-            cat_energy_ratio=ratio,
+            species_energy_ratio=ratio,
             peak_dbfs=peak_dbfs,
             wav_path=wav_path,
             mp3_path=mp3_path,
@@ -95,23 +95,23 @@ class MeowProcessor:
 
     def detect_only(self, path: Path) -> list[tuple[int, int]]:
         audio, samples, sr = self._load(path)
-        cat_band, low_band = self._build_discriminator_signals(samples, sr)
-        candidates = self._detect_segments(cat_band, sr)
-        classified = self._classify_segments(candidates, cat_band, low_band, sr)
+        species_band, low_band = self._build_discriminator_signals(samples, sr)
+        candidates = self._detect_segments(species_band, sr)
+        classified = self._classify_segments(candidates, species_band, low_band, sr)
         padded = self._apply_padding(classified, len(samples), sr)
         return [(int(s / sr * 1000), int(e / sr * 1000)) for s, e, _ in padded]
 
     def process_clips(
         self, path: Path, regions: list[tuple[int, int]], staging_dir: Path
-    ) -> list[MeowSegment]:
+    ) -> list[SoundSegment]:
         audio, samples, sr = self._load(path)
-        cat_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, low_band = self._build_discriminator_signals(samples, sr)
         staging_dir.mkdir(parents=True, exist_ok=True)
-        segments: list[MeowSegment] = []
+        segments: list[SoundSegment] = []
         for i, (start_ms, end_ms) in enumerate(regions):
             start_sample = int(start_ms / 1000 * sr)
             end_sample = int(end_ms / 1000 * sr)
-            cat_rms = float(np.sqrt(np.mean(cat_band[start_sample:end_sample] ** 2)))
+            cat_rms = float(np.sqrt(np.mean(species_band[start_sample:end_sample] ** 2)))
             low_rms = float(np.sqrt(np.mean(low_band[start_sample:end_sample] ** 2)))
             ratio = cat_rms / (low_rms + 1e-10)
             slice_audio = audio[start_ms:end_ms]
@@ -139,20 +139,20 @@ class MeowProcessor:
         end_ms: int,
         staging_dir: Path,
         stem: str,
-        cat_energy_ratio: float,
+        species_energy_ratio: float,
         skip_processing: bool = False,
-    ) -> MeowSegment:
+    ) -> SoundSegment:
         processed = audio_slice if skip_processing else self._process_segment(audio_slice)
         peak_dbfs = max(float(processed.dBFS), -100.0)
         wav_path, mp3_path = self._export_segment(processed, staging_dir, stem)
         waveform = self._compute_waveform(processed)
-        return MeowSegment(
+        return SoundSegment(
             index=index,
             source_path=source_path,
             start_ms=start_ms,
             end_ms=end_ms,
             duration_ms=len(processed),
-            cat_energy_ratio=cat_energy_ratio,
+            species_energy_ratio=species_energy_ratio,
             peak_dbfs=peak_dbfs,
             wav_path=wav_path,
             mp3_path=mp3_path,
@@ -185,23 +185,23 @@ class MeowProcessor:
         self, samples: np.ndarray, sr: int
     ) -> tuple[np.ndarray, np.ndarray]:
         seg = self.config.segmentation
-        low_norm = seg.cat_band_low_hz / (sr / 2)
-        high_norm = seg.cat_band_high_hz / (sr / 2)
+        low_norm = seg.band_low_hz / (sr / 2)
+        high_norm = seg.band_high_hz / (sr / 2)
         sos_cat = butter(4, [low_norm, high_norm], btype="bandpass", output="sos")
-        cat_band = sosfilt(sos_cat, samples)
+        species_band = sosfilt(sos_cat, samples)
 
-        sos_low = butter(4, seg.cat_band_low_hz / (sr / 2), btype="lowpass", output="sos")
+        sos_low = butter(4, seg.band_low_hz / (sr / 2), btype="lowpass", output="sos")
         low_band = sosfilt(sos_low, samples)
 
-        return cat_band.astype(np.float32), low_band.astype(np.float32)
+        return species_band.astype(np.float32), low_band.astype(np.float32)
 
-    def _detect_segments(self, cat_band: np.ndarray, sr: int) -> list[tuple[int, int]]:
+    def _detect_segments(self, species_band: np.ndarray, sr: int) -> list[tuple[int, int]]:
         seg = self.config.segmentation
         frame_len = int(sr * 0.010)  # 10ms frames
         hop_len = int(sr * 0.005)  # 5ms hop
 
         # Short-time RMS via convolution over squared samples
-        squared = cat_band**2
+        squared = species_band**2
         window = np.ones(frame_len) / frame_len
         mean_sq = np.convolve(squared, window, mode="same")
         rms = np.sqrt(np.maximum(mean_sq, 0.0))
@@ -238,16 +238,16 @@ class MeowProcessor:
         in_segment = False
         seg_start = 0
         for fi, silent in enumerate(is_silent):
-            sample_pos = frame_indices[fi] if fi < len(frame_indices) else len(cat_band)
+            sample_pos = frame_indices[fi] if fi < len(frame_indices) else len(species_band)
             if not silent and not in_segment:
                 seg_start = int(sample_pos)
                 in_segment = True
             elif silent and in_segment:
-                seg_end = int(frame_indices[fi] if fi < len(frame_indices) else len(cat_band))
+                seg_end = int(frame_indices[fi] if fi < len(frame_indices) else len(species_band))
                 candidates.append((seg_start, seg_end))
                 in_segment = False
         if in_segment:
-            candidates.append((seg_start, len(cat_band)))
+            candidates.append((seg_start, len(species_band)))
 
         # Filter by duration
         min_samples = int(seg.min_segment_ms / 1000 * sr)
@@ -271,7 +271,7 @@ class MeowProcessor:
         seg = self.config.segmentation
         n_fft = 2048
         freq_bins = np.fft.rfftfreq(n_fft, 1.0 / sr)
-        mask = (freq_bins >= seg.cat_band_low_hz) & (freq_bins <= seg.cat_band_high_hz)
+        mask = (freq_bins >= seg.band_low_hz) & (freq_bins <= seg.band_high_hz)
         if not np.any(mask):
             return 0.0
         window = np.hanning(n_fft)
@@ -300,7 +300,7 @@ class MeowProcessor:
     def _classify_segments(
         self,
         candidates: list[tuple[int, int]],
-        cat_band: np.ndarray,
+        species_band: np.ndarray,
         low_band: np.ndarray,
         sr: int,
     ) -> list[tuple[int, int, float]]:
@@ -308,14 +308,14 @@ class MeowProcessor:
         win_samples = max(1, int(seg.peak_ratio_window_ms / 1000 * sr))
         result: list[tuple[int, int, float]] = []
         for s, e in candidates:
-            cat_slice = cat_band[s:e]
+            cat_slice = species_band[s:e]
             low_slice = low_band[s:e]
 
             # Test 1: whole-segment average ratio
             cat_rms = float(np.sqrt(np.mean(cat_slice**2)))
             low_rms = float(np.sqrt(np.mean(low_slice**2)))
             avg_ratio = cat_rms / (low_rms + 1e-10)
-            test1 = avg_ratio >= seg.min_cat_energy_ratio
+            test1 = avg_ratio >= seg.min_species_energy_ratio
 
             # Test 2: peak windowed ratio (rescues short meows diluted by surrounding noise)
             peak_ratio = 0.0

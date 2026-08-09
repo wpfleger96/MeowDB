@@ -7,11 +7,11 @@
 ────────────────────────────────────────────────────────── */
 
 const ROUTES = {
-  '/':        'play',
-  '/library': 'library',
-  '/photos':  'photos',
-  '/upload':  'ingest',
-  '/stats':   'stats',
+  '/':          'play',
+  '/library':   'library',
+  '/profiles':  'profiles',
+  '/upload':    'ingest',
+  '/stats':     'stats',
   '/algorithm': 'algorithm',
 };
 
@@ -198,7 +198,7 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('app', app);
   Alpine.data('playView', playView);
   Alpine.data('libraryView', libraryView);
-  Alpine.data('photosView', photosView);
+  Alpine.data('profilesView', profilesView);
   Alpine.data('ingestView', ingestView);
   Alpine.data('statsView', statsView);
   Alpine.data('algorithmView', algorithmView);
