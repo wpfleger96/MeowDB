@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.0](https://github.com/wpfleger96/MeowDB/compare/v0.9.1...v0.10.0) (2026-08-09)
+
+
+### Features
+
+* add multi-animal profiles with species-grouped sounds ([#93](https://github.com/wpfleger96/MeowDB/issues/93)) ([3e7b4e9](https://github.com/wpfleger96/MeowDB/commit/3e7b4e999599674075d3d2e6ff3c5279d436b032))
+
+
+### Chores
+
+* **deps:** Update python Docker tag to v3.14 ([#81](https://github.com/wpfleger96/MeowDB/issues/81)) ([543f0f8](https://github.com/wpfleger96/MeowDB/commit/543f0f8ed8e58e4bf18455f37ccb9b406c6c8607))
+
+
+### Documentation
+
+* document cross-repo deploy and S3 backup architecture in AGENTS.md ([#99](https://github.com/wpfleger96/MeowDB/issues/99)) ([55e8d36](https://github.com/wpfleger96/MeowDB/commit/55e8d36e2d6b2a0d0fcd4b7efd927deb3022c64e))
+
 ## [0.9.1](https://github.com/wpfleger96/MeowDB/compare/v0.9.0...v0.9.1) (2026-08-09)
 
 
