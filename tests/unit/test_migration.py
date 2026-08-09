@@ -494,3 +494,56 @@ def test_migration_no_ingest_tables_succeeds(tmp_path: Path) -> None:
         assert photos[0]["filename"] == "kitty.jpg"
     finally:
         db.close()
+
+
+@pytest.mark.unit
+def test_migration_succeeds_with_concurrent_reader(tmp_path: Path) -> None:
+    """Migration completes even when another connection holds an open read transaction.
+
+    Simulates a Litestream sidecar holding a permanent WAL read lock: the old
+    checkpoint-based backup raised RuntimeError here; the online backup API must not.
+    """
+    db_path = tmp_path / "test.sqlite"
+    ids = _build_v0_db(db_path, full_schema=False)
+
+    # MeowDB sets journal_mode=WAL in __init__, but switching modes requires
+    # exclusive access (no other readers). Switch to WAL now, before opening the
+    # long-lived reader, so the MeowDB constructor's PRAGMA is a no-op idempotent
+    # check rather than a mode change.
+    pre = sqlite3.connect(str(db_path))
+    pre.execute("PRAGMA journal_mode=WAL")
+    pre.close()
+
+    # Open a second connection that holds an uncommitted read transaction across
+    # the migration, simulating a long-lived WAL reader (e.g. Litestream).
+    reader = sqlite3.connect(str(db_path))
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM meows").fetchall()
+
+    db: MeowDB | None = None
+    try:
+        # Must not raise even with the concurrent reader holding a WAL read lock.
+        db = MeowDB(db_path)
+
+        # Migration produced the expected data.
+        animals = db.get_animals()
+        assert len(animals) == 1
+        assert animals[0]["name"] == "Squishy"
+
+        assert db.get_count() == 2
+        assert db.get_by_id(ids["meow1"]) is not None
+        assert db.get_by_id(ids["meow2"]) is not None
+    finally:
+        if db is not None:
+            db.close()
+        reader.close()
+
+    # The backup file exists and contains the original v0 rows.
+    backup_path = Path(str(db_path) + ".pre-v2-backup")
+    assert backup_path.exists()
+    backup_conn = sqlite3.connect(str(backup_path))
+    try:
+        rows = backup_conn.execute("SELECT id FROM meows").fetchall()
+        assert len(rows) == 2
+    finally:
+        backup_conn.close()

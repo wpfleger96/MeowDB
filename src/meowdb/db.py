@@ -102,6 +102,7 @@ class MeowDB:
         self._lock = threading.RLock()
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
 
         # Run migration check before CREATE TABLE IF NOT EXISTS.
         # FK enforcement is intentionally OFF during migration so we can freely
@@ -158,6 +159,11 @@ class MeowDB:
 
         Trigger: user_version == 0 AND table 'meows' exists.
         Idempotent: stamps user_version = 2 on success.
+
+        The pre-migration backup is written to ``{db_path}.pre-v2-backup`` using
+        SQLite's online backup API, which captures a consistent snapshot including
+        un-checkpointed WAL frames and is safe with concurrent long-lived readers
+        (e.g. Litestream).
         """
         user_ver = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if user_ver != 0:
@@ -169,21 +175,19 @@ class MeowDB:
         if meows_exists is None:
             return  # Fresh DB — no migration needed.
 
-        # Checkpoint WAL before backup (must be outside any transaction).
-        busy, _log, _checkpointed = self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-        if busy != 0:
-            raise RuntimeError(
-                f"WAL checkpoint busy before migration backup ({busy} writer(s) still active). "
-                "Close all other connections to this database and retry."
-            )
-
         backup_path = Path(str(self._db_path) + ".pre-v2-backup")
         if not backup_path.exists():
             tmp = backup_path.with_suffix(backup_path.suffix + ".tmp")
+            dest_conn: sqlite3.Connection | None = None
             try:
-                shutil.copy2(str(self._db_path), str(tmp))
+                dest_conn = sqlite3.connect(str(tmp))
+                self._conn.backup(dest_conn)
+                dest_conn.close()
+                dest_conn = None
                 tmp.rename(backup_path)
             finally:
+                if dest_conn is not None:
+                    dest_conn.close()
                 # No-op on success (tmp was renamed); cleans up a partial copy on failure.
                 tmp.unlink(missing_ok=True)
 
