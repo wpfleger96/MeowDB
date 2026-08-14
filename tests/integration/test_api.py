@@ -95,6 +95,7 @@ def seeded_client(tmp_dirs, silent_wav_bytes):
         patch("meowdb.api.routers.ingest.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.ingest.MP3_DIR", mp3_dir),
         patch("meowdb.api.routers.audio.MP3_DIR", mp3_dir),
+        patch("meowdb.api.routers.audio.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.sounds.WAV_DIR", wav_dir),
         patch("meowdb.api.routers.sounds.MP3_DIR", mp3_dir),
         patch("meowdb.api.app.SESSION_SECRET", "test-secret-key"),
@@ -322,6 +323,24 @@ def test_audio_stream_with_data(seeded_client):
     resp = seeded_client.get(f"/api/audio/{sound_id}")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "audio/mpeg"
+
+
+@pytest.mark.integration
+def test_audio_mp3_cache_control_is_immutable(seeded_client):
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+
+    resp = seeded_client.get(f"/api/audio/{sound_id}")
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.integration
+def test_audio_wav_cache_control_is_immutable(seeded_client):
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+
+    resp = seeded_client.get(f"/api/audio/{sound_id}/wav")
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 @pytest.mark.integration
