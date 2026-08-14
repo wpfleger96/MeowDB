@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.2](https://github.com/wpfleger96/MeowDB/compare/v0.10.1...v0.10.2) (2026-08-14)
+
+
+### Chores
+
+* **deps:** Lock file maintenance ([#103](https://github.com/wpfleger96/MeowDB/issues/103)) ([9b5eb9a](https://github.com/wpfleger96/MeowDB/commit/9b5eb9a3668a3b0aa83a97df7056a2f1ee55a97f))
+* **deps:** Lock file maintenance ([#104](https://github.com/wpfleger96/MeowDB/issues/104)) ([10f03b8](https://github.com/wpfleger96/MeowDB/commit/10f03b8f2fc05a55ccaaaef25f232888b13a3130))
+* **deps:** Lock file maintenance ([#105](https://github.com/wpfleger96/MeowDB/issues/105)) ([867d50f](https://github.com/wpfleger96/MeowDB/commit/867d50f0e5fb9d5b4785027be0edc28b921dad2e))
+* **deps:** Lock file maintenance ([#106](https://github.com/wpfleger96/MeowDB/issues/106)) ([ef3dc5e](https://github.com/wpfleger96/MeowDB/commit/ef3dc5ee3a26260576bc8b9b33fa2cbbc2343287))
+* sync Justfile ([f6f8675](https://github.com/wpfleger96/MeowDB/commit/f6f8675b8a2c0972993f987670cb91070bf93332))
+
+
+### Continuous Integration
+
+* sync CI workflow ([80f3182](https://github.com/wpfleger96/MeowDB/commit/80f3182b7997d40002301d72074ad6c819fcd375))
+
 ## [0.10.1](https://github.com/wpfleger96/MeowDB/compare/v0.10.0...v0.10.1) (2026-08-09)
 
 
