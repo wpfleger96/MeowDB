@@ -30,7 +30,9 @@ Prefix               Contents
 from __future__ import annotations
 
 import dataclasses
+import logging
 import threading
+import time
 
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -51,6 +53,8 @@ _S3_CHUNK_SIZE = 262144  # 256 KB — reduces per-chunk threadpool dispatches ~4
 
 _s3_client: S3Client | None = None
 _s3_lock = threading.Lock()
+
+_logger = logging.getLogger(__name__)
 
 
 class S3NotFoundError(Exception):
@@ -218,10 +222,12 @@ async def get_s3_object(key: str, range_spec: str | None = None) -> S3ObjectResp
         bucket = config.S3_BUCKET
         assert bucket is not None, "S3 not configured"
         try:
+            t0 = time.monotonic()
             if range_spec:
                 resp = client.get_object(Bucket=bucket, Key=key, Range=range_spec)
             else:
                 resp = client.get_object(Bucket=bucket, Key=key)
+            _logger.debug("S3 GET %s %.1fms (TTFB)", key, (time.monotonic() - t0) * 1000)
         except botocore.exceptions.ClientError as exc:
             if _is_not_found_error(exc):
                 raise S3NotFoundError(key) from exc
@@ -259,7 +265,9 @@ async def stream_s3_range(key: str, start: int, end: int) -> AsyncGenerator[byte
         client = get_s3_client()
         bucket = config.S3_BUCKET
         assert bucket is not None, "S3 not configured"
+        t0 = time.monotonic()
         resp = client.get_object(Bucket=bucket, Key=key, Range=f"bytes={start}-{end}")
+        _logger.debug("S3 GET %s %.1fms (TTFB)", key, (time.monotonic() - t0) * 1000)
         return resp["Body"]
 
     body = await run_in_threadpool(_get_body)

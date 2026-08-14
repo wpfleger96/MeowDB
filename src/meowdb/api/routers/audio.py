@@ -11,6 +11,10 @@ from meowdb.storage import is_s3_enabled, is_s3_key, mp3_key, wav_key
 
 router = APIRouter()
 
+# Audio objects are write-once and UUID-keyed: a given URL always resolves to
+# the same bytes, so a 1-year immutable lifetime is safe for browsers and CDN.
+_IMMUTABLE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
+
 
 @router.get("/audio/{meow_id}/wav")
 async def stream_wav_audio(meow_id: str, request: Request) -> StreamingResponse:
@@ -24,7 +28,9 @@ async def stream_wav_audio(meow_id: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="WAV file not available")
 
     if is_s3_enabled() and is_s3_key(wav_path_str):
-        return await stream_s3_object(wav_key(meow_id), request, "audio/wav")
+        return await stream_s3_object(
+            wav_key(meow_id), request, "audio/wav", extra_headers=_IMMUTABLE_CACHE_HEADERS
+        )
 
     path = Path(wav_path_str)
     if not path.exists():
@@ -35,7 +41,7 @@ async def stream_wav_audio(meow_id: str, request: Request) -> StreamingResponse:
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied") from None
 
-    return stream_file(path, request, "audio/wav")
+    return stream_file(path, request, "audio/wav", extra_headers=_IMMUTABLE_CACHE_HEADERS)
 
 
 @router.get("/audio/{meow_id}")
@@ -50,7 +56,9 @@ async def stream_audio(meow_id: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Audio file not available")
 
     if is_s3_enabled() and is_s3_key(mp3_path_str):
-        return await stream_s3_object(mp3_key(meow_id), request, "audio/mpeg")
+        return await stream_s3_object(
+            mp3_key(meow_id), request, "audio/mpeg", extra_headers=_IMMUTABLE_CACHE_HEADERS
+        )
 
     path = Path(mp3_path_str)
     if not path.exists():
@@ -61,4 +69,4 @@ async def stream_audio(meow_id: str, request: Request) -> StreamingResponse:
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied") from None
 
-    return stream_file(path, request, "audio/mpeg")
+    return stream_file(path, request, "audio/mpeg", extra_headers=_IMMUTABLE_CACHE_HEADERS)
