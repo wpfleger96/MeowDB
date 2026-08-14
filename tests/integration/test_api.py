@@ -313,6 +313,7 @@ def test_spa_catch_all(client):
 def test_audio_stream_not_found(client):
     resp = client.get("/api/audio/nonexistent-id")
     assert resp.status_code == 404
+    assert "cache-control" not in resp.headers
 
 
 @pytest.mark.integration
@@ -323,6 +324,15 @@ def test_audio_stream_with_data(seeded_client):
     resp = seeded_client.get(f"/api/audio/{sound_id}")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "audio/mpeg"
+
+
+@pytest.mark.integration
+def test_audio_wav_stream_with_data(seeded_client):
+    sound_id = seeded_client.get("/api/sounds").json()["items"][0]["id"]
+
+    resp = seeded_client.get(f"/api/audio/{sound_id}/wav")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "audio/wav"
 
 
 @pytest.mark.integration

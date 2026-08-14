@@ -72,6 +72,38 @@ def test_audio_serve_wav_from_s3(s3_api_client):
 
 
 @pytest.mark.integration
+def test_audio_mp3_cache_control_is_immutable_from_s3(s3_api_client):
+    """S3-served MP3 responses carry the immutable Cache-Control header."""
+    tc, app, s3 = s3_api_client
+    animal_id = app.state.db.get_animals()[0]["id"]
+
+    content = b"fake-mp3-data" * 50
+    sound_id = app.state.db.add(_s3_sound_row(animal_id))
+    s3.put_object(Bucket=_BUCKET, Key=mp3_key(sound_id), Body=content)
+
+    resp = tc.get(f"/api/audio/{sound_id}")
+
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.integration
+def test_audio_wav_cache_control_is_immutable_from_s3(s3_api_client):
+    """S3-served WAV responses carry the immutable Cache-Control header."""
+    tc, app, s3 = s3_api_client
+    animal_id = app.state.db.get_animals()[0]["id"]
+
+    content = b"fake-wav-data" * 30
+    sound_id = app.state.db.add(_s3_sound_row(animal_id))
+    s3.put_object(Bucket=_BUCKET, Key=wav_key(sound_id), Body=content)
+
+    resp = tc.get(f"/api/audio/{sound_id}/wav")
+
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.integration
 def test_audio_serve_range_returns_206_with_correct_slice(s3_api_client):
     tc, app, s3 = s3_api_client
     animal_id = app.state.db.get_animals()[0]["id"]
