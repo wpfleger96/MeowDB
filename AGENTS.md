@@ -26,6 +26,7 @@ src/meowdb/
   db.py                  # MeowDB: sqlite3 CRUD, job staging, stats
   processor.py           # SoundProcessor: frequency-band segmentation pipeline
   models.py              # Dataclasses (SoundSegment, ProcessingResult, ProcessorConfig)
+  species.py             # SPECIES_REGISTRY: per-species detection/fingerprint bands
   api/
     app.py               # FastAPI factory, lifespan, static mount, SPA catch-all
     streaming.py          # Shared range-header streaming + safe_path containment
@@ -77,13 +78,15 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 
 **Staging dict** -- `SoundSegment.to_db_dict()` in `models.py` produces the 6-key dict used by both CLI ingest and the API clip-and-commit route.
 
-**Audio pipeline classifier profiles** -- `SegmentationConfig.classifier` selects `"tonal"` (cat, default) or `"canine"` (dog); per-species overrides live in `SPECIES_REGISTRY` (`species.py`), where the dog's fingerprint band (60–3500 Hz) intentionally differs from its detection band (150–3500 Hz).
+**Audio pipeline classifier profiles** -- `SegmentationConfig.classifier` selects `"feline"` (cat, default) or `"canine"` (dog); per-species overrides live in `SPECIES_REGISTRY` (`species.py`), where the dog's fingerprint band (60–3500 Hz) intentionally differs from its detection band (150–3500 Hz). Canine-only knobs live in the nested `SegmentationConfig.canine` (`CanineConfig`), not as flat fields.
+
+**Config models forbid unknown keys** -- `SegmentationConfig` and `CanineConfig` use `extra="forbid"`, so a typoed species override raises at `processor_config_for_species()` instead of silently falling back to cat defaults. Registry override dicts are `MappingProxyType` — the `Mapping` annotation on a frozen dataclass must not hand out a mutable dict.
 
 **Chunked upload writer** -- `save_upload(file, dest, max_bytes, detail)` in `api/streaming.py` handles chunked streaming and raises 413 on overflow.
 
 ## Testing
 
-- `just test` runs unit + integration (176 passed, 71% coverage)
+- `just test` runs unit + integration (354 passed, 78% coverage)
 - `uv run pytest tests/unit/test_db.py` runs a single file
 - Processor tests skip without ffmpeg: `@pytest.mark.skipif(shutil.which("ffmpeg") is None)`
 - E2e tests skip without local audio files
@@ -110,7 +113,7 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 | Add API endpoint | `api/routers/*.py`, `api/models.py`, `tests/integration/test_api.py` |
 | Add CLI command | `cli/commands/*.py`, `cli/__init__.py`, `tests/integration/test_cli.py` |
 | Change DB schema | `db.py` (CREATE TABLE in __init__), `tests/unit/test_db.py` |
-| Modify audio pipeline | `processor.py`, `models.py`, `tests/unit/test_processor.py` |
+| Modify audio pipeline | `processor.py`, `models.py`, `species.py`, `tests/unit/test_processor.py` |
 | Frontend changes | `static/js/views/*.js`, `static/index.html`, `static/css/views.css` |
 | Add E2E view test | `ui/views.spec.ts`, `ui/seed.py` (if new data needed) |
 | Config/paths | `config.py` (single source), patch all import sites in tests |

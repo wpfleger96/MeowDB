@@ -14,19 +14,25 @@ from scipy.signal import butter, sosfilt
 
 from meowdb.models import ProcessingResult, ProcessorConfig, SoundSegment
 
+# Envelope framing shared by the VAD and the canine rise-time test
+_FRAME_MS = 10.0
+_HOP_MS = 5.0
+
 
 class SoundProcessor:
     def __init__(self, config: ProcessorConfig | None = None) -> None:
         self.config = config or ProcessorConfig()
+        # Native rate of the last loaded file, before resampling to 44100
+        self._source_frame_rate: float | None = None
 
     def process_file(self, path: Path, staging_dir: Path | None = None) -> ProcessingResult:
         start = time.monotonic()
 
         audio, samples, sr = self._load(path)
-        species_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, reference_band = self._build_discriminator_signals(samples, sr)
 
         candidates = self._detect_segments(species_band, sr)
-        classified = self._classify_segments(candidates, species_band, low_band, sr)
+        classified = self._classify_segments(candidates, species_band, reference_band, sr)
         padded = self._apply_padding(classified, len(samples), sr)
 
         rejected_count = len(candidates) - len(classified)
@@ -64,11 +70,9 @@ class SoundProcessor:
 
     def process_single(self, path: Path, staging_dir: Path | None = None) -> SoundSegment:
         audio, samples, sr = self._load(path)
-        species_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, reference_band = self._build_discriminator_signals(samples, sr)
 
-        cat_rms = float(np.sqrt(np.mean(species_band**2)))
-        low_rms = float(np.sqrt(np.mean(low_band**2)))
-        ratio = cat_rms / (low_rms + 1e-10)
+        ratio = self._band_ratio(species_band, reference_band)
 
         processed = self._process_segment(audio)
         peak_dbfs = max(float(processed.dBFS), -100.0)
@@ -95,9 +99,9 @@ class SoundProcessor:
 
     def detect_only(self, path: Path) -> list[tuple[int, int]]:
         audio, samples, sr = self._load(path)
-        species_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, reference_band = self._build_discriminator_signals(samples, sr)
         candidates = self._detect_segments(species_band, sr)
-        classified = self._classify_segments(candidates, species_band, low_band, sr)
+        classified = self._classify_segments(candidates, species_band, reference_band, sr)
         padded = self._apply_padding(classified, len(samples), sr)
         return [(int(s / sr * 1000), int(e / sr * 1000)) for s, e, _ in padded]
 
@@ -105,15 +109,16 @@ class SoundProcessor:
         self, path: Path, regions: list[tuple[int, int]], staging_dir: Path
     ) -> list[SoundSegment]:
         audio, samples, sr = self._load(path)
-        species_band, low_band = self._build_discriminator_signals(samples, sr)
+        species_band, reference_band = self._build_discriminator_signals(samples, sr)
         staging_dir.mkdir(parents=True, exist_ok=True)
         segments: list[SoundSegment] = []
         for i, (start_ms, end_ms) in enumerate(regions):
             start_sample = int(start_ms / 1000 * sr)
             end_sample = int(end_ms / 1000 * sr)
-            cat_rms = float(np.sqrt(np.mean(species_band[start_sample:end_sample] ** 2)))
-            low_rms = float(np.sqrt(np.mean(low_band[start_sample:end_sample] ** 2)))
-            ratio = cat_rms / (low_rms + 1e-10)
+            ratio = self._band_ratio(
+                species_band[start_sample:end_sample],
+                reference_band[start_sample:end_sample],
+            )
             slice_audio = audio[start_ms:end_ms]
             segments.append(
                 self._build_segment(
@@ -162,9 +167,19 @@ class SoundProcessor:
     def _load(self, path: Path) -> tuple[AudioSegment, np.ndarray, int]:
         audio = AudioSegment.from_file(str(path))
         audio = audio.set_channels(1)
+        # Resampling to 44100 cannot invent bandwidth the source never had, so the
+        # native rate is what the highpass reference band must be judged against
+        self._source_frame_rate = float(audio.frame_rate)
         audio = audio.set_frame_rate(44100)
         samples = self._audio_to_numpy(audio)
         return audio, samples, audio.frame_rate
+
+    @staticmethod
+    def _band_ratio(species: np.ndarray, reference: np.ndarray) -> float:
+        """RMS of the species band over the reference band (epsilon-guarded)."""
+        species_rms = float(np.sqrt(np.mean(species**2)))
+        reference_rms = float(np.sqrt(np.mean(reference**2)))
+        return species_rms / (reference_rms + 1e-10)
 
     def _audio_to_numpy(self, audio: AudioSegment) -> np.ndarray:
         raw = np.frombuffer(audio.raw_data, dtype=np.int16)
@@ -194,10 +209,28 @@ class SoundProcessor:
         # highpass above it (dog: broadband non-vocal energy)
         default_cutoff = seg.band_low_hz if seg.reference_mode == "lowpass" else seg.band_high_hz
         cutoff = seg.reference_cutoff_hz if seg.reference_cutoff_hz is not None else default_cutoff
+        if seg.reference_mode == "highpass":
+            self._require_reference_bandwidth(cutoff)
         sos_ref = butter(4, cutoff / (sr / 2), btype=seg.reference_mode, output="sos")
         reference_band = sosfilt(sos_ref, samples)
 
         return species_band.astype(np.float32), reference_band.astype(np.float32)
+
+    def _require_reference_bandwidth(self, cutoff_hz: float) -> None:
+        """Reject sources too narrowband for the highpass reference to mean anything.
+
+        A source recorded below ~13kHz carries no energy above the highpass cutoff, so
+        its reference RMS is numerically zero and the dominance gate passes any sound.
+        2kHz is the minimum usable reference bandwidth (16kHz sources still gate).
+        """
+        rate = self._source_frame_rate
+        if rate is None:  # direct call without _load — nothing to judge
+            return
+        if rate / 2 < cutoff_hz + 2000.0:
+            raise ValueError(
+                f"source sample rate {rate:g} Hz is too low for reliable dog detection; "
+                "record at 16 kHz or higher"
+            )
 
     def _segment_envelope_db(self, samples: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray]:
         """Short-time RMS envelope in dBFS: 10ms frames on a 5ms hop.
@@ -205,21 +238,21 @@ class SoundProcessor:
         Returns (frame_dbfs, frame_indices) where frame_indices maps each frame
         back to its sample position.
         """
-        frame_len = int(sr * 0.010)  # 10ms frames
-        hop_len = int(sr * 0.005)  # 5ms hop
+        frame_len = int(sr * _FRAME_MS / 1000.0)
+        hop_len = int(sr * _HOP_MS / 1000.0)
 
-        # Short-time RMS via convolution over squared samples
+        # Short-time mean square via convolution. float32 window keeps the full-length
+        # transients out of float64 (a 10-min file would allocate ~740MB otherwise).
         squared = samples**2
-        window = np.ones(frame_len) / frame_len
+        window = np.ones(frame_len, dtype=np.float32) / frame_len
         mean_sq = np.convolve(squared, window, mode="same")
-        rms = np.sqrt(np.maximum(mean_sq, 0.0))
+
+        # Downsample first: sqrt/log10 then run over frames, not every sample
+        frame_indices = np.arange(0, len(mean_sq), hop_len)
+        framed = np.sqrt(np.maximum(mean_sq[frame_indices], 0.0))
 
         epsilon = 1e-10
-        dbfs = 20.0 * np.log10(rms + epsilon)
-
-        # Downsample to one value per hop
-        frame_indices = np.arange(0, len(dbfs), hop_len)
-        return dbfs[frame_indices], frame_indices
+        return 20.0 * np.log10(framed + epsilon), frame_indices
 
     def _detect_segments(self, species_band: np.ndarray, sr: int) -> list[tuple[int, int]]:
         seg = self.config.segmentation
@@ -229,7 +262,7 @@ class SoundProcessor:
         is_silent = frame_dbfs < threshold
 
         # Merge silence gaps shorter than min_silence_ms
-        min_silence_frames = int(seg.min_silence_ms / 5)  # 5ms per frame
+        min_silence_frames = int(seg.min_silence_ms / _HOP_MS)
         i = 0
         while i < len(is_silent):
             if not is_silent[i]:
@@ -261,10 +294,53 @@ class SoundProcessor:
         if in_segment:
             candidates.append((seg_start, len(species_band)))
 
-        # Filter by duration
+        # Split what is too long, drop what is too short
         min_samples = int(seg.min_segment_ms / 1000 * sr)
         max_samples = int(seg.max_segment_ms / 1000 * sr)
-        return [(s, e) for s, e in candidates if min_samples <= (e - s) <= max_samples]
+        sized: list[tuple[int, int]] = []
+        for s, e in candidates:
+            sized.extend(
+                self._split_to_max(s, e, frame_dbfs, frame_indices, min_samples, max_samples)
+            )
+        return [(s, e) for s, e in sized if (e - s) >= min_samples]
+
+    def _split_to_max(
+        self,
+        start: int,
+        end: int,
+        frame_dbfs: np.ndarray,
+        frame_indices: np.ndarray,
+        min_samples: int,
+        max_samples: int,
+    ) -> list[tuple[int, int]]:
+        """Cut an over-long candidate at its quietest interior frame until every piece fits.
+
+        A continuous bark volley or howl bout merges into one run that can exceed
+        max_segment_ms; dropping it outright loses the whole recording, so it is split
+        at the least-energetic moment instead. The cut is confined to the central half:
+        margins of only min_samples let each cut land in the same leading silence gap as
+        the last one, peeling a 90-bark volley into one sliver per bark instead of
+        halving it. Margins never fall below min_samples, so no sub-minimum fragments.
+        """
+        pieces: list[tuple[int, int]] = []
+        pending = [(start, end)]
+        while pending:
+            s, e = pending.pop()
+            if (e - s) <= max_samples:
+                pieces.append((s, e))
+                continue
+            margin = max(min_samples, (e - s) // 4, 1)
+            interior = np.flatnonzero((frame_indices >= s + margin) & (frame_indices <= e - margin))
+            if len(interior) == 0:
+                split = (s + e) // 2
+            else:
+                split = int(frame_indices[interior[np.argmin(frame_dbfs[interior])]])
+            if not s < split < e:  # nothing left to cut
+                pieces.append((s, e))
+                continue
+            pending.extend([(s, split), (split, e)])
+        pieces.sort()
+        return pieces
 
     def _compute_adaptive_threshold(self, frame_dbfs: np.ndarray) -> float:
         seg = self.config.segmentation
@@ -292,7 +368,7 @@ class SoundProcessor:
             spectrum = np.abs(np.fft.rfft(samples[start : start + n_fft] * window)) ** 2
             band = np.maximum(spectrum[mask], 1e-20)
             arith_mean = float(np.mean(band))
-            if arith_mean < 1e-20:
+            if arith_mean < 1e-18:
                 continue
             geo_mean = float(np.exp(np.mean(np.log(band))))
             flatnesses.append(float(np.clip(geo_mean / arith_mean, 0.0, 1.0)))
@@ -303,7 +379,7 @@ class SoundProcessor:
             spectrum = np.abs(np.fft.rfft(windowed, n=n_fft)) ** 2
             band = np.maximum(spectrum[mask], 1e-20)
             arith_mean = float(np.mean(band))
-            if arith_mean < 1e-20:
+            if arith_mean < 1e-18:
                 return 0.0
             geo_mean = float(np.exp(np.mean(np.log(band))))
             return float(np.clip(geo_mean / arith_mean, 0.0, 1.0))
@@ -312,34 +388,41 @@ class SoundProcessor:
     def _rise_time_ms(self, samples: np.ndarray, sr: int) -> float:
         """Attack time: ms from the last frame at/below peak-20dB up to the envelope peak.
 
-        Barks peak within 5-20ms; speech vowels build over 50-150ms. A segment that
-        starts already loud (no frame below peak-20dB) measures from its first frame.
+        Barks peak within 5-20ms; speech vowels build over 50-150ms. A segment with no
+        frame 20dB below its peak has no measurable attack at all — stationary noise
+        looks that way — so it returns infinity and fails the impulsive test closed.
         """
         frame_dbfs, _ = self._segment_envelope_db(samples, sr)
         if len(frame_dbfs) == 0:
-            return 0.0
+            return float("inf")
         peak_idx = int(np.argmax(frame_dbfs))
         quiet = np.nonzero(frame_dbfs[: peak_idx + 1] <= frame_dbfs[peak_idx] - 20.0)[0]
-        start_idx = int(quiet[-1]) if len(quiet) > 0 else 0
-        return (peak_idx - start_idx) * 5.0  # 5ms per hop
+        if len(quiet) == 0:
+            return float("inf")
+        return (peak_idx - int(quiet[-1])) * _HOP_MS
 
     def _harmonicity(self, samples: np.ndarray, sr: int) -> tuple[float, float, float]:
         """Windowed autocorrelation pitch analysis for the tonal (howl/whine) branch.
 
         Per 2048-sample Hann window (hop 1024), computes the FFT-based normalized
-        autocorrelation r[tau]/r[0] and searches tau for F0 between 150Hz and
-        max_tonal_f0_hz. The search floor sits below min_tonal_f0_hz on purpose: a
-        low-pitched voice must measure its true (too-low) F0 rather than alias to a
-        passing harmonic. A frame is voiced when its peak is >= 0.4.
+        autocorrelation r[tau]/r[0] and searches tau for F0 between f0_search_floor_hz
+        and max_tonal_f0_hz. The floor sits far below min_tonal_f0_hz on purpose: a
+        low-pitched voice must measure its true (too-low) F0 rather than lock the
+        half-period peak and report 2xF0 as a howl.
 
         Returns (voiced_fraction, mean voiced harmonicity, median voiced F0 in Hz);
         all zeros when nothing is voiced.
         """
-        seg = self.config.segmentation
+        can = self.config.segmentation.canine
         n_fft = 2048
         hop = 1024
-        tau_min = max(1, int(sr / seg.max_tonal_f0_hz))
-        tau_max = int(round(sr / 150.0))
+        tau_min = max(1, int(sr / can.max_tonal_f0_hz))
+        tau_max = int(round(sr / can.f0_search_floor_hz))
+        if tau_min > tau_max:
+            raise ValueError(
+                f"f0_search_floor_hz ({can.f0_search_floor_hz:g}) must be below "
+                f"max_tonal_f0_hz ({can.max_tonal_f0_hz:g})"
+            )
         if len(samples) < n_fft:
             return 0.0, 0.0, 0.0
         window = np.hanning(n_fft)
@@ -367,9 +450,9 @@ class SoundProcessor:
                 continue
             peak_tau = int(peak_taus[np.argmax(normalized[peak_taus])])
             peak = float(normalized[peak_tau])
-            if peak >= 0.4:
+            if peak >= can.voiced_peak_threshold:
                 voiced_peaks.append(peak)
-                voiced_f0s.append(sr / peak_tau)
+                voiced_f0s.append(sr / self._refine_tau(normalized, peak_tau))
         if n_frames == 0 or not voiced_peaks:
             return 0.0, 0.0, 0.0
         return (
@@ -377,6 +460,22 @@ class SoundProcessor:
             float(np.mean(voiced_peaks)),
             float(np.median(voiced_f0s)),
         )
+
+    @staticmethod
+    def _refine_tau(normalized: np.ndarray, tau: int) -> float:
+        """Sub-sample lag of an autocorrelation peak via 3-point parabolic interpolation.
+
+        Integer lags quantize F0 coarsely enough to straddle min_tonal_f0_hz (tau 176
+        and 177 measure 250.6Hz and 249.2Hz), so the vertex is interpolated instead.
+        """
+        if tau <= 0 or tau >= len(normalized) - 1:
+            return float(tau)
+        left, center, right = (float(v) for v in normalized[tau - 1 : tau + 2])
+        denom = left - 2.0 * center + right
+        if denom == 0.0:
+            return float(tau)
+        offset = 0.5 * (left - right) / denom
+        return tau + offset if abs(offset) <= 1.0 else float(tau)
 
     def _classify_segments(
         self,
@@ -387,7 +486,7 @@ class SoundProcessor:
     ) -> list[tuple[int, int, float]]:
         if self.config.segmentation.classifier == "canine":
             return self._classify_canine(candidates, species_band, reference_band, sr)
-        return self._classify_tonal(candidates, species_band, reference_band, sr)
+        return self._classify_feline(candidates, species_band, reference_band, sr)
 
     def _classify_canine(
         self,
@@ -404,26 +503,31 @@ class SoundProcessor:
         broadband non-vocal sound; Branch A accepts impulsive broadband barks; Branch B
         accepts sustained tonal howls/whines with a pitch floor above adult speech F0.
         """
-        seg = self.config.segmentation
+        can = self.config.segmentation.canine
+        # The VAD cuts a candidate at the moment energy crossed the threshold, which is
+        # already partway up a bark's attack. Rise time is measured with that much lead
+        # restored, or a cropped impulse looks like it has no attack at all.
+        attack_lead = int(can.max_attack_ms / 1000 * sr)
         result: list[tuple[int, int, float]] = []
         for s, e in candidates:
             species_slice = species_band[s:e]
             reference_slice = reference_band[s:e]
 
-            # Gate G: in-band dominance (stored as species_energy_ratio)
-            species_rms = float(np.sqrt(np.mean(species_slice**2)))
-            reference_rms = float(np.sqrt(np.mean(reference_slice**2)))
-            dominance = species_rms / (reference_rms + 1e-10)
-            if dominance < seg.min_band_dominance_ratio:
+            # Gate G: in-band dominance (stored as species_energy_ratio). Phrased so a
+            # NaN ratio fails closed rather than sliding past a "<" comparison.
+            dominance = self._band_ratio(species_slice, reference_slice)
+            if not (dominance >= can.min_band_dominance_ratio):
                 continue
 
             flatness = self._spectral_flatness(species_slice, sr)
 
-            # Branch A: impulsive bark — fast attack AND broadband spectrum
-            # (a stressed vowel can attack fast but is never broadband)
+            # Branch A: impulsive bark — broadband spectrum AND fast attack
+            # (a stressed vowel can attack fast but is never broadband). Flatness is
+            # already computed; rise time convolves the whole slice, so it goes last.
             impulsive = (
-                self._rise_time_ms(species_slice, sr) <= seg.max_attack_ms
-                and flatness >= seg.min_impulsive_flatness
+                flatness >= can.min_impulsive_flatness
+                and self._rise_time_ms(species_band[max(0, s - attack_lead) : e], sr)
+                <= can.max_attack_ms
             )
 
             # Branch B: tonal sustained howl/whine — cheap tests first, pitch last
@@ -431,59 +535,58 @@ class SoundProcessor:
             duration_ms = (e - s) / sr * 1000.0
             if (
                 not impulsive
-                and flatness <= seg.max_tonal_flatness
-                and duration_ms >= seg.min_tonal_ms
+                and duration_ms >= can.min_tonal_ms
+                and flatness <= can.max_tonal_flatness
             ):
                 voiced_fraction, harmonicity, f0_hz = self._harmonicity(species_slice, sr)
                 tonal = (
-                    voiced_fraction >= seg.min_voiced_fraction
-                    and harmonicity >= seg.min_harmonicity
-                    and f0_hz >= seg.min_tonal_f0_hz
+                    voiced_fraction >= can.min_voiced_fraction
+                    and harmonicity >= can.min_harmonicity
+                    and f0_hz >= can.min_tonal_f0_hz
                 )
 
             if impulsive or tonal:
                 result.append((s, e, dominance))
         return result
 
-    def _classify_tonal(
+    def _classify_feline(
         self,
         candidates: list[tuple[int, int]],
         species_band: np.ndarray,
-        low_band: np.ndarray,
+        reference_band: np.ndarray,
         sr: int,
     ) -> list[tuple[int, int, float]]:
         seg = self.config.segmentation
         win_samples = max(1, int(seg.peak_ratio_window_ms / 1000 * sr))
         result: list[tuple[int, int, float]] = []
         for s, e in candidates:
-            cat_slice = species_band[s:e]
-            low_slice = low_band[s:e]
+            species_slice = species_band[s:e]
+            reference_slice = reference_band[s:e]
 
             # Test 1: whole-segment average ratio
-            cat_rms = float(np.sqrt(np.mean(cat_slice**2)))
-            low_rms = float(np.sqrt(np.mean(low_slice**2)))
-            avg_ratio = cat_rms / (low_rms + 1e-10)
+            avg_ratio = self._band_ratio(species_slice, reference_slice)
             test1 = avg_ratio >= seg.min_species_energy_ratio
 
             # Test 2: peak windowed ratio (rescues short meows diluted by surrounding noise)
             peak_ratio = 0.0
             hop = max(1, win_samples // 2)
             n_wins = (
-                max(1, (len(cat_slice) - win_samples) // hop + 1)
-                if len(cat_slice) >= win_samples
+                max(1, (len(species_slice) - win_samples) // hop + 1)
+                if len(species_slice) >= win_samples
                 else 1
             )
             for wi in range(n_wins):
                 ws = wi * hop
-                we = min(ws + win_samples, len(cat_slice))
-                w_cat = float(np.sqrt(np.mean(cat_slice[ws:we] ** 2)))
-                w_low = float(np.sqrt(np.mean(low_slice[ws:we] ** 2)))
-                peak_ratio = max(peak_ratio, w_cat / (w_low + 1e-10))
+                we = min(ws + win_samples, len(species_slice))
+                peak_ratio = max(
+                    peak_ratio,
+                    self._band_ratio(species_slice[ws:we], reference_slice[ws:we]),
+                )
             test2 = peak_ratio >= seg.min_peak_ratio
 
             # Test 3: spectral flatness (meows are tonal; rejects broadband noise)
             if seg.use_spectral_classifier:
-                test3 = self._spectral_flatness(cat_slice, sr) <= seg.max_spectral_flatness
+                test3 = self._spectral_flatness(species_slice, sr) <= seg.max_spectral_flatness
             else:
                 test3 = True
 

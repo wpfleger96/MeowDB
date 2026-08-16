@@ -9,31 +9,31 @@ Detection is species-specific: the user picks the animal, and the detector finds
 
 ---
 
-# Part 1 — Segment Detection
+## Part 1 — Segment Detection
 
-Detection runs a shared energy-based voice-activity pipeline followed by a species-specific classifier: the **tonal** profile (cats) and the **canine** profile (dogs). All stages operate on audio resampled to 44,100 Hz mono, normalized to [−1, 1].
+Detection runs a shared energy-based voice-activity pipeline followed by a species-specific classifier: the **feline** profile (cats) and the **canine** profile (dogs). All stages operate on audio resampled to 44,100 Hz mono, normalized to [−1, 1].
 
-**Pipeline summary:** audio → Butterworth band filters → framewise RMS dB envelope → adaptive threshold → gap fill → duration filter → species classifier → padding/merge.
+**Pipeline summary:** audio → Butterworth band filters → framewise RMS dB envelope → adaptive threshold → gap fill → split/duration filter → species classifier → padding/merge.
 
-## 1. Shared Segmentation Pipeline
+### 1.1 Shared Segmentation Pipeline
 
-### 1.1 Band Filtering
+#### 1.1.1 Band Filtering
 
 Two 4th-order Butterworth filters produce the signals every later stage consumes. The **detection band** isolates the species' vocal energy; the **reference band** captures complementary energy for the classifier's ratio tests:
 
 $$x_\text{det} = \text{bandpass}(x,\ f_\text{low},\ f_\text{high}) \qquad x_\text{ref} = \begin{cases} \text{lowpass}(x,\ 250\ \text{Hz}) & \text{cat} \\[4pt] \text{highpass}(x,\ 4500\ \text{Hz}) & \text{dog} \end{cases}$$
 
-The detection band is 250–8000 Hz for cats and 150–3500 Hz for dogs. Why the reference band points in opposite directions for the two species is the subject of §2 and §3.
+The detection band is 250–8000 Hz for cats and 150–3500 Hz for dogs. Why the reference band points in opposite directions for the two species is the subject of §1.2 and §1.3.
 
-### 1.2 RMS Energy Envelope
+#### 1.1.2 RMS Energy Envelope
 
 Voice activity is measured on a framewise RMS envelope of the detection band, using **10 ms frames** and a **5 ms hop**. The squared signal is convolved with a 10 ms boxcar, square-rooted, converted to dB, and sampled at the hop rate:
 
 $$\text{rms}[n] = \sqrt{\frac{1}{W}\sum_{|m| \leq W/2} x_\text{det}[n+m]^2}, \qquad L[n] = 20 \log_{10}\!\left(\text{rms}[n] + 10^{-10}\right)$$
 
-where $W$ is 10 ms of samples (441 at 44.1 kHz), centered on sample $n$. The same envelope is reused by the canine classifier's rise-time test (§3.5), so both stages see identical energy contours.
+where $W$ is 10 ms of samples (441 at 44.1 kHz), centered on sample $n$. The same envelope is reused by the canine classifier's rise-time test (§1.3.5), so both stages see identical energy contours.
 
-### 1.3 Adaptive Threshold
+#### 1.1.3 Adaptive Threshold
 
 Frames above −80 dBFS are considered *active* (everything below is digital silence and excluded from statistics). The noise floor is estimated as the 30th percentile $P_{30}$ of the active frame levels, and the silence threshold is set 10 dB above it, clamped to a fixed operating window:
 
@@ -41,17 +41,19 @@ $$\theta = \operatorname{clip}\!\left(P_{30} + 10\ \text{dB},\ -45,\ -40\right)\
 
 The floor (−45 dBFS) prevents very quiet recordings from pulling the threshold down into the noise; the ceiling (−40 dBFS) prevents loud, busy backgrounds from swallowing genuine calls. If fewer than 10 active frames exist, a fixed −40 dBFS threshold is used instead. Frames with $L[n] \geq \theta$ are marked non-silent.
 
-### 1.4 Gap Fill and Duration Filter
+#### 1.1.4 Gap Fill, Splitting, and Duration Filter
 
-Silence runs shorter than `min_silence_ms` (cat: 150 ms, dog: 250 ms) are filled — treated as non-silent — so brief intra-call dips do not split one vocalization into fragments. The longer dog value deliberately merges a bark *volley* into a single segment: one clip per volley, not one clip per bark.
+Silence runs shorter than `min_silence_ms` (cat: 150 ms, dog: 250 ms) are filled — treated as non-silent — so brief intra-call dips do not split one vocalization into fragments. Gap lengths are measured in whole 5 ms hops, so the fill boundary is exact only to within one hop (~5 ms). The longer dog value deliberately merges a bark *volley* into a single segment: one clip per volley, not one clip per bark.
 
-Contiguous non-silent runs become candidate segments. Candidates outside [`min_segment_ms`, `max_segment_ms`] are **dropped, not truncated**: cat 80–5000 ms; dog 60–15,000 ms. The dog bounds admit a single short bark at one end and multi-second howl bouts at the other — under the cat ceiling of 5000 ms a long howl would be silently discarded at this stage.
+Contiguous non-silent runs become candidate segments, bounded to [`min_segment_ms`, `max_segment_ms`]: cat 80–5000 ms; dog 60–15,000 ms. The dog bounds admit a single short bark at one end and multi-second howl bouts at the other.
 
-### 1.5 Padding and Merge
+Candidates under the minimum are dropped. Candidates over the maximum are **split, not dropped**: the candidate is cut at the quietest interior envelope frame and each piece re-checked, iterating until every piece fits. The cut is confined to the central half of the candidate — the margins on either side never fall below `min_segment_ms` — which both prevents sub-minimum fragments and keeps successive cuts from landing in the same leading silence gap and peeling the candidate into slivers. Any piece still under the minimum after splitting is dropped. This applies to both species; it matters most for dogs, where a continuous bark volley or howl bout can merge into one run beyond even the 15 s ceiling.
 
-Segments that survive classification (§2–§3) are padded by 200 ms on each side for listening context, clamped to the file boundaries. Padded segments that overlap are merged, keeping the maximum energy ratio of the merged group.
+#### 1.1.5 Padding and Merge
 
-## 2. Cat Classifier ("tonal")
+Segments that survive classification (§1.2–§1.3) are padded by 200 ms on each side for listening context, clamped to the file boundaries. Padded segments that overlap are merged, keeping the maximum energy ratio of the merged group.
+
+### 1.2 Cat Classifier ("feline")
 
 The cat reference band — lowpass below 250 Hz — is a genuine cat-vs-speech discriminator: adult speech F0 and low-frequency rumble live below 250 Hz, while meows (F0 ≈ 208–1185 Hz [1]) put almost no energy there. A candidate segment $[s, e)$ is accepted iff **all three** tests pass (AND):
 
@@ -71,104 +73,130 @@ $$\text{SF} = \frac{\exp\!\left(\dfrac{1}{K} \displaystyle\sum_{k \in B} \ln P_k
 
 where $P_k$ is the power spectrum of a 2048-sample Hann window, $B$ is the set of $K$ FFT bins inside the detection band, and SF is averaged over consecutive windows spanning the segment. SF → 1 for white noise, SF → 0 for a pure tone.
 
-## 3. Dog Classifier ("canine")
+### 1.3 Dog Classifier ("canine")
 
-### 3.1 Why the cat design fails for dogs
+#### 1.3.1 Why the cat design fails for dogs
 
-Porting the tonal profile to a dog band breaks in three ways:
+Porting the feline profile to a dog band breaks in three ways:
 
 1. **Degenerate reference band.** With a dog band starting at 60 Hz, the lowpass-below-band reference sits below 60 Hz — where real recordings have essentially no energy. The reference RMS collapses toward zero, so both ratio tests divide by (nearly) nothing and pass *everything*: speech, music, door slams.
 2. **Inverted tonality test.** Flatness ≤ 0.45 ("calls are tonal") rejects broadband barks while passing harmonic speech vowels — the pipeline would preferentially select speech and discard barks.
 3. **Speech overlap.** The speech band (300–3400 Hz) sits *inside* the dog detection band, so no energy ratio alone can separate speech from barks. Discrimination must come from temporal and harmonic structure instead.
 
-### 3.2 Bands
+#### 1.3.2 Bands
 
 The detection band is **150–3500 Hz** — not 60–3500: growls are out of scope, and 60–150 Hz admits HVAC rumble and handling thumps into the VAD. The reference band flips to a **highpass at ≥ 4500 Hz**, leaving a 1 kHz guard gap above 3500 Hz so the 4th-order Butterworth skirts don't leak species energy into the reference. (This is always well-defined: input audio is resampled to 44.1 kHz, so Nyquist is 22.05 kHz.)
 
-Note the fingerprint band used in Part 2 keeps `fmin = 60` / `fmax = 3500` for dogs — the *detection* band and the *fingerprint* band intentionally diverge.
+Note the fingerprint band used in Part 2 keeps `fmin = 60` / `fmax = 3500` for dogs — the *detection* band and the *fingerprint* band intentionally diverge (§2.3).
 
-### 3.3 Decision Structure
+#### 1.3.3 Decision Structure
 
 A candidate is accepted iff it passes an in-band dominance gate **and** at least one of two call-shape branches:
 
 $$\text{accept} = G \ \land\ (A \lor B)$$
 
-### 3.4 Gate G — In-Band Dominance
+The implementation evaluates Branch B only when Branch A rejects; since acceptance is a disjunction the result is identical — the ordering just defers Branch B's expensive pitch analysis.
+
+#### 1.3.4 Gate G — In-Band Dominance
 
 $$G:\quad \frac{\text{rms}(x_\text{det}[s{:}e])}{\text{rms}(x_\text{ref}[s{:}e]) + 10^{-10}} \geq 2.0$$
 
-This dominance ratio is what `species_energy_ratio` stores for dog clips. It rejects broadband non-vocal sound — full-band white noise scores ≈ 0.44 — while voiced dog calls concentrate their energy in-band and score ≥ 5–10. The gate is deliberately weak against speech (speech also passes it); speech rejection is the branches' job.
+This dominance ratio is what `species_energy_ratio` stores for dog clips. It rejects broadband non-vocal sound — full-band white noise scores ≈ 0.44 — while voiced dog calls concentrate their energy in-band and score ≥ 5–10. The gate is deliberately weak against speech (speech also passes it); speech rejection is the branches' job. In code the gate is phrased NaN-safe — `not (dominance >= 2.0)` rejects — so a degenerate ratio fails closed instead of sliding past a `<` comparison.
 
-### 3.5 Branch A — Impulsive (bark)
+**Narrowband-source guard.** The gate is only sound if the reference band *can* contain energy. Detection therefore checks the source file's **native** sample rate (before resampling to 44.1 kHz — resampling cannot invent bandwidth the source never had): if the native Nyquist leaves less than 2 kHz of usable bandwidth above the reference cutoff (native rate / 2 < `reference_cutoff_hz` + 2000 Hz — for the 4500 Hz dog cutoff, any source below a 13 kHz native rate), the file is rejected with an error (HTTP 400: "source sample rate … too low for reliable dog detection; record at 16 kHz or higher"). Such a source has no energy above the cutoff, so its reference RMS would be numerically zero and the dominance gate would pass every sound. 16 kHz sources still gate correctly.
 
-1. **Rise time.** From the segment's 10 ms / 5 ms RMS dB envelope (§1.2), measure the time from the last frame at or below $\text{peak} - 20\ \text{dB}$ to the peak frame; require it to be **≤ 40 ms**. Barks reach peak energy in 5–20 ms; speech vowels build over 50–150 ms.
-2. **Broadband check.** In-band spectral flatness (same estimator as §2, Test 3) must be **≥ 0.20**. This is the anti-speech cue: a stressed vowel can attack fast, but it is never broadband — vowels measure ≈ 0.05–0.15.
+#### 1.3.5 Branch A — Impulsive (bark)
 
-### 3.6 Branch B — Tonal Sustained (howl/whine)
+1. **Broadband check.** In-band spectral flatness (same estimator as §1.2, Test 3) must be **≥ 0.20**. This is the anti-speech cue: a stressed vowel can attack fast, but it is never broadband — vowels measure ≈ 0.05–0.15.
+2. **Rise time.** From the 10 ms / 5 ms RMS dB envelope (§1.1.2), measure the time from the last frame at or below peak − 20 dB up to the peak frame; require it to be **≤ 40 ms**. Barks reach peak energy in 5–20 ms; speech vowels build over 50–150 ms.
 
-1. **Tonality.** Spectral flatness **≤ 0.30** — tighter than the cat's 0.45, because the band is narrower and Branch B carries more of the speech-rejection burden.
-2. **Duration.** Unpadded duration **≥ 300 ms** (speech syllables run 100–250 ms with pitch resets between them).
-3. **Harmonicity and pitch floor.** Per 2048-sample Hann window (hop 1024), the FFT-based normalized autocorrelation $r[\tau]/r[0]$ is searched over lags corresponding to F0 ∈ 150–2000 Hz:
+Two details make the rise-time measurement honest:
 
-$$H = \max_{\tau \in [\,f_s/2000,\ f_s/150\,]} \frac{r[\tau]}{r[0]}$$
+- **Pre-roll.** The VAD cuts a candidate where energy crossed the threshold — already partway up the attack — so up to 40 ms (`max_attack_ms`) of audio before the candidate start is restored before measuring. Without it, a VAD-truncated impulse looks like it has no attack at all.
+- **Fail-closed.** If no envelope frame sits at or below peak − 20 dB (stationary noise looks that way), rise time is defined as ∞ and the test fails: a segment with no measurable attack is not impulsive.
 
-A frame is *voiced* if $H \geq 0.4$, with per-frame pitch estimate $F_0 = f_s / \tau^*$. The branch requires:
+The checks run in the order above: flatness is already computed for both branches, while rise time convolves the whole slice.
+
+#### 1.3.6 Branch B — Tonal Sustained (howl/whine)
+
+1. **Duration.** Unpadded duration **≥ 300 ms** (speech syllables run 100–250 ms with pitch resets between them). Checked first — it is free.
+2. **Tonality.** Spectral flatness **≤ 0.30** — tighter than the cat's 0.45, because the band is narrower and Branch B carries more of the speech-rejection burden.
+3. **Harmonicity and pitch floor.** Per 2048-sample Hann window (hop 1024), the FFT-based normalized autocorrelation $r[\tau]/r[0]$ is searched over lags corresponding to F0 ∈ 70–2000 Hz (`f0_search_floor_hz` to `max_tonal_f0_hz`), restricted to **local maxima** of $r$:
+
+$$H = \max_{\tau \in \mathcal{T}} \frac{r[\tau]}{r[0]}, \qquad \mathcal{T} = \left\{\tau \in \left[\frac{f_s}{2000},\ \frac{f_s}{70}\right] : \tau \text{ is a local maximum of } r\right\}$$
+
+The local-maximum restriction is what prevents lag aliasing: small lags trivially correlate for low-frequency content, so without it an out-of-range pitch would simply report the smallest searchable lag. The winning lag $\tau^*$ is then refined by 3-point parabolic interpolation around the autocorrelation peak before converting to $F_0 = f_s / \tau^*$, so pitch near the acceptance floor is continuous rather than quantized (adjacent integer lags at 44.1 kHz straddle 250 Hz: τ = 176 → 250.6 Hz, τ = 177 → 249.2 Hz).
+
+A frame is *voiced* if $H \geq 0.4$ (`voiced_peak_threshold`). The branch requires:
 
 - voiced fraction ≥ 0.5 (at least half the frames voiced),
 - mean harmonicity over voiced frames ≥ 0.5,
 - **median voiced F0 ≥ 250 Hz.**
 
-### 3.7 Speech Rejection
+**Why the search floor (70 Hz) sits far below the acceptance floor (250 Hz).** A low-pitched voice must measure its *true* F0 so the 250 Hz floor can reject it. If the search started at 250 Hz, a 130 Hz voice would have no true-period peak in range and its strongest in-range local maximum could be a harmonic — octave-aliasing the voice above the floor. Searching down to 70 Hz finds the genuine period instead — even for voices whose fundamental is weak or missing below 150 Hz, since autocorrelation recovers the period from the harmonic spacing (the missing-fundamental effect) — and the measured F0 then fails the ≥ 250 Hz test.
+
+#### 1.3.7 Speech Rejection
 
 Adult speech F0 spans 85–255 Hz and syllables last 100–250 ms. Speech fails Branch A on the flatness floor (harmonic vowels ≈ 0.05–0.15, well under 0.20) and fails Branch B twice: the 300 ms sustained-tonal requirement, and the F0 floor (median speech F0 falls below 250 Hz). Barks pass Branch A; howls and whines pass Branch B.
 
-### 3.8 Known Limitation — Deep Howls
+#### 1.3.8 Known Limitation — Deep Howls
 
-The 250 Hz median-F0 floor is a deliberate trade-off: a deep howl with F0 below 250 Hz and no sharp onset fails both branches and is **missed**. Most howls sit at ≥ 300 Hz and whines at 400–2000 Hz, and false speech clips in a dog library are worse than an occasional missed low howl — but the miss is real and documented here.
+The 250 Hz median-F0 floor is a deliberate trade-off: a deep howl with F0 below 250 Hz and no sharp onset fails both branches and is **missed**. Its pitch is measured correctly — the 70 Hz search floor sees the true period (§1.3.6) — and then rejected by the floor, exactly as designed for speech. Most howls sit at ≥ 300 Hz and whines at 400–2000 Hz, and false speech clips in a dog library are worse than an occasional missed low howl — but the miss is real and documented here.
 
-## 4. Parameters
+### 1.4 Parameters
 
 Shared VAD machinery (both species): 10 ms frames / 5 ms hop, adaptive threshold $\theta = \operatorname{clip}(P_{30} + 10\ \text{dB},\ -45,\ -40)$ dBFS, 200 ms pre/post padding.
 
-| Parameter | Cat ("tonal") | Dog ("canine") | Rationale |
-|-----------|---------------|----------------|-----------|
-| `classifier` | `tonal` | `canine` | Species classifier profile |
+Detection is configured by `SegmentationConfig`, with the canine-only knobs nested in a `CanineConfig` under its `canine` field. Both models set `extra="forbid"`, so a typoed override key raises a validation error instead of silently falling back to defaults. Per-species values come from `SPECIES_REGISTRY` overrides.
+
+**Shared `SegmentationConfig`:**
+
+| Parameter | Cat ("feline") | Dog ("canine") | Rationale |
+|-----------|----------------|----------------|-----------|
+| `classifier` | `feline` | `canine` | Species classifier profile |
 | `band_low_hz` | 250 Hz | 150 Hz | Cat: excludes speech F0 and rumble; dog: excludes HVAC rumble (growls out of scope) |
 | `band_high_hz` | 8,000 Hz | 3,500 Hz | Cat: harmonics 5–8 of high meows; dog: bark/howl energy ceiling |
-| Reference band | lowpass < 250 Hz | highpass ≥ 4,500 Hz | Cat: speech/rumble detector; dog: 1 kHz guard gap above the detection band |
+| Reference band | lowpass < 250 Hz | highpass ≥ 4,500 Hz | Via `reference_mode` + `reference_cutoff_hz`; cat: speech/rumble detector; dog: 1 kHz guard gap above the detection band |
 | `min_silence_ms` | 150 | 250 | Dog: merges a bark volley into one segment |
 | `min_segment_ms` | 80 | 60 | Dog: admits a single short bark |
-| `max_segment_ms` | 5,000 | 15,000 | Dog: howl bouts; over-long candidates are dropped, not truncated |
+| `max_segment_ms` | 5,000 | 15,000 | Dog: howl bouts; over-long candidates are split at the quietest interior frame, not dropped |
 | `min_species_energy_ratio` | 3.0 | — | Test 1: whole-segment average ratio |
 | `min_peak_ratio` | 3.5 | — | Test 2: peak 50 ms windowed ratio |
 | `peak_ratio_window_ms` | 50 | — | Test 2 window length |
 | `max_spectral_flatness` | 0.45 | — | Test 3: tonality ceiling |
-| `min_band_dominance_ratio` | — | 2.0 | Gate G: in-band dominance |
-| `max_attack_ms` | — | 40 | Branch A: rise time from peak − 20 dB to peak |
-| `min_impulsive_flatness` | — | 0.20 | Branch A: broadband floor (anti-speech) |
-| `max_tonal_flatness` | — | 0.30 | Branch B: tonality ceiling |
-| `min_tonal_ms` | — | 300 | Branch B: sustained duration (speech syllables 100–250 ms) |
-| `min_harmonicity` | — | 0.5 | Branch B: mean voiced harmonicity |
-| `min_voiced_fraction` | — | 0.5 | Branch B: fraction of voiced frames |
-| `min_tonal_f0_hz` | — | 250 Hz | Branch B: median-F0 floor (adult speech F0 is 85–255 Hz) |
-| `max_tonal_f0_hz` | — | 2,000 Hz | Branch B: F0 search ceiling (whines reach 2 kHz) |
+
+The four feline test knobs ("—") exist in the shared config but are inert under the canine profile.
+
+**Nested `CanineConfig`** (under `canine`; inert under the feline profile):
+
+| Parameter | Value | Role |
+|-----------|-------|------|
+| `min_band_dominance_ratio` | 2.0 | Gate G: in-band dominance |
+| `max_attack_ms` | 40 | Branch A: rise-time ceiling; also the pre-roll restored before measuring |
+| `min_impulsive_flatness` | 0.20 | Branch A: broadband floor (anti-speech) |
+| `max_tonal_flatness` | 0.30 | Branch B: tonality ceiling |
+| `min_tonal_ms` | 300 | Branch B: sustained duration (speech syllables 100–250 ms) |
+| `min_harmonicity` | 0.5 | Branch B: mean voiced harmonicity |
+| `min_voiced_fraction` | 0.5 | Branch B: fraction of voiced frames |
+| `min_tonal_f0_hz` | 250 Hz | Branch B: median-F0 acceptance floor (adult speech F0 is 85–255 Hz) |
+| `max_tonal_f0_hz` | 2,000 Hz | Branch B: F0 search ceiling (whines reach 2 kHz) |
+| `f0_search_floor_hz` | 70 Hz | Branch B: F0 search floor — far below the acceptance floor so low-pitched voices measure their true F0 (§1.3.6) |
+| `voiced_peak_threshold` | 0.4 | Branch B: normalized autocorrelation peak above which a frame counts as voiced |
 
 ---
 
-# Part 2 — Uniqueness Scoring
+## Part 2 — Uniqueness Scoring
 
-This document describes the mathematics behind meowdb's audio fingerprinting and uniqueness scoring pipeline. The implementation lives in `src/meowdb/similarity.py`.
+This part describes the mathematics behind MeowDB's audio fingerprinting and uniqueness scoring pipeline. The implementation lives in `src/meowdb/similarity.py`.
 
 **Pipeline summary:** WAV file → 120-dimensional MFCC fingerprint → pairwise cosine similarity matrix → k-NN percentile-rank score (0–100).
 
----
-
-## 1. Fingerprint Extraction
+### 2.1 Fingerprint Extraction
 
 Each meow is represented as a 120-dimensional real-valued vector. The pipeline runs:
 STFT → mel filterbank → PCEN → DCT (MFCCs) → delta coefficients → temporal aggregation.
 
-### 1.1 Short-Time Fourier Transform
+#### 2.1.1 Short-Time Fourier Transform
 
 The audio is resampled to 44,100 Hz mono and normalized to the range [−1, 1]. A Hanning window is applied to each frame before the FFT to reduce spectral leakage:
 
@@ -185,13 +213,13 @@ The one-sided power spectrum of frame $i$ is:
 
 $$P_i[k] = \left|\text{FFT}(x_i \cdot w)[k]\right|^2, \quad k = 0, \ldots, \frac{N}{2}$$
 
-### 1.2 Mel Filterbank
+#### 2.1.2 Mel Filterbank
 
 The mel scale compresses the frequency axis to approximate the human (and animal) auditory system's logarithmic frequency sensitivity. The conversion formulas are:
 
 $$m = 2595 \cdot \log_{10}\!\left(1 + \frac{f}{700}\right) \qquad f = 700 \cdot \left(10^{m/2595} - 1\right)$$
 
-`n_mels = 40` triangular filters are spaced linearly in mel between `fmin = 250 Hz` and `fmax = 8000 Hz`. For filter $m$ with center bin $c_m$ and edges $l_m$, $r_m$:
+`n_mels = 40` triangular filters are spaced linearly in mel between `fmin = 250 Hz` and `fmax = 8000 Hz` (the cat band — fingerprint bands are per-species, see §2.3). For filter $m$ with center bin $c_m$ and edges $l_m$, $r_m$:
 
 $$H_m[k] = \begin{cases} \dfrac{k - l_m}{c_m - l_m} & l_m \leq k < c_m \\[6pt] \dfrac{r_m - k}{r_m - c_m} & c_m \leq k < r_m \\[4pt] 0 & \text{otherwise} \end{cases}$$
 
@@ -201,7 +229,7 @@ $$E_i[m] = \sum_k H_m[k] \cdot P_i[k]$$
 
 **Parameter rationale:** Cat fundamental frequency (F0) ranges from ~208 to ~1185 Hz [1]. Setting `fmin = 250 Hz` excludes purring (F0 ≈ 25–30 Hz) and environmental rumble. Setting `fmax = 8000 Hz` captures harmonics 5–8 of high-pitched meows. `n_mels = 40` provides more spectral resolution than the speech-recognition default of 26.
 
-### 1.3 Per-Channel Energy Normalization (PCEN)
+#### 2.1.3 Per-Channel Energy Normalization (PCEN)
 
 Rather than taking log-mel energies, we apply PCEN [2], which adapts to local noise levels and compresses the dynamic range more robustly than a fixed log transform.
 
@@ -219,7 +247,7 @@ Parameters from [2]: $s = 0.025$, $\alpha = 0.98$, $\delta = 2.0$, $r = 0.5$, $\
 
 PCEN has two advantages over log-mel for bioacoustic detection: (1) the adaptive denominator suppresses stationary background noise without a fixed noise floor assumption, and (2) the power-law compression $(\cdot)^r$ normalizes across loudness levels.
 
-### 1.4 DCT and MFCC Extraction
+#### 2.1.4 DCT and MFCC Extraction
 
 The Mel-Frequency Cepstral Coefficients [3] decorrelate the mel energies via a Type-II DCT with orthonormal normalization:
 
@@ -227,7 +255,7 @@ $$c_i[n] = \sqrt{\frac{2}{M}} \sum_{m=0}^{M-1} \text{PCEN}_i[m] \cdot \cos\!\lef
 
 with the $n=0$ coefficient scaled by $1/\sqrt{2}$ for orthonormality. Only the first `n_mfcc = 20` coefficients are retained. Lower coefficients capture the broad spectral shape (vocal tract filtering); higher coefficients capture fine spectral detail.
 
-### 1.5 Delta Coefficients
+#### 2.1.5 Delta Coefficients
 
 Delta coefficients approximate the time derivative of each MFCC track, capturing temporal dynamics (onset/offset, pitch contour, modulation) that mean aggregation alone discards.
 
@@ -241,7 +269,7 @@ Boundary frames are handled by repeating the first/last frame (rather than zero-
 
 Delta-delta coefficients are computed by applying the same formula to the delta sequence, capturing acceleration of spectral change.
 
-### 1.6 Temporal Aggregation
+#### 2.1.6 Temporal Aggregation
 
 For each of the three feature streams (static MFCCs, deltas, delta-deltas), we compute the mean and standard deviation across all frames:
 
@@ -253,13 +281,13 @@ $$\mathbf{v} = [\mu_\text{static},\, \sigma_\text{static},\, \mu_\Delta,\, \sigm
 
 ---
 
-## 2. Uniqueness Scoring
+### 2.2 Uniqueness Scoring
 
 Given the fingerprint matrix $X \in \mathbb{R}^{N \times 120}$ for a library of $N$ meows, uniqueness scores are computed in three steps: z-score normalization, cosine similarity, and percentile ranking.
 
 A library of exactly one meow returns `None` — percentile rank is undefined with no peers.
 
-### 2.1 Z-Score Normalization
+#### 2.2.1 Z-Score Normalization
 
 Each feature dimension is standardized across the library:
 
@@ -273,7 +301,7 @@ $$\cos(\hat{x}_i, \hat{x}_j) = \frac{\hat{x}_i \cdot \hat{x}_j}{\|\hat{x}_i\|\|\
 
 Since each feature was mean-centered before normalization, this equals the Pearson correlation of the original feature vectors. The metric therefore measures spectral profile shape similarity, independent of volume or duration.
 
-### 2.2 Cosine Similarity Matrix
+#### 2.2.2 Cosine Similarity Matrix
 
 Each row of the z-scored matrix is L2-normalized:
 
@@ -285,7 +313,7 @@ $$S = \tilde{X} \tilde{X}^\top \in \mathbb{R}^{N \times N}, \qquad S_{ij} \in [-
 
 $S_{ij} = 1$ means identical spectral profiles; $S_{ij} = -1$ means maximally anti-correlated profiles. This is O(N²·d) but for a personal library (N < 1000, d = 120) it is sub-millisecond on any modern CPU.
 
-### 2.3 k-Nearest-Neighbor Averaging
+#### 2.2.3 k-Nearest-Neighbor Averaging
 
 Rather than using the single most-similar meow (fragile to one noisy entry), we average the top-$k$ similarity values. For each meow $i$:
 
@@ -300,7 +328,7 @@ $u_i \in [0, 1]$: high values mean the meow is dissimilar from its nearest neigh
 
 Default: `k_neighbors = 3`.
 
-### 2.4 Percentile-Rank Transformation
+#### 2.2.4 Percentile-Rank Transformation
 
 The raw uniqueness values $u_i$ are mapped to percentile ranks within the library:
 
@@ -312,7 +340,7 @@ This guarantees that scores use the full [0, 100] range regardless of the actual
 
 ---
 
-## 3. Parameters
+### 2.3 Parameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -330,9 +358,11 @@ This guarantees that scores use the full [0, 100] range regardless of the actual
 | PCEN `ε` | 1e-6 | Numerical floor; prevents divide-by-zero |
 | `k_neighbors` | 3 | k-NN averaging window; balances robustness vs. locality |
 
+**Per-species bands:** `fmin`/`fmax` come from `SPECIES_REGISTRY` — cat 250–8000 Hz (shown above, with the cat-specific rationale), dog 60–3500 Hz (growl fundamentals through bark harmonics). Note the dog *detection* band (150–3500 Hz, §1.3.2) intentionally differs from its fingerprint band: 60–150 Hz carries fingerprint-relevant timbre but would admit HVAC rumble and handling thumps into the VAD.
+
 ---
 
-## 4. Known Limitations
+### 2.4 Known Limitations
 
 **Short meow degeneration.** An 80 ms meow with `n_fft=2048` and `hop=512` at 44.1 kHz produces only ~1–3 STFT frames. Delta coefficients are set to zero when fewer than 5 frames are available, so short meows are compared only on their static MFCCs (40 of the 120 dimensions are informative; the rest are zero).
 

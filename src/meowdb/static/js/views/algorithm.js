@@ -1,7 +1,8 @@
 /* ============================================================
    views/algorithm.js — renders docs/algorithm.md (markdown + math)
 
-   Renders the uniqueness-scoring write-up live in the browser:
+   Renders the segment-detection and uniqueness-scoring write-up
+   live in the browser:
    fetch the markdown, parse it with markdown-it, and typeset its
    LaTeX with MathJax (SVG output). The markdown source is the single
    source of truth — editing docs/algorithm.md is all that's required.

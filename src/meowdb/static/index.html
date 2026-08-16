@@ -1272,9 +1272,9 @@
               <div class="empty-state-body">Add some sounds to see your stats</div>
             </div>
 
-            <!-- Footer link to the scoring-algorithm write-up -->
+            <!-- Footer link to the detection + scoring write-up -->
             <button class="algorithm-link" @click="goTo('/algorithm')">
-              How are uniqueness scores calculated?
+              How do detection and uniqueness scoring work?
             </button>
 
           </div>
@@ -1314,11 +1314,13 @@
         </div>
 
         <p class="algorithm-intro">
-          <strong>How uniqueness scores are computed.</strong>
-          Every sound in your library is distilled into a 120-number acoustic fingerprint,
-          then compared against every other sound to measure how distinctive it sounds.
-          Below is the full technical write-up of that pipeline — from the raw waveform
-          through the spectral features to the final 0–100 percentile score.
+          <strong>How detection and uniqueness scoring work.</strong>
+          Two stages power your library: a species-specific detector first finds the
+          meows or barks in a raw recording, then each detected clip is distilled into
+          a 120-number acoustic fingerprint and compared against every other sound to
+          measure how distinctive it sounds. Below is the full technical write-up of
+          both stages — from the raw waveform through segment detection and spectral
+          features to the final 0–100 percentile score.
           Skim the headings; the equations are there for the curious.
         </p>
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from meowdb.models import ProcessorConfig, SegmentationConfig
 
@@ -10,7 +11,8 @@ from meowdb.models import ProcessorConfig, SegmentationConfig
 class SpeciesConfig:
     fmin: float  # Hz, fingerprint bandpass lower cutoff (similarity.py)
     fmax: float  # Hz, fingerprint bandpass upper cutoff
-    segmentation: Mapping[str, object] = field(default_factory=dict)
+    # Read-only view: a frozen dataclass must not hand out a mutable shared dict
+    segmentation: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
 
 
 SPECIES_REGISTRY: dict[str, SpeciesConfig] = {
@@ -22,15 +24,17 @@ SPECIES_REGISTRY: dict[str, SpeciesConfig] = {
     "dog": SpeciesConfig(
         fmin=60.0,
         fmax=3500.0,
-        segmentation={
-            "band_low_hz": 150.0,
-            "classifier": "canine",
-            "reference_mode": "highpass",
-            "reference_cutoff_hz": 4500.0,
-            "min_silence_ms": 250,  # a bark volley merges into one segment
-            "min_segment_ms": 60,  # single short bark
-            "max_segment_ms": 15000,  # howl bouts
-        },
+        segmentation=MappingProxyType(
+            {
+                "band_low_hz": 150.0,
+                "classifier": "canine",
+                "reference_mode": "highpass",
+                "reference_cutoff_hz": 4500.0,
+                "min_silence_ms": 250,  # a bark volley merges into one segment
+                "min_segment_ms": 60,  # single short bark
+                "max_segment_ms": 15000,  # howl bouts
+            }
+        ),
     ),
 }
 
@@ -47,7 +51,9 @@ def processor_config_for_species(species: str) -> ProcessorConfig:
 
     The fingerprint band (fmin/fmax) seeds the detection band, but per-species
     segmentation overrides win — for dogs the two diverge (fingerprints 60-3500Hz,
-    detection 150-3500Hz).
+    detection 150-3500Hz). Overrides are validated against SegmentationConfig, which
+    forbids unknown keys, so a typoed key raises here instead of silently yielding
+    cat defaults. Canine classifier knobs nest under a "canine" key.
     """
     sc = get_species_config(species)
     params: dict[str, object] = {

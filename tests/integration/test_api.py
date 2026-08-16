@@ -634,7 +634,13 @@ def test_detect_regions(client, silent_wav_bytes):
 
 @pytest.mark.integration
 def test_detect_regions_dog_animal(client, silent_wav_bytes):
-    """A dog animal's job routes through the canine detection config without error."""
+    """A dog animal's job is processed with the canine profile, not the cat default.
+
+    Silence detects as [] under every profile, so the routing itself is asserted:
+    the processor the route builds for this job must carry the dog config.
+    """
+    from meowdb.api.routers.ingest import _processor_for_job
+
     resp = client.post("/api/animals", json={"name": "Rex", "species": "dog"})
     animal_id = resp.json()["id"]
     resp = client.post(
@@ -643,6 +649,12 @@ def test_detect_regions_dog_animal(client, silent_wav_bytes):
         data={"animal_id": animal_id},
     )
     job_id = resp.json()["job_id"]
+
+    db = client.app.state.db
+    seg = _processor_for_job(db, db.get_job(job_id)).config.segmentation
+    assert seg.classifier == "canine"
+    assert seg.reference_mode == "highpass"
+    assert seg.band_low_hz == 150.0
 
     resp = client.post(f"/api/ingest/{job_id}/detect")
     assert resp.status_code == 200

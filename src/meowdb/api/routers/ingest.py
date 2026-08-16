@@ -302,12 +302,15 @@ async def detect_regions(job_id: str, request: Request) -> DetectResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    processor = _processor_for_job(db, job)
     source_path = _resolve_staging_path(job_id)
     try:
+        processor = _processor_for_job(db, job)
         result = await run_in_threadpool(processor.detect_only, source_path)
     except HTTPException:
         raise
+    except ValueError as exc:
+        # Config and unsupported-recording errors carry a message the user can act on
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Could not process audio file") from exc
     return DetectResponse(regions=[ClipRegion(start_ms=s, end_ms=e) for s, e in result])
@@ -323,7 +326,6 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
     if not body.regions:
         raise HTTPException(status_code=400, detail="At least one region is required")
 
-    processor = _processor_for_job(db, job)
     source_path = _resolve_staging_path(job_id)
     try:
         mtime = os.path.getmtime(str(source_path))
@@ -334,11 +336,15 @@ async def clip_and_commit(job_id: str, body: ClipRequest, request: Request) -> C
 
     regions = [(r.start_ms, r.end_ms) for r in body.regions]
     try:
+        processor = _processor_for_job(db, job)
         segments = await run_in_threadpool(
             processor.process_clips, source_path, regions, staging_dir
         )
     except HTTPException:
         raise
+    except ValueError as exc:
+        # Config and unsupported-recording errors carry a message the user can act on
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Could not process audio file") from exc
 
