@@ -82,10 +82,28 @@ function app() {
 
     requireAuth() {
       if (!this.canWrite) {
-        this.showLoginModal = true;
+        this.openLoginModal();
         return false;
       }
       return true;
+    },
+
+    openLoginModal() {
+      this.loginError = '';
+      this.showLoginModal = true;
+    },
+
+    dismissLoginModal() {
+      this.showLoginModal = false;
+      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
+        navigateTo('/');
+      }
+    },
+
+    promptIfAdminViewLocked() {
+      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
+        this.openLoginModal();
+      }
     },
 
     async init() {
@@ -98,6 +116,7 @@ function app() {
       // Handle programmatic navigation
       window.addEventListener('route-change', (e) => {
         this.currentView = pathToView(e.detail.path);
+        this.promptIfAdminViewLocked();
       });
 
       window.addEventListener('auth-expired', () => {
@@ -108,8 +127,7 @@ function app() {
         // a long-lived PWA whose session cookie has lapsed) must not throw the
         // admin login modal over a public page.
         if (wasAuthenticated) {
-          this.showLoginModal = true;
-          this.loginError = '';
+          this.openLoginModal();
         }
       });
 
@@ -127,11 +145,7 @@ function app() {
         }
       }
 
-      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
-        // Keep the user on /upload (e.g. a deep link or PWA launch directly to the
-        // admin page) and prompt them to log in there rather than bouncing them away.
-        this.showLoginModal = true;
-      }
+      this.promptIfAdminViewLocked();
     },
 
     isView(name) {

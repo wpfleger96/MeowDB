@@ -23,6 +23,10 @@ ingest path:
 e2e:
     cd ui && npm run test:e2e
 
+# Run auth-gated Playwright e2e tests
+e2e-auth:
+    cd ui && npm run test:e2e:auth
+
 # Capture UI screenshots with Playwright
 screenshots:
     cd ui && npm run test:screenshots
