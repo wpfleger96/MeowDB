@@ -1,4 +1,161 @@
-# Uniqueness Scoring Algorithm
+# MeowDB Audio Algorithms
+
+MeowDB's audio pipeline has two independent stages, documented in the two parts below:
+
+- **Part 1 — Segment Detection** (`src/meowdb/processor.py`): finds the regions of a recording that contain the selected species' vocalizations.
+- **Part 2 — Uniqueness Scoring** (`src/meowdb/similarity.py`): fingerprints each detected clip and scores how unique it is within the library.
+
+Detection is species-specific: the user picks the animal, and the detector finds that species' primary calls (cats: meows and trills; dogs: barks, howls, whines). There is no species classification from audio.
+
+---
+
+# Part 1 — Segment Detection
+
+Detection runs a shared energy-based voice-activity pipeline followed by a species-specific classifier: the **tonal** profile (cats) and the **canine** profile (dogs). All stages operate on audio resampled to 44,100 Hz mono, normalized to [−1, 1].
+
+**Pipeline summary:** audio → Butterworth band filters → framewise RMS dB envelope → adaptive threshold → gap fill → duration filter → species classifier → padding/merge.
+
+## 1. Shared Segmentation Pipeline
+
+### 1.1 Band Filtering
+
+Two 4th-order Butterworth filters produce the signals every later stage consumes. The **detection band** isolates the species' vocal energy; the **reference band** captures complementary energy for the classifier's ratio tests:
+
+$$x_\text{det} = \text{bandpass}(x,\ f_\text{low},\ f_\text{high}) \qquad x_\text{ref} = \begin{cases} \text{lowpass}(x,\ 250\ \text{Hz}) & \text{cat} \\[4pt] \text{highpass}(x,\ 4500\ \text{Hz}) & \text{dog} \end{cases}$$
+
+The detection band is 250–8000 Hz for cats and 150–3500 Hz for dogs. Why the reference band points in opposite directions for the two species is the subject of §2 and §3.
+
+### 1.2 RMS Energy Envelope
+
+Voice activity is measured on a framewise RMS envelope of the detection band, using **10 ms frames** and a **5 ms hop**. The squared signal is convolved with a 10 ms boxcar, square-rooted, converted to dB, and sampled at the hop rate:
+
+$$\text{rms}[n] = \sqrt{\frac{1}{W}\sum_{|m| \leq W/2} x_\text{det}[n+m]^2}, \qquad L[n] = 20 \log_{10}\!\left(\text{rms}[n] + 10^{-10}\right)$$
+
+where $W$ is 10 ms of samples (441 at 44.1 kHz), centered on sample $n$. The same envelope is reused by the canine classifier's rise-time test (§3.5), so both stages see identical energy contours.
+
+### 1.3 Adaptive Threshold
+
+Frames above −80 dBFS are considered *active* (everything below is digital silence and excluded from statistics). The noise floor is estimated as the 30th percentile $P_{30}$ of the active frame levels, and the silence threshold is set 10 dB above it, clamped to a fixed operating window:
+
+$$\theta = \operatorname{clip}\!\left(P_{30} + 10\ \text{dB},\ -45,\ -40\right)\ \text{dBFS}$$
+
+The floor (−45 dBFS) prevents very quiet recordings from pulling the threshold down into the noise; the ceiling (−40 dBFS) prevents loud, busy backgrounds from swallowing genuine calls. If fewer than 10 active frames exist, a fixed −40 dBFS threshold is used instead. Frames with $L[n] \geq \theta$ are marked non-silent.
+
+### 1.4 Gap Fill and Duration Filter
+
+Silence runs shorter than `min_silence_ms` (cat: 150 ms, dog: 250 ms) are filled — treated as non-silent — so brief intra-call dips do not split one vocalization into fragments. The longer dog value deliberately merges a bark *volley* into a single segment: one clip per volley, not one clip per bark.
+
+Contiguous non-silent runs become candidate segments. Candidates outside [`min_segment_ms`, `max_segment_ms`] are **dropped, not truncated**: cat 80–5000 ms; dog 60–15,000 ms. The dog bounds admit a single short bark at one end and multi-second howl bouts at the other — under the cat ceiling of 5000 ms a long howl would be silently discarded at this stage.
+
+### 1.5 Padding and Merge
+
+Segments that survive classification (§2–§3) are padded by 200 ms on each side for listening context, clamped to the file boundaries. Padded segments that overlap are merged, keeping the maximum energy ratio of the merged group.
+
+## 2. Cat Classifier ("tonal")
+
+The cat reference band — lowpass below 250 Hz — is a genuine cat-vs-speech discriminator: adult speech F0 and low-frequency rumble live below 250 Hz, while meows (F0 ≈ 208–1185 Hz [1]) put almost no energy there. A candidate segment $[s, e)$ is accepted iff **all three** tests pass (AND):
+
+**Test 1 — whole-segment average ratio.** Detection-band RMS must dominate the reference band:
+
+$$R_\text{avg} = \frac{\text{rms}(x_\text{det}[s{:}e])}{\text{rms}(x_\text{ref}[s{:}e]) + 10^{-10}} \geq 3.0$$
+
+**Test 2 — peak windowed ratio.** The same ratio computed over sliding **50 ms** windows (50% hop); the maximum across windows must satisfy
+
+$$R_\text{peak} = \max_{w} \frac{\text{rms}(x_\text{det}[w])}{\text{rms}(x_\text{ref}[w]) + 10^{-10}} \geq 3.5$$
+
+This rescues short meows whose whole-segment average is diluted by surrounding noise.
+
+**Test 3 — spectral flatness.** Meows are tonal; broadband noise is flat. Spectral flatness is the ratio of geometric to arithmetic mean of the power spectrum over the in-band bins:
+
+$$\text{SF} = \frac{\exp\!\left(\dfrac{1}{K} \displaystyle\sum_{k \in B} \ln P_k\right)}{\dfrac{1}{K} \displaystyle\sum_{k \in B} P_k} \leq 0.45$$
+
+where $P_k$ is the power spectrum of a 2048-sample Hann window, $B$ is the set of $K$ FFT bins inside the detection band, and SF is averaged over consecutive windows spanning the segment. SF → 1 for white noise, SF → 0 for a pure tone.
+
+## 3. Dog Classifier ("canine")
+
+### 3.1 Why the cat design fails for dogs
+
+Porting the tonal profile to a dog band breaks in three ways:
+
+1. **Degenerate reference band.** With a dog band starting at 60 Hz, the lowpass-below-band reference sits below 60 Hz — where real recordings have essentially no energy. The reference RMS collapses toward zero, so both ratio tests divide by (nearly) nothing and pass *everything*: speech, music, door slams.
+2. **Inverted tonality test.** Flatness ≤ 0.45 ("calls are tonal") rejects broadband barks while passing harmonic speech vowels — the pipeline would preferentially select speech and discard barks.
+3. **Speech overlap.** The speech band (300–3400 Hz) sits *inside* the dog detection band, so no energy ratio alone can separate speech from barks. Discrimination must come from temporal and harmonic structure instead.
+
+### 3.2 Bands
+
+The detection band is **150–3500 Hz** — not 60–3500: growls are out of scope, and 60–150 Hz admits HVAC rumble and handling thumps into the VAD. The reference band flips to a **highpass at ≥ 4500 Hz**, leaving a 1 kHz guard gap above 3500 Hz so the 4th-order Butterworth skirts don't leak species energy into the reference. (This is always well-defined: input audio is resampled to 44.1 kHz, so Nyquist is 22.05 kHz.)
+
+Note the fingerprint band used in Part 2 keeps `fmin = 60` / `fmax = 3500` for dogs — the *detection* band and the *fingerprint* band intentionally diverge.
+
+### 3.3 Decision Structure
+
+A candidate is accepted iff it passes an in-band dominance gate **and** at least one of two call-shape branches:
+
+$$\text{accept} = G \ \land\ (A \lor B)$$
+
+### 3.4 Gate G — In-Band Dominance
+
+$$G:\quad \frac{\text{rms}(x_\text{det}[s{:}e])}{\text{rms}(x_\text{ref}[s{:}e]) + 10^{-10}} \geq 2.0$$
+
+This dominance ratio is what `species_energy_ratio` stores for dog clips. It rejects broadband non-vocal sound — full-band white noise scores ≈ 0.44 — while voiced dog calls concentrate their energy in-band and score ≥ 5–10. The gate is deliberately weak against speech (speech also passes it); speech rejection is the branches' job.
+
+### 3.5 Branch A — Impulsive (bark)
+
+1. **Rise time.** From the segment's 10 ms / 5 ms RMS dB envelope (§1.2), measure the time from the last frame at or below $\text{peak} - 20\ \text{dB}$ to the peak frame; require it to be **≤ 40 ms**. Barks reach peak energy in 5–20 ms; speech vowels build over 50–150 ms.
+2. **Broadband check.** In-band spectral flatness (same estimator as §2, Test 3) must be **≥ 0.20**. This is the anti-speech cue: a stressed vowel can attack fast, but it is never broadband — vowels measure ≈ 0.05–0.15.
+
+### 3.6 Branch B — Tonal Sustained (howl/whine)
+
+1. **Tonality.** Spectral flatness **≤ 0.30** — tighter than the cat's 0.45, because the band is narrower and Branch B carries more of the speech-rejection burden.
+2. **Duration.** Unpadded duration **≥ 300 ms** (speech syllables run 100–250 ms with pitch resets between them).
+3. **Harmonicity and pitch floor.** Per 2048-sample Hann window (hop 1024), the FFT-based normalized autocorrelation $r[\tau]/r[0]$ is searched over lags corresponding to F0 ∈ 150–2000 Hz:
+
+$$H = \max_{\tau \in [\,f_s/2000,\ f_s/150\,]} \frac{r[\tau]}{r[0]}$$
+
+A frame is *voiced* if $H \geq 0.4$, with per-frame pitch estimate $F_0 = f_s / \tau^*$. The branch requires:
+
+- voiced fraction ≥ 0.5 (at least half the frames voiced),
+- mean harmonicity over voiced frames ≥ 0.5,
+- **median voiced F0 ≥ 250 Hz.**
+
+### 3.7 Speech Rejection
+
+Adult speech F0 spans 85–255 Hz and syllables last 100–250 ms. Speech fails Branch A on the flatness floor (harmonic vowels ≈ 0.05–0.15, well under 0.20) and fails Branch B twice: the 300 ms sustained-tonal requirement, and the F0 floor (median speech F0 falls below 250 Hz). Barks pass Branch A; howls and whines pass Branch B.
+
+### 3.8 Known Limitation — Deep Howls
+
+The 250 Hz median-F0 floor is a deliberate trade-off: a deep howl with F0 below 250 Hz and no sharp onset fails both branches and is **missed**. Most howls sit at ≥ 300 Hz and whines at 400–2000 Hz, and false speech clips in a dog library are worse than an occasional missed low howl — but the miss is real and documented here.
+
+## 4. Parameters
+
+Shared VAD machinery (both species): 10 ms frames / 5 ms hop, adaptive threshold $\theta = \operatorname{clip}(P_{30} + 10\ \text{dB},\ -45,\ -40)$ dBFS, 200 ms pre/post padding.
+
+| Parameter | Cat ("tonal") | Dog ("canine") | Rationale |
+|-----------|---------------|----------------|-----------|
+| `classifier` | `tonal` | `canine` | Species classifier profile |
+| `band_low_hz` | 250 Hz | 150 Hz | Cat: excludes speech F0 and rumble; dog: excludes HVAC rumble (growls out of scope) |
+| `band_high_hz` | 8,000 Hz | 3,500 Hz | Cat: harmonics 5–8 of high meows; dog: bark/howl energy ceiling |
+| Reference band | lowpass < 250 Hz | highpass ≥ 4,500 Hz | Cat: speech/rumble detector; dog: 1 kHz guard gap above the detection band |
+| `min_silence_ms` | 150 | 250 | Dog: merges a bark volley into one segment |
+| `min_segment_ms` | 80 | 60 | Dog: admits a single short bark |
+| `max_segment_ms` | 5,000 | 15,000 | Dog: howl bouts; over-long candidates are dropped, not truncated |
+| `min_species_energy_ratio` | 3.0 | — | Test 1: whole-segment average ratio |
+| `min_peak_ratio` | 3.5 | — | Test 2: peak 50 ms windowed ratio |
+| `peak_ratio_window_ms` | 50 | — | Test 2 window length |
+| `max_spectral_flatness` | 0.45 | — | Test 3: tonality ceiling |
+| `min_band_dominance_ratio` | — | 2.0 | Gate G: in-band dominance |
+| `max_attack_ms` | — | 40 | Branch A: rise time from peak − 20 dB to peak |
+| `min_impulsive_flatness` | — | 0.20 | Branch A: broadband floor (anti-speech) |
+| `max_tonal_flatness` | — | 0.30 | Branch B: tonality ceiling |
+| `min_tonal_ms` | — | 300 | Branch B: sustained duration (speech syllables 100–250 ms) |
+| `min_harmonicity` | — | 0.5 | Branch B: mean voiced harmonicity |
+| `min_voiced_fraction` | — | 0.5 | Branch B: fraction of voiced frames |
+| `min_tonal_f0_hz` | — | 250 Hz | Branch B: median-F0 floor (adult speech F0 is 85–255 Hz) |
+| `max_tonal_f0_hz` | — | 2,000 Hz | Branch B: F0 search ceiling (whines reach 2 kHz) |
+
+---
+
+# Part 2 — Uniqueness Scoring
 
 This document describes the mathematics behind meowdb's audio fingerprinting and uniqueness scoring pipeline. The implementation lives in `src/meowdb/similarity.py`.
 
