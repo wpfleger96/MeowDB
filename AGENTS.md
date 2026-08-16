@@ -77,6 +77,8 @@ patch("meowdb.api.app.MP3_DIR", tmp_mp3)
 
 **Staging dict** -- `SoundSegment.to_db_dict()` in `models.py` produces the 6-key dict used by both CLI ingest and the API clip-and-commit route.
 
+**Audio pipeline classifier profiles** -- `SegmentationConfig.classifier` selects `"tonal"` (cat, default) or `"canine"` (dog); per-species overrides live in `SPECIES_REGISTRY` (`species.py`), where the dog's fingerprint band (60–3500 Hz) intentionally differs from its detection band (150–3500 Hz).
+
 **Chunked upload writer** -- `save_upload(file, dest, max_bytes, detail)` in `api/streaming.py` handles chunked streaming and raises 413 on overflow.
 
 ## Testing

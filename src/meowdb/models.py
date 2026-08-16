@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -25,6 +26,18 @@ class SegmentationConfig(BaseModel):
     peak_ratio_window_ms: int = 50
     use_spectral_classifier: bool = True
     max_spectral_flatness: float = 0.45
+    classifier: Literal["tonal", "canine"] = "tonal"
+    reference_mode: Literal["lowpass", "highpass"] = "lowpass"
+    reference_cutoff_hz: float | None = None  # None -> band_low_hz / band_high_hz
+    min_band_dominance_ratio: float = 2.0  # canine-only knobs below (inert under "tonal")
+    max_attack_ms: int = 40
+    min_impulsive_flatness: float = 0.20
+    max_tonal_flatness: float = 0.30
+    min_tonal_ms: int = 300
+    min_harmonicity: float = 0.5
+    min_voiced_fraction: float = 0.5
+    min_tonal_f0_hz: float = 250.0
+    max_tonal_f0_hz: float = 2000.0
 
 
 class ProcessingConfig(BaseModel):

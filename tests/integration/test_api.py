@@ -633,6 +633,23 @@ def test_detect_regions(client, silent_wav_bytes):
 
 
 @pytest.mark.integration
+def test_detect_regions_dog_animal(client, silent_wav_bytes):
+    """A dog animal's job routes through the canine detection config without error."""
+    resp = client.post("/api/animals", json={"name": "Rex", "species": "dog"})
+    animal_id = resp.json()["id"]
+    resp = client.post(
+        "/api/ingest",
+        files={"file": ("bark.wav", io.BytesIO(silent_wav_bytes), "audio/wav")},
+        data={"animal_id": animal_id},
+    )
+    job_id = resp.json()["job_id"]
+
+    resp = client.post(f"/api/ingest/{job_id}/detect")
+    assert resp.status_code == 200
+    assert resp.json()["regions"] == []
+
+
+@pytest.mark.integration
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 def test_clip_and_commit(client, silent_wav_bytes):
     animal_id = client.app.state.db.get_animals()[0]["id"]

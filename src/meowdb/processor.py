@@ -187,21 +187,29 @@ class SoundProcessor:
         seg = self.config.segmentation
         low_norm = seg.band_low_hz / (sr / 2)
         high_norm = seg.band_high_hz / (sr / 2)
-        sos_cat = butter(4, [low_norm, high_norm], btype="bandpass", output="sos")
-        species_band = sosfilt(sos_cat, samples)
+        sos_species = butter(4, [low_norm, high_norm], btype="bandpass", output="sos")
+        species_band = sosfilt(sos_species, samples)
 
-        sos_low = butter(4, seg.band_low_hz / (sr / 2), btype="lowpass", output="sos")
-        low_band = sosfilt(sos_low, samples)
+        # Reference band: lowpass below the species band (cat: speech F0 + rumble) or
+        # highpass above it (dog: broadband non-vocal energy)
+        default_cutoff = seg.band_low_hz if seg.reference_mode == "lowpass" else seg.band_high_hz
+        cutoff = seg.reference_cutoff_hz if seg.reference_cutoff_hz is not None else default_cutoff
+        sos_ref = butter(4, cutoff / (sr / 2), btype=seg.reference_mode, output="sos")
+        reference_band = sosfilt(sos_ref, samples)
 
-        return species_band.astype(np.float32), low_band.astype(np.float32)
+        return species_band.astype(np.float32), reference_band.astype(np.float32)
 
-    def _detect_segments(self, species_band: np.ndarray, sr: int) -> list[tuple[int, int]]:
-        seg = self.config.segmentation
+    def _segment_envelope_db(self, samples: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray]:
+        """Short-time RMS envelope in dBFS: 10ms frames on a 5ms hop.
+
+        Returns (frame_dbfs, frame_indices) where frame_indices maps each frame
+        back to its sample position.
+        """
         frame_len = int(sr * 0.010)  # 10ms frames
         hop_len = int(sr * 0.005)  # 5ms hop
 
         # Short-time RMS via convolution over squared samples
-        squared = species_band**2
+        squared = samples**2
         window = np.ones(frame_len) / frame_len
         mean_sq = np.convolve(squared, window, mode="same")
         rms = np.sqrt(np.maximum(mean_sq, 0.0))
@@ -211,7 +219,11 @@ class SoundProcessor:
 
         # Downsample to one value per hop
         frame_indices = np.arange(0, len(dbfs), hop_len)
-        frame_dbfs = dbfs[frame_indices]
+        return dbfs[frame_indices], frame_indices
+
+    def _detect_segments(self, species_band: np.ndarray, sr: int) -> list[tuple[int, int]]:
+        seg = self.config.segmentation
+        frame_dbfs, frame_indices = self._segment_envelope_db(species_band, sr)
 
         threshold = self._compute_adaptive_threshold(frame_dbfs)
         is_silent = frame_dbfs < threshold
@@ -297,7 +309,143 @@ class SoundProcessor:
             return float(np.clip(geo_mean / arith_mean, 0.0, 1.0))
         return float(np.mean(flatnesses))
 
+    def _rise_time_ms(self, samples: np.ndarray, sr: int) -> float:
+        """Attack time: ms from the last frame at/below peak-20dB up to the envelope peak.
+
+        Barks peak within 5-20ms; speech vowels build over 50-150ms. A segment that
+        starts already loud (no frame below peak-20dB) measures from its first frame.
+        """
+        frame_dbfs, _ = self._segment_envelope_db(samples, sr)
+        if len(frame_dbfs) == 0:
+            return 0.0
+        peak_idx = int(np.argmax(frame_dbfs))
+        quiet = np.nonzero(frame_dbfs[: peak_idx + 1] <= frame_dbfs[peak_idx] - 20.0)[0]
+        start_idx = int(quiet[-1]) if len(quiet) > 0 else 0
+        return (peak_idx - start_idx) * 5.0  # 5ms per hop
+
+    def _harmonicity(self, samples: np.ndarray, sr: int) -> tuple[float, float, float]:
+        """Windowed autocorrelation pitch analysis for the tonal (howl/whine) branch.
+
+        Per 2048-sample Hann window (hop 1024), computes the FFT-based normalized
+        autocorrelation r[tau]/r[0] and searches tau for F0 between 150Hz and
+        max_tonal_f0_hz. The search floor sits below min_tonal_f0_hz on purpose: a
+        low-pitched voice must measure its true (too-low) F0 rather than alias to a
+        passing harmonic. A frame is voiced when its peak is >= 0.4.
+
+        Returns (voiced_fraction, mean voiced harmonicity, median voiced F0 in Hz);
+        all zeros when nothing is voiced.
+        """
+        seg = self.config.segmentation
+        n_fft = 2048
+        hop = 1024
+        tau_min = max(1, int(sr / seg.max_tonal_f0_hz))
+        tau_max = int(round(sr / 150.0))
+        if len(samples) < n_fft:
+            return 0.0, 0.0, 0.0
+        window = np.hanning(n_fft)
+        n_frames = 0
+        voiced_peaks: list[float] = []
+        voiced_f0s: list[float] = []
+        for start in range(0, len(samples) - n_fft + 1, hop):
+            windowed = samples[start : start + n_fft] * window
+            # Autocorrelation via FFT (zero-padded to avoid circular wrap)
+            spectrum = np.fft.rfft(windowed, n=2 * n_fft)
+            autocorr = np.fft.irfft(spectrum * np.conj(spectrum))[: tau_max + 2]
+            n_frames += 1
+            if autocorr[0] < 1e-12:
+                continue
+            normalized = autocorr / autocorr[0]
+            # A pitch estimate must be a genuine autocorrelation peak: small lags
+            # trivially correlate for low-frequency content, so only local maxima
+            # count — an F0 below the search range then yields no peak (unvoiced)
+            # instead of aliasing to the smallest searchable lag.
+            interior = normalized[1:-1]
+            is_local_max = (interior > normalized[:-2]) & (interior >= normalized[2:])
+            peak_taus = np.nonzero(is_local_max)[0] + 1
+            peak_taus = peak_taus[(peak_taus >= tau_min) & (peak_taus <= tau_max)]
+            if len(peak_taus) == 0:
+                continue
+            peak_tau = int(peak_taus[np.argmax(normalized[peak_taus])])
+            peak = float(normalized[peak_tau])
+            if peak >= 0.4:
+                voiced_peaks.append(peak)
+                voiced_f0s.append(sr / peak_tau)
+        if n_frames == 0 or not voiced_peaks:
+            return 0.0, 0.0, 0.0
+        return (
+            len(voiced_peaks) / n_frames,
+            float(np.mean(voiced_peaks)),
+            float(np.median(voiced_f0s)),
+        )
+
     def _classify_segments(
+        self,
+        candidates: list[tuple[int, int]],
+        species_band: np.ndarray,
+        reference_band: np.ndarray,
+        sr: int,
+    ) -> list[tuple[int, int, float]]:
+        if self.config.segmentation.classifier == "canine":
+            return self._classify_canine(candidates, species_band, reference_band, sr)
+        return self._classify_tonal(candidates, species_band, reference_band, sr)
+
+    def _classify_canine(
+        self,
+        candidates: list[tuple[int, int]],
+        species_band: np.ndarray,
+        reference_band: np.ndarray,
+        sr: int,
+    ) -> list[tuple[int, int, float]]:
+        """Gate G AND (Branch A OR Branch B).
+
+        The speech band (300-3400Hz) sits inside the dog band, so no energy ratio can
+        separate speech from barks — discrimination comes from temporal and harmonic
+        structure. Gate G (in-band dominance over the highpass reference) rejects
+        broadband non-vocal sound; Branch A accepts impulsive broadband barks; Branch B
+        accepts sustained tonal howls/whines with a pitch floor above adult speech F0.
+        """
+        seg = self.config.segmentation
+        result: list[tuple[int, int, float]] = []
+        for s, e in candidates:
+            species_slice = species_band[s:e]
+            reference_slice = reference_band[s:e]
+
+            # Gate G: in-band dominance (stored as species_energy_ratio)
+            species_rms = float(np.sqrt(np.mean(species_slice**2)))
+            reference_rms = float(np.sqrt(np.mean(reference_slice**2)))
+            dominance = species_rms / (reference_rms + 1e-10)
+            if dominance < seg.min_band_dominance_ratio:
+                continue
+
+            flatness = self._spectral_flatness(species_slice, sr)
+
+            # Branch A: impulsive bark — fast attack AND broadband spectrum
+            # (a stressed vowel can attack fast but is never broadband)
+            impulsive = (
+                self._rise_time_ms(species_slice, sr) <= seg.max_attack_ms
+                and flatness >= seg.min_impulsive_flatness
+            )
+
+            # Branch B: tonal sustained howl/whine — cheap tests first, pitch last
+            tonal = False
+            duration_ms = (e - s) / sr * 1000.0
+            if (
+                not impulsive
+                and flatness <= seg.max_tonal_flatness
+                and duration_ms >= seg.min_tonal_ms
+            ):
+                voiced_fraction, harmonicity, f0_hz = self._harmonicity(species_slice, sr)
+                tonal = (
+                    voiced_fraction >= seg.min_voiced_fraction
+                    and harmonicity >= seg.min_harmonicity
+                    and f0_hz >= seg.min_tonal_f0_hz
+                )
+
+            if impulsive or tonal:
+                result.append((s, e, dominance))
+        return result
+
+    def _classify_tonal(
         self,
         candidates: list[tuple[int, int]],
         species_band: np.ndarray,

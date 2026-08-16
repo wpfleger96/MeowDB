@@ -8,8 +8,10 @@ import numpy as np
 import pytest
 
 from pydub import AudioSegment
+from scipy.signal import butter, chirp, sosfilt
 
 from meowdb.processor import SoundProcessor
+from meowdb.species import processor_config_for_species
 
 _ffmpeg_available = pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
@@ -34,6 +36,95 @@ def _make_sine_wav(
         sample_width=2,
         channels=1,
     )
+
+
+def _to_audio_segment(wave_data: np.ndarray, sample_rate: int) -> AudioSegment:
+    """Wrap a float waveform in [-1, 1] as a mono 16-bit AudioSegment."""
+    int_samples = (np.clip(wave_data, -1.0, 1.0) * 32768.0).astype(np.int16)
+    return AudioSegment(
+        int_samples.tobytes(),
+        frame_rate=sample_rate,
+        sample_width=2,
+        channels=1,
+    )
+
+
+def _band_limited_noise(
+    num_samples: int,
+    sample_rate: int,
+    low_hz: float = 200.0,
+    high_hz: float = 2500.0,
+    seed: int = 7,
+) -> np.ndarray:
+    """White noise band-limited to low_hz-high_hz, peak-normalized to 1.0."""
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal(num_samples)
+    nyquist = sample_rate / 2
+    sos = butter(4, [low_hz / nyquist, high_hz / nyquist], btype="bandpass", output="sos")
+    filtered = sosfilt(sos, noise)
+    return np.asarray(filtered / np.max(np.abs(filtered)), dtype=np.float32)
+
+
+def _make_bark_wav(
+    duration_ms: int = 200,
+    amplitude: float = 0.6,
+    sample_rate: int = 44100,
+) -> AudioSegment:
+    """Bark surrogate: noise band-limited to 200-2500Hz (critical — unfiltered noise
+    fails the canine dominance gate by design), instant attack, exponential decay."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    decay_tau = duration_ms / 2000  # seconds; keeps the tail above the VAD threshold
+    envelope = np.exp(-t / decay_tau)
+    wave_data = amplitude * _band_limited_noise(num_samples, sample_rate) * envelope
+    return _to_audio_segment(wave_data, sample_rate)
+
+
+def _make_howl_wav(
+    duration_ms: int = 1500,
+    amplitude: float = 0.5,
+    sample_rate: int = 44100,
+) -> AudioSegment:
+    """Howl surrogate: 400->550Hz chirp with a 150ms fade-in (too slow for Branch A)."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    wave = chirp(t, f0=400, f1=550, t1=duration_ms / 1000, method="linear")
+    envelope = np.minimum(1.0, t / 0.150)
+    return _to_audio_segment(amplitude * wave * envelope, sample_rate)
+
+
+def _make_speech_wav(
+    duration_ms: int = 1000,
+    amplitude: float = 0.6,
+    sample_rate: int = 44100,
+) -> AudioSegment:
+    """Speech surrogate: harmonics of F0=140Hz under 4Hz syllabic AM (~80ms onsets)."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    wave = np.zeros(num_samples)
+    for k in range(1, 7):
+        wave += (1.0 / k) * np.sin(2 * np.pi * k * 140.0 * t)
+    wave /= np.max(np.abs(wave))
+    syllables = 0.5 * (1.0 - np.cos(2 * np.pi * 4.0 * t))
+    return _to_audio_segment(amplitude * wave * syllables, sample_rate)
+
+
+def _make_ramped_noise_wav(
+    duration_ms: int = 600,
+    amplitude: float = 0.6,
+    attack_ms: int = 300,
+    sample_rate: int = 44100,
+) -> AudioSegment:
+    """Band-limited noise with a slow linear attack — broadband but not impulsive."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    envelope = np.minimum(1.0, t / (attack_ms / 1000))
+    wave_data = amplitude * _band_limited_noise(num_samples, sample_rate) * envelope
+    return _to_audio_segment(wave_data, sample_rate)
+
+
+def _make_dog_processor() -> SoundProcessor:
+    return SoundProcessor(config=processor_config_for_species("dog"))
 
 
 def _save_wav(audio: AudioSegment, path: Path) -> None:
@@ -471,18 +562,28 @@ class TestShortMeowDetection:
 
 @pytest.mark.unit
 class TestSpeciesConfig:
-    def test_processor_config_for_species_dog_has_dog_band(self):
-        """processor_config_for_species('dog') builds a SegmentationConfig with the dog
-        frequency band (60–3500 Hz) and SoundProcessor accepts it without error."""
-        from meowdb.species import processor_config_for_species
+    def test_processor_config_for_species_dog_has_dog_overrides(self):
+        """processor_config_for_species('dog') applies the canine segmentation overrides
+        (detection band 150–3500 Hz) while the fingerprint band keeps fmin=60."""
+        from meowdb.species import SPECIES_REGISTRY, processor_config_for_species
 
         config = processor_config_for_species("dog")
-        assert config.segmentation.band_low_hz == pytest.approx(60.0)
-        assert config.segmentation.band_high_hz == pytest.approx(3500.0)
+        seg = config.segmentation
+        assert seg.band_low_hz == pytest.approx(150.0)
+        assert seg.band_high_hz == pytest.approx(3500.0)
+        assert seg.classifier == "canine"
+        assert seg.reference_mode == "highpass"
+        assert seg.reference_cutoff_hz == pytest.approx(4500.0)
+        assert seg.min_silence_ms == 250
+        assert seg.min_segment_ms == 60
+        assert seg.max_segment_ms == 15000
+
+        # Fingerprint band (similarity.py) is untouched by detection overrides
+        assert SPECIES_REGISTRY["dog"].fmin == pytest.approx(60.0)
+        assert SPECIES_REGISTRY["dog"].fmax == pytest.approx(3500.0)
 
         processor = SoundProcessor(config=config)
-        assert processor.config.segmentation.band_low_hz == pytest.approx(60.0)
-        assert processor.config.segmentation.band_high_hz == pytest.approx(3500.0)
+        assert processor.config.segmentation.band_low_hz == pytest.approx(150.0)
 
     def test_get_species_config_unknown_falls_back_to_cat(self):
         """get_species_config with an unrecognised species name returns cat defaults."""
@@ -492,3 +593,227 @@ class TestSpeciesConfig:
         unk_cfg = get_species_config("unknown_species")
         assert unk_cfg.fmin == pytest.approx(cat_cfg.fmin)
         assert unk_cfg.fmax == pytest.approx(cat_cfg.fmax)
+
+
+@pytest.mark.unit
+class TestCatRegression:
+    def test_default_segmentation_config_is_cat_contract(self):
+        """Field-value snapshot of SegmentationConfig() defaults — locks the cat contract.
+
+        SegmentationConfig() with no args must remain exactly today's cat config; any
+        new field must default to a value that leaves cat behavior unchanged.
+        """
+        from meowdb.models import SegmentationConfig
+
+        config = SegmentationConfig()
+        assert config.band_low_hz == 250.0
+        assert config.band_high_hz == 8000.0
+        assert config.silence_threshold_dbfs == -40.0
+        assert config.min_silence_ms == 150
+        assert config.min_segment_ms == 80
+        assert config.max_segment_ms == 5000
+        assert config.min_species_energy_ratio == 3.0
+        assert config.pre_pad_ms == 200
+        assert config.post_pad_ms == 200
+        assert config.adaptive_threshold is True
+        assert config.adaptive_percentile == 30.0
+        assert config.adaptive_offset_db == 10.0
+        assert config.adaptive_floor_dbfs == -45.0
+        assert config.adaptive_ceiling_dbfs == -40.0
+        assert config.min_peak_ratio == 3.5
+        assert config.peak_ratio_window_ms == 50
+        assert config.use_spectral_classifier is True
+        assert config.max_spectral_flatness == 0.45
+        assert config.classifier == "tonal"
+        assert config.reference_mode == "lowpass"
+        assert config.reference_cutoff_hz is None
+
+
+@pytest.mark.unit
+class TestCanineGate:
+    def test_bark_passes_band_dominance_gate(self):
+        """A band-limited bark dominates the >=4500Hz reference band by far more than 2x."""
+        processor = _make_dog_processor()
+        samples = processor._audio_to_numpy(_make_bark_wav())
+        species_band, reference_band = processor._build_discriminator_signals(samples, 44100)
+        species_rms = float(np.sqrt(np.mean(species_band**2)))
+        reference_rms = float(np.sqrt(np.mean(reference_band**2)))
+        dominance = species_rms / (reference_rms + 1e-10)
+        assert dominance >= processor.config.segmentation.min_band_dominance_ratio
+
+    def test_full_band_white_noise_fails_gate(self):
+        """Unfiltered white noise splits energy by bandwidth: dominance ~= 0.44 < 2.0."""
+        processor = _make_dog_processor()
+        rng = np.random.default_rng(42)
+        samples = (rng.standard_normal(44100) * 0.3).astype(np.float32)
+        species_band, reference_band = processor._build_discriminator_signals(samples, 44100)
+        species_rms = float(np.sqrt(np.mean(species_band**2)))
+        reference_rms = float(np.sqrt(np.mean(reference_band**2)))
+        dominance = species_rms / (reference_rms + 1e-10)
+        assert dominance == pytest.approx(0.44, abs=0.15)
+
+        candidates = [(0, len(samples))]
+        classified = processor._classify_canine(candidates, species_band, reference_band, 44100)
+        assert len(classified) == 0
+
+
+@pytest.mark.unit
+class TestRiseTime:
+    def test_bark_attack_is_fast(self):
+        """Instant-attack bark envelope reaches its peak within max_attack_ms."""
+        processor = _make_dog_processor()
+        samples = processor._audio_to_numpy(_make_bark_wav())
+        assert processor._rise_time_ms(samples, 44100) <= 40.0
+
+    def test_ramped_noise_attack_is_slow(self):
+        """A 300ms linear attack measures far above the 40ms bark threshold."""
+        processor = _make_dog_processor()
+        samples = processor._audio_to_numpy(_make_ramped_noise_wav())
+        assert processor._rise_time_ms(samples, 44100) > 100.0
+
+
+@pytest.mark.unit
+class TestHarmonicity:
+    def test_sine_is_harmonic_with_correct_f0(self):
+        """A pure 800Hz sine is almost fully voiced with harmonicity ~= 1 and F0 ~= 800."""
+        processor = _make_dog_processor()
+        samples = processor._audio_to_numpy(_make_sine_wav(800, 500))
+        voiced_fraction, harmonicity, f0_hz = processor._harmonicity(samples, 44100)
+        assert voiced_fraction > 0.9
+        assert harmonicity > 0.8
+        assert f0_hz == pytest.approx(800.0, rel=0.05)
+
+    def test_white_noise_is_inharmonic(self):
+        """White noise autocorrelation peaks stay below the 0.4 voicing threshold."""
+        processor = _make_dog_processor()
+        rng = np.random.default_rng(42)
+        samples = (rng.standard_normal(22050) * 0.3).astype(np.float32)
+        voiced_fraction, harmonicity, _ = processor._harmonicity(samples, 44100)
+        assert voiced_fraction < 0.5
+        assert harmonicity < 0.3
+
+    def test_low_tone_measures_below_f0_floor(self):
+        """A 150Hz tone measures its true F0 (below the 250Hz floor), not a harmonic."""
+        processor = _make_dog_processor()
+        samples = processor._audio_to_numpy(_make_sine_wav(150, 500))
+        voiced_fraction, _, f0_hz = processor._harmonicity(samples, 44100)
+        assert voiced_fraction > 0.5
+        assert f0_hz == pytest.approx(150.0, rel=0.05)
+        assert f0_hz < processor.config.segmentation.min_tonal_f0_hz
+
+
+@pytest.mark.unit
+class TestCanineBarkBranch:
+    def _classify(self, processor: SoundProcessor, audio: AudioSegment):
+        samples = processor._audio_to_numpy(audio)
+        species_band, reference_band = processor._build_discriminator_signals(samples, 44100)
+        candidates = [(0, len(samples))]
+        return processor._classify_canine(candidates, species_band, reference_band, 44100)
+
+    def test_bark_accepted(self):
+        """Fast attack + broadband spectrum: Branch A accepts the bark surrogate."""
+        processor = _make_dog_processor()
+        assert len(self._classify(processor, _make_bark_wav())) == 1
+
+    def test_ramped_noise_rejected(self):
+        """Broadband but slow attack: fails Branch A on attack, Branch B on flatness."""
+        processor = _make_dog_processor()
+        assert len(self._classify(processor, _make_ramped_noise_wav())) == 0
+
+    def test_speech_surrogate_rejected(self):
+        """Harmonic vowels: fails Branch A on flatness, Branch B on the F0 floor."""
+        processor = _make_dog_processor()
+        assert len(self._classify(processor, _make_speech_wav())) == 0
+
+
+@pytest.mark.unit
+class TestCanineTonalBranch:
+    def _classify(self, processor: SoundProcessor, audio: AudioSegment):
+        samples = processor._audio_to_numpy(audio)
+        species_band, reference_band = processor._build_discriminator_signals(samples, 44100)
+        candidates = [(0, len(samples))]
+        return processor._classify_canine(candidates, species_band, reference_band, 44100)
+
+    def test_howl_chirp_accepted(self):
+        """Sustained tonal 400->550Hz chirp passes Branch B."""
+        processor = _make_dog_processor()
+        assert len(self._classify(processor, _make_howl_wav())) == 1
+
+    def test_sustained_tone_accepted(self):
+        """A 1s 800Hz tone (whine-like) passes Branch B despite failing A on flatness."""
+        processor = _make_dog_processor()
+        assert len(self._classify(processor, _make_sine_wav(800, 1000, amplitude=0.5))) == 1
+
+    def test_low_pitch_harmonic_tone_rejected_on_f0_floor(self):
+        """A sustained 150Hz harmonic stack is tonal but pitched like speech — rejected."""
+        processor = _make_dog_processor()
+        sr = 44100
+        t = np.arange(sr) / sr
+        wave = np.zeros(sr)
+        for k in range(1, 4):
+            wave += (1.0 / k) * np.sin(2 * np.pi * k * 150.0 * t)
+        audio = _to_audio_segment(0.5 * wave / np.max(np.abs(wave)), sr)
+        assert len(self._classify(processor, audio)) == 0
+
+    def test_short_blip_rejected_on_min_tonal_ms(self):
+        """A tonal 150ms blip is below min_tonal_ms=300 — too short for a howl/whine."""
+        processor = _make_dog_processor()
+        assert len(self._classify(processor, _make_sine_wav(800, 150, amplitude=0.5))) == 0
+
+
+@pytest.mark.unit
+class TestCanineDurations:
+    def test_long_howl_survives_dog_vad(self):
+        """An 8s howl exceeds the cat max (5s) but fits the dog max (15s)."""
+        processor = _make_dog_processor()
+        samples = processor._audio_to_numpy(_make_howl_wav(duration_ms=8000))
+        species_band, _ = processor._build_discriminator_signals(samples, 44100)
+        candidates = processor._detect_segments(species_band, 44100)
+        assert len(candidates) >= 1
+        longest = max(e - s for s, e in candidates)
+        assert longest >= 7 * 44100
+
+    def test_bark_volley_merges_into_one_candidate(self):
+        """Barks separated by 200ms gaps (< min_silence_ms=250) merge into one clip."""
+        processor = _make_dog_processor()
+        sr = 44100
+        bark = processor._audio_to_numpy(_make_bark_wav(duration_ms=150))
+        gap = np.zeros(int(sr * 0.200), dtype=np.float32)
+        volley = np.concatenate([bark, gap, bark, gap, bark])
+        species_band, _ = processor._build_discriminator_signals(volley, sr)
+        candidates = processor._detect_segments(species_band, sr)
+        assert len(candidates) == 1
+
+
+@pytest.mark.unit
+@_ffmpeg_available
+class TestCanineEndToEnd:
+    def test_detects_bark(self, tmp_path: Path):
+        """A bark surrounded by silence is detected under the dog config."""
+        silence = AudioSegment.silent(duration=400, frame_rate=44100)
+        full = silence + _make_bark_wav() + silence
+        wav_path = tmp_path / "bark.wav"
+        _save_wav(full, wav_path)
+
+        regions = _make_dog_processor().detect_only(wav_path)
+        assert len(regions) >= 1
+
+    def test_detects_howl(self, tmp_path: Path):
+        """A howl surrounded by silence is detected under the dog config."""
+        silence = AudioSegment.silent(duration=400, frame_rate=44100)
+        full = silence + _make_howl_wav() + silence
+        wav_path = tmp_path / "howl.wav"
+        _save_wav(full, wav_path)
+
+        regions = _make_dog_processor().detect_only(wav_path)
+        assert len(regions) >= 1
+
+    def test_rejects_speech(self, tmp_path: Path):
+        """A speech surrogate surrounded by silence produces no dog detections."""
+        silence = AudioSegment.silent(duration=400, frame_rate=44100)
+        full = silence + _make_speech_wav() + silence
+        wav_path = tmp_path / "speech.wav"
+        _save_wav(full, wav_path)
+
+        regions = _make_dog_processor().detect_only(wav_path)
+        assert len(regions) == 0
