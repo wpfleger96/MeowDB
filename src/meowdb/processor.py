@@ -18,6 +18,12 @@ from meowdb.models import ProcessingResult, ProcessorConfig, SoundSegment
 _FRAME_MS = 10.0
 _HOP_MS = 5.0
 
+# Canine unit-splitting and boof spectral shape. These are structural choices about how
+# a VAD candidate is decomposed and analyzed, deliberately kept out of the tunable config.
+_UNIT_GAP_MS = 100.0  # silence run that splits a VAD candidate into classification units
+_UNIT_THRESHOLD_OFFSET_DB = 3.0  # unit-split threshold above the VAD threshold, cuts shallow dips
+_LOW_BAND_SPLIT_HZ = 900.0  # boof energy concentrates below this; speech formants above
+
 
 class SoundProcessor:
     def __init__(self, config: ProcessorConfig | None = None) -> None:
@@ -495,59 +501,156 @@ class SoundProcessor:
         reference_band: np.ndarray,
         sr: int,
     ) -> list[tuple[int, int, float]]:
-        """Gate G AND (Branch A OR Branch B).
+        """Gate G AND (Sharp OR Bout OR Sustained), evaluated per sub-unit.
 
         The speech band (300-3400Hz) sits inside the dog band, so no energy ratio can
         separate speech from barks — discrimination comes from temporal and harmonic
-        structure. Gate G (in-band dominance over the highpass reference) rejects
-        broadband non-vocal sound; Branch A accepts impulsive broadband barks; Branch B
-        accepts sustained tonal howls/whines with a pitch floor above adult speech F0.
+        structure. Each candidate is first split into classification units at interior
+        quiet runs, so a bark fused with adjacent speech by the VAD is judged on its own.
+        Gate G (in-band dominance over the highpass reference) rejects broadband non-vocal
+        sound, then a unit is accepted by any one branch:
+          Sharp    — a real bark is voiced (not broadband, unlike thumps/knocks), weakly
+                      voiced overall (sharp burst plus unvoiced tail), pitched above the
+                      speaker's praise-voice (~276Hz median) where this dog measures ~390Hz,
+                      with a fast attack.
+          Bout     — a sustained, strongly voiced bark volley or howl above praise-voice.
+          Sustained — a long "boof": voiced but less harmonic than speech, F0 in the woof
+                      range, with energy concentrated in the low band (speech formants sit
+                      above it).
+        Accepted unit boundaries are emitted, not candidate boundaries; _apply_padding
+        already merges the overlapping padded results.
         """
         can = self.config.segmentation.canine
+        frame_dbfs, frame_indices = self._segment_envelope_db(species_band, sr)
+        unit_threshold = self._compute_adaptive_threshold(frame_dbfs) + _UNIT_THRESHOLD_OFFSET_DB
         # The VAD cuts a candidate at the moment energy crossed the threshold, which is
         # already partway up a bark's attack. Rise time is measured with that much lead
         # restored, or a cropped impulse looks like it has no attack at all.
         attack_lead = int(can.max_attack_ms / 1000 * sr)
         result: list[tuple[int, int, float]] = []
-        for s, e in candidates:
-            species_slice = species_band[s:e]
-            reference_slice = reference_band[s:e]
+        for cs, ce in candidates:
+            for s, e in self._split_units(cs, ce, frame_dbfs, frame_indices, unit_threshold, sr):
+                species_slice = species_band[s:e]
+                reference_slice = reference_band[s:e]
 
-            # Gate G: in-band dominance (stored as species_energy_ratio). Phrased so a
-            # NaN ratio fails closed rather than sliding past a "<" comparison.
-            dominance = self._band_ratio(species_slice, reference_slice)
-            if not (dominance >= can.min_band_dominance_ratio):
-                continue
+                # Gate G: in-band dominance (stored as species_energy_ratio). Phrased so a
+                # NaN ratio fails closed rather than sliding past a "<" comparison.
+                dominance = self._band_ratio(species_slice, reference_slice)
+                if not (dominance >= can.min_band_dominance_ratio):
+                    continue
 
-            flatness = self._spectral_flatness(species_slice, sr)
-
-            # Branch A: impulsive bark — broadband spectrum AND fast attack
-            # (a stressed vowel can attack fast but is never broadband). Flatness is
-            # already computed; rise time convolves the whole slice, so it goes last.
-            impulsive = (
-                flatness >= can.min_impulsive_flatness
-                and self._rise_time_ms(species_band[max(0, s - attack_lead) : e], sr)
-                <= can.max_attack_ms
-            )
-
-            # Branch B: tonal sustained howl/whine — cheap tests first, pitch last
-            tonal = False
-            duration_ms = (e - s) / sr * 1000.0
-            if (
-                not impulsive
-                and duration_ms >= can.min_tonal_ms
-                and flatness <= can.max_tonal_flatness
-            ):
+                duration_ms = (e - s) / sr * 1000.0
+                flatness = self._spectral_flatness(species_slice, sr)
                 voiced_fraction, harmonicity, f0_hz = self._harmonicity(species_slice, sr)
-                tonal = (
-                    voiced_fraction >= can.min_voiced_fraction
+
+                # Sharp bark: voiced (NOT broadband — thumps are broadband), weakly voiced
+                # overall (burst + unvoiced tail), pitched above speech, fast attack.
+                # Rise time convolves the whole slice, so it is tested last.
+                sharp = (
+                    flatness <= can.max_sharp_flatness
+                    and voiced_fraction <= can.max_sharp_voiced_fraction
+                    and f0_hz >= can.min_sharp_f0_hz
+                    and self._rise_time_ms(species_band[max(0, s - attack_lead) : e], sr)
+                    <= can.max_attack_ms
+                )
+                # Bark bout / howl: sustained, strongly voiced, pitched above praise-voice.
+                bout = (
+                    duration_ms >= can.min_tonal_ms
+                    and flatness <= can.max_tonal_flatness
+                    and voiced_fraction >= can.min_voiced_fraction
                     and harmonicity >= can.min_harmonicity
                     and f0_hz >= can.min_tonal_f0_hz
                 )
+                # Sustained boof: long, voiced but LESS harmonic than speech, F0 in the
+                # canine woof range, energy concentrated in the low band. The PSD ratio
+                # is the most expensive test, so it goes last.
+                sustained = (
+                    duration_ms >= can.min_sustained_ms
+                    and voiced_fraction >= can.min_sustained_voiced_fraction
+                    and harmonicity <= can.max_sustained_harmonicity
+                    and can.min_sustained_f0_hz <= f0_hz <= can.max_sustained_f0_hz
+                    and self._low_band_ratio(species_slice, sr) >= can.min_low_band_ratio
+                )
 
-            if impulsive or tonal:
-                result.append((s, e, dominance))
+                if sharp or bout or sustained:
+                    result.append((s, e, dominance))
         return result
+
+    def _split_units(
+        self,
+        start: int,
+        end: int,
+        frame_dbfs: np.ndarray,
+        frame_indices: np.ndarray,
+        threshold: float,
+        sr: int,
+    ) -> list[tuple[int, int]]:
+        """Split one VAD candidate into classification units at interior quiet runs.
+
+        The VAD's min_silence_ms merges a bark with adjacent speech into one candidate
+        whose aggregate features look like speech; classifying per burst lets the bark be
+        judged alone. Only quiet runs at least _UNIT_GAP_MS long split a unit — shorter
+        dips are filled — and the split threshold sits _UNIT_THRESHOLD_OFFSET_DB above the
+        VAD threshold to cut the shallow inter-sound dips the VAD threshold rides over.
+        If nothing survives the minimum-length filter, the candidate is judged whole.
+        """
+        m = (frame_indices >= start) & (frame_indices < end)
+        env = frame_dbfs[m]
+        idx = frame_indices[m]
+        silent = (env < threshold).copy()
+        gap_frames = int(_UNIT_GAP_MS / _HOP_MS)
+        i = 0
+        while i < len(silent):  # merge quiet runs shorter than the gap
+            if not silent[i]:
+                i += 1
+                continue
+            j = i
+            while j < len(silent) and silent[j]:
+                j += 1
+            if j - i < gap_frames:
+                silent[i:j] = False
+            i = j
+        units: list[tuple[int, int]] = []
+        in_unit = False
+        unit_start = 0
+        for k, is_silent in enumerate(silent):
+            if not is_silent and not in_unit:
+                unit_start = int(idx[k])
+                in_unit = True
+            elif is_silent and in_unit:
+                units.append((unit_start, int(idx[k])))
+                in_unit = False
+        if in_unit:
+            units.append((unit_start, end))
+        min_samples = int(self.config.segmentation.min_segment_ms / 1000 * sr)
+        units = [(s, e) for s, e in units if e - s >= min_samples]
+        return units or [(start, end)]  # nothing survived — judge the candidate whole
+
+    def _low_band_ratio(self, samples: np.ndarray, sr: int) -> float:
+        """PSD energy below _LOW_BAND_SPLIT_HZ over energy above it, within the species band.
+
+        A boof concentrates energy in the bottom of the dog band while speech formants sit
+        above _LOW_BAND_SPLIT_HZ, so a bottom-heavy spectrum separates the two. Uses the
+        same windowed-FFT idiom as _spectral_flatness (n_fft=2048, Hann, hop 1024, averaged
+        power spectrum), zero-padding a short slice up to one full window.
+        """
+        seg = self.config.segmentation
+        n_fft = 2048
+        freqs = np.fft.rfftfreq(n_fft, 1.0 / sr)
+        low_mask = (freqs >= seg.band_low_hz) & (freqs < _LOW_BAND_SPLIT_HZ)
+        mid_mask = (freqs >= _LOW_BAND_SPLIT_HZ) & (freqs <= seg.band_high_hz)
+        if len(samples) < n_fft:
+            padded = np.zeros(n_fft, dtype=samples.dtype)
+            padded[: len(samples)] = samples
+            samples = padded
+        window = np.hanning(n_fft)
+        acc = np.zeros(len(freqs))
+        count = 0
+        for start in range(0, len(samples) - n_fft + 1, 1024):
+            acc += np.abs(np.fft.rfft(samples[start : start + n_fft] * window)) ** 2
+            count += 1
+        psd = acc / max(count, 1)
+        return float(psd[low_mask].sum()) / (float(psd[mid_mask].sum()) + 1e-12)
 
     def _classify_feline(
         self,

@@ -31,7 +31,7 @@ Voice activity is measured on a framewise RMS envelope of the detection band, us
 
 $$\text{rms}[n] = \sqrt{\frac{1}{W}\sum_{|m| \leq W/2} x_\text{det}[n+m]^2}, \qquad L[n] = 20 \log_{10}\!\left(\text{rms}[n] + 10^{-10}\right)$$
 
-where $W$ is 10 ms of samples (441 at 44.1 kHz), centered on sample $n$. The same envelope is reused by the canine classifier's rise-time test (§1.3.5), so both stages see identical energy contours.
+where $W$ is 10 ms of samples (441 at 44.1 kHz), centered on sample $n$. The same envelope is reused by the canine classifier's sub-unit splitting (§1.3.3) and its rise-time test (§1.3.7), so all three stages see identical energy contours.
 
 #### 1.1.3 Adaptive Threshold
 
@@ -80,7 +80,7 @@ where $P_k$ is the power spectrum of a 2048-sample Hann window, $B$ is the set o
 Porting the feline profile to a dog band breaks in three ways:
 
 1. **Degenerate reference band.** With a dog band starting at 60 Hz, the lowpass-below-band reference sits below 60 Hz — where real recordings have essentially no energy. The reference RMS collapses toward zero, so both ratio tests divide by (nearly) nothing and pass *everything*: speech, music, door slams.
-2. **Inverted tonality test.** Flatness ≤ 0.45 ("calls are tonal") rejects broadband barks while passing harmonic speech vowels — the pipeline would preferentially select speech and discard barks.
+2. **One tonality gate cannot separate dog calls from speech.** The cat classifier accepts on a single flatness ceiling, which suffices only because its sub-250 Hz reference band already excludes speech. In the dog band both barks and speech vowels are voiced and tonal — real barks measure spectral flatness ≈ 0.04–0.13, speech vowels ≈ 0.05–0.15 — so no single flatness threshold admits one and rejects the other. Dog calls also span three shapes too different to share one acceptance rule: impulsive barks, sustained howls, and low sustained "boofs".
 3. **Speech overlap.** The speech band (300–3400 Hz) sits *inside* the dog detection band, so no energy ratio alone can separate speech from barks. Discrimination must come from temporal and harmonic structure instead.
 
 #### 1.3.2 Bands
@@ -89,15 +89,25 @@ The detection band is **150–3500 Hz** — not 60–3500: growls are out of sco
 
 Note the fingerprint band used in Part 2 keeps `fmin = 60` / `fmax = 3500` for dogs — the *detection* band and the *fingerprint* band intentionally diverge (§2.3).
 
-#### 1.3.3 Decision Structure
+#### 1.3.3 Sub-Unit Splitting
 
-A candidate is accepted iff it passes an in-band dominance gate **and** at least one of two call-shape branches:
+The VAD's silence-fill (`min_silence_ms` = 250 ms for dogs, §1.1.4) deliberately merges a bark *volley* into one segment — but the same fill also fuses a single bark with immediately adjacent speech into one candidate whose *aggregate* features (flatness, pitch, voicing averaged across both sounds) look like speech, hiding the bark. So before classification each VAD candidate is split into independent **classification units** at its interior quiet runs, and each unit is classified on its own.
 
-$$\text{accept} = G \ \land\ (A \lor B)$$
+A quiet run is a maximal span of envelope frames (§1.1.2) below the unit-split threshold
 
-The implementation evaluates Branch B only when Branch A rejects; since acceptance is a disjunction the result is identical — the ordering just defers Branch B's expensive pitch analysis.
+$$\theta_\text{unit} = \theta + 3\ \text{dB}$$
 
-#### 1.3.4 Gate G — In-Band Dominance
+set 3 dB above the adaptive VAD threshold $\theta$ (§1.1.3) — high enough to cut the shallow inter-sound dips the VAD threshold itself rides over. Only quiet runs lasting **≥ 100 ms** split a unit; shorter dips are filled, exactly as in the VAD. Each resulting unit shorter than `min_segment_ms` is discarded; if none survives that filter, the candidate is judged whole. The surviving units — not the whole-candidate boundaries — are what the branches classify and what get emitted, and the padding/merge stage (§1.1.5) re-fuses any that still overlap once padded.
+
+#### 1.3.4 Decision Structure
+
+Each classification unit $[s, e)$ is accepted iff it passes an in-band dominance gate **and** at least one of three call-shape branches:
+
+$$\text{accept} = G \ \land\ (\text{Sharp} \lor \text{Bout} \lor \text{Boof})$$
+
+The gate is a cheap energy test. The branches share one pitch analysis (§1.3.6) computed once per unit, then check cheap scalar features before the two expensive convolutions — the bark's rise time and the boof's low-band PSD ratio — which each branch evaluates last.
+
+#### 1.3.5 Gate G — In-Band Dominance
 
 $$G:\quad \frac{\text{rms}(x_\text{det}[s{:}e])}{\text{rms}(x_\text{ref}[s{:}e]) + 10^{-10}} \geq 2.0$$
 
@@ -105,43 +115,71 @@ This dominance ratio is what `species_energy_ratio` stores for dog clips. It rej
 
 **Narrowband-source guard.** The gate is only sound if the reference band *can* contain energy. Detection therefore checks the source file's **native** sample rate (before resampling to 44.1 kHz — resampling cannot invent bandwidth the source never had): if the native Nyquist leaves less than 2 kHz of usable bandwidth above the reference cutoff (native rate / 2 < `reference_cutoff_hz` + 2000 Hz — for the 4500 Hz dog cutoff, any source below a 13 kHz native rate), the file is rejected with an error (HTTP 400: "source sample rate … too low for reliable dog detection; record at 16 kHz or higher"). Such a source has no energy above the cutoff, so its reference RMS would be numerically zero and the dominance gate would pass every sound. 16 kHz sources still gate correctly.
 
-#### 1.3.5 Branch A — Impulsive (bark)
+#### 1.3.6 Pitch and Voicing Analysis
 
-1. **Broadband check.** In-band spectral flatness (same estimator as §1.2, Test 3) must be **≥ 0.20**. This is the anti-speech cue: a stressed vowel can attack fast, but it is never broadband — vowels measure ≈ 0.05–0.15.
-2. **Rise time.** From the 10 ms / 5 ms RMS dB envelope (§1.1.2), measure the time from the last frame at or below peak − 20 dB up to the peak frame; require it to be **≤ 40 ms**. Barks reach peak energy in 5–20 ms; speech vowels build over 50–150 ms.
-
-Two details make the rise-time measurement honest:
-
-- **Pre-roll.** The VAD cuts a candidate where energy crossed the threshold — already partway up the attack — so up to 40 ms (`max_attack_ms`) of audio before the candidate start is restored before measuring. Without it, a VAD-truncated impulse looks like it has no attack at all.
-- **Fail-closed.** If no envelope frame sits at or below peak − 20 dB (stationary noise looks that way), rise time is defined as ∞ and the test fails: a segment with no measurable attack is not impulsive.
-
-The checks run in the order above: flatness is already computed for both branches, while rise time convolves the whole slice.
-
-#### 1.3.6 Branch B — Tonal Sustained (howl/whine)
-
-1. **Duration.** Unpadded duration **≥ 300 ms** (speech syllables run 100–250 ms with pitch resets between them). Checked first — it is free.
-2. **Tonality.** Spectral flatness **≤ 0.30** — tighter than the cat's 0.45, because the band is narrower and Branch B carries more of the speech-rejection burden.
-3. **Harmonicity and pitch floor.** Per 2048-sample Hann window (hop 1024), the FFT-based normalized autocorrelation $r[\tau]/r[0]$ is searched over lags corresponding to F0 ∈ 70–2000 Hz (`f0_search_floor_hz` to `max_tonal_f0_hz`), restricted to **local maxima** of $r$:
+The three branches all draw on one per-unit pitch analysis yielding three statistics — voiced fraction, mean voiced harmonicity, and median voiced F0. Per 2048-sample Hann window (hop 1024), the FFT-based normalized autocorrelation $r[\tau]/r[0]$ is searched over lags corresponding to F0 ∈ 70–2000 Hz (`f0_search_floor_hz` to `max_tonal_f0_hz`), restricted to **local maxima** of $r$:
 
 $$H = \max_{\tau \in \mathcal{T}} \frac{r[\tau]}{r[0]}, \qquad \mathcal{T} = \left\{\tau \in \left[\frac{f_s}{2000},\ \frac{f_s}{70}\right] : \tau \text{ is a local maximum of } r\right\}$$
 
-The local-maximum restriction is what prevents lag aliasing: small lags trivially correlate for low-frequency content, so without it an out-of-range pitch would simply report the smallest searchable lag. The winning lag $\tau^*$ is then refined by 3-point parabolic interpolation around the autocorrelation peak before converting to $F_0 = f_s / \tau^*$, so pitch near the acceptance floor is continuous rather than quantized (adjacent integer lags at 44.1 kHz straddle 250 Hz: τ = 176 → 250.6 Hz, τ = 177 → 249.2 Hz).
+The local-maximum restriction prevents lag aliasing: small lags trivially correlate for low-frequency content, so without it an out-of-range pitch would simply report the smallest searchable lag. The winning lag $\tau^*$ is refined by 3-point parabolic interpolation around the autocorrelation peak before converting to $F_0 = f_s / \tau^*$, so pitch near a branch's acceptance floor is continuous rather than quantized (adjacent integer lags at 44.1 kHz otherwise straddle the floors).
 
-A frame is *voiced* if $H \geq 0.4$ (`voiced_peak_threshold`). The branch requires:
+A frame is *voiced* when $H \geq 0.4$ (`voiced_peak_threshold`). Over the unit's windows this yields the **voiced fraction** (fraction of frames voiced), the **mean harmonicity** across voiced frames, and the **median voiced F0**; each branch's voicing, harmonicity, and F0 conditions read these voiced-frame statistics.
 
-- voiced fraction ≥ 0.5 (at least half the frames voiced),
-- mean harmonicity over voiced frames ≥ 0.5,
-- **median voiced F0 ≥ 250 Hz.**
+**Why the search floor (70 Hz) sits far below every branch's pitch floor.** A low-pitched voice must measure its *true* F0 for a floor to reject it. If the search started at, say, 300 Hz, a 130 Hz voice would have no true-period peak in range and its strongest in-range local maximum could be a harmonic — octave-aliasing the voice above the floor. Searching down to 70 Hz finds the genuine period instead — even for voices whose fundamental is weak or missing below 150 Hz, since autocorrelation recovers the period from harmonic spacing (the missing-fundamental effect) — and the measured F0 then fails the branch honestly.
 
-**Why the search floor (70 Hz) sits far below the acceptance floor (250 Hz).** A low-pitched voice must measure its *true* F0 so the 250 Hz floor can reject it. If the search started at 250 Hz, a 130 Hz voice would have no true-period peak in range and its strongest in-range local maximum could be a harmonic — octave-aliasing the voice above the floor. Searching down to 70 Hz finds the genuine period instead — even for voices whose fundamental is weak or missing below 150 Hz, since autocorrelation recovers the period from the harmonic spacing (the missing-fundamental effect) — and the measured F0 then fails the ≥ 250 Hz test.
+#### 1.3.7 Branch — Sharp Bark
 
-#### 1.3.7 Speech Rejection
+A short, voiced burst with a fast attack. All four conditions must hold:
 
-Adult speech F0 spans 85–255 Hz and syllables last 100–250 ms. Speech fails Branch A on the flatness floor (harmonic vowels ≈ 0.05–0.15, well under 0.20) and fails Branch B twice: the 300 ms sustained-tonal requirement, and the F0 floor (median speech F0 falls below 250 Hz). Barks pass Branch A; howls and whines pass Branch B.
+1. **Voiced, not broadband.** In-band spectral flatness (same estimator as §1.2, Test 3) **≤ 0.15** (`max_sharp_flatness`). This is the central correction from the first design. Real sharp barks are *voiced*, measuring flatness ≈ 0.036–0.126, while the broadband sounds in a home — thumps, knocks, claps, door slams — measure ≈ 0.20–0.36. A flatness *floor* (the first design's ≥ 0.20) therefore selected impacts and rejected the very barks it was meant to catch; the ceiling admits the bark and rejects the impact.
+2. **Weakly voiced overall.** Voiced fraction **≤ 0.6** (`max_sharp_voiced_fraction`). A bark is a transient — a sharp voiced onset followed by an unvoiced tail — so only part of the unit is voiced. A held vowel is voiced across almost every frame and exceeds this cap.
+3. **Pitched above speech.** Median voiced F0 **≥ 300 Hz** (`min_sharp_f0_hz`), above speech-onset pitch.
+4. **Fast attack.** Rise time **≤ 40 ms** (`max_attack_ms`), measured on the RMS dB envelope (§1.1.2) from the last frame at or below peak − 20 dB up to the peak frame. Barks reach peak in 5–20 ms; speech vowels build over 50–150 ms. Because the VAD cuts a candidate where energy first crossed the threshold — already partway up the attack — up to 40 ms of audio before the unit start is restored before measuring, or a VAD-truncated impulse looks like it has no attack at all. If no envelope frame sits at or below peak − 20 dB (stationary noise looks that way), rise time is defined as ∞ and the condition fails.
 
-#### 1.3.8 Known Limitation — Deep Howls
+Conditions 2 and 3 are what reject a speech onset: it is strongly voiced and pitched below 300 Hz, even when it attacks quickly.
 
-The 250 Hz median-F0 floor is a deliberate trade-off: a deep howl with F0 below 250 Hz and no sharp onset fails both branches and is **missed**. Its pitch is measured correctly — the 70 Hz search floor sees the true period (§1.3.6) — and then rejected by the floor, exactly as designed for speech. Most howls sit at ≥ 300 Hz and whines at 400–2000 Hz, and false speech clips in a dog library are worse than an occasional missed low howl — but the miss is real and documented here.
+#### 1.3.8 Branch — Bark Bout / Howl
+
+A sustained, strongly voiced call — a bark volley run together, or a howl. All conditions hold:
+
+- **Duration** ≥ 300 ms (`min_tonal_ms`; speech syllables run 100–250 ms with pitch resets between them).
+- **Tonality** — spectral flatness ≤ 0.30 (`max_tonal_flatness`), tighter than the cat's 0.45 because the band is narrower.
+- **Voicing** — voiced fraction ≥ 0.5 (`min_voiced_fraction`) and mean voiced harmonicity ≥ 0.5 (`min_harmonicity`).
+- **Median voiced F0 ≥ 340 Hz** (`min_tonal_f0_hz`).
+
+The 340 Hz floor is the second correction. A floor meant to clear adult speech has to clear more than conversational speech: excited praise directed at a dog ("good boy!") reaches a median F0 of ≈ 276 Hz, which the first design's 250 Hz floor admitted. This dog's voiced bark bouts measure ≈ 340–395 Hz, so the floor sits between the two. Howls (≥ 300 Hz, usually higher) and whines (400–2000 Hz) clear it comfortably.
+
+#### 1.3.9 Branch — Sustained Boof
+
+The low "boof" or "woof" — the most common call in these recordings, and one the first design had no branch for. It occupies the same F0 range as speech, so it is separated from speech by *harmonic* and *spectral-shape* structure rather than pitch. All conditions hold:
+
+- **Duration** ≥ 600 ms (`min_sustained_ms`).
+- **Voiced throughout** — voiced fraction ≥ 0.6 (`min_sustained_voiced_fraction`); unlike the bark, the boof is voiced across the whole unit.
+- **Median voiced F0 in [150, 250] Hz** (`min_sustained_f0_hz`–`max_sustained_f0_hz`), the woof range.
+- **Less harmonic than speech** — mean voiced harmonicity **≤ 0.68** (`max_sustained_harmonicity`). Sustained speech vowels typically measure harmonicity ≥ 0.7; the boof's rougher voicing sits below.
+- **Low-band-dominant spectrum** — the low-band energy ratio **≥ 5.0** (`min_low_band_ratio`):
+
+$$R_\text{low} = \frac{\displaystyle\sum_{150 \leq f < 900} P(f)}{\displaystyle\sum_{900 \leq f \leq 3500} P(f)} \geq 5.0$$
+
+where $P$ is the same averaged 2048-sample Hann power spectrum used for flatness. A boof concentrates its energy below 900 Hz, whereas speech formants (F1–F3) put substantial energy in 900–3500 Hz. This is the cue that finally separates a low boof from a low male voice at the same pitch.
+
+#### 1.3.10 Speech Rejection
+
+Speech is the dominant confuser in a home recording, and each branch is shaped around a specific way speech differs from a dog call:
+
+- A **speech onset** is voiced and can attack quickly, but it stays voiced *throughout* the syllable and is pitched below 300 Hz — it fails the Sharp branch on both the voiced-fraction cap and the F0 floor.
+- **Sustained speech** fails the Bout branch on the 340 Hz F0 floor (conversational and even praise-voice speech falls below it) and, being made of 100–250 ms syllables with pitch resets, often on the 300 ms duration.
+- **Low-pitched voiced speech** — the one case that lands in the boof's F0 window — fails the Boof branch by being *more* harmonic than a boof (≥ 0.7 vs the ≤ 0.68 ceiling) and by placing formant energy above 900 Hz, so its low-band ratio falls short of 5.0.
+
+Splitting a bark away from adjacent speech (§1.3.3) before any of this runs is what keeps a fused candidate's speech features from masking the bark.
+
+#### 1.3.11 Known Limitations
+
+The canine thresholds are tuned against an eval set of one dog and one human speaker, and every one is a `CanineConfig` knob (§1.4) rather than a hard constant — retuning for another dog is a config change, not a code change. The honest limits that follow from that:
+
+- **Barks below the pitch floor or with a slow attack are missed.** A bark pitched under 300 Hz, or one with a soft onset that never satisfies the 40 ms rise time, fails the Sharp branch; if it is also under 300 ms it clears no branch. The floors are set where they reject this speaker's voice, and lowering them to catch such barks begins re-admitting speech.
+- **Boof-versus-voice separation rests on two soft margins.** A low male voice that is unusually rough (harmonicity < 0.68) *and* unusually bottom-heavy could pass the Boof branch. The 0.68 harmonicity ceiling and the 5.0 low-band ratio are the whole defense there, and both are tuned to one speaker.
+- **Cross-species permissiveness remains.** Nothing in the classifier verifies the *species*: a sound with the right pitch, voicing, and spectral shape passes regardless of source. The detector finds dog-shaped calls, not dogs — the species profile the user selects is load-bearing.
 
 ### 1.4 Parameters
 
@@ -172,16 +210,24 @@ The four feline test knobs ("—") exist in the shared config but are inert unde
 | Parameter | Value | Role |
 |-----------|-------|------|
 | `min_band_dominance_ratio` | 2.0 | Gate G: in-band dominance |
-| `max_attack_ms` | 40 | Branch A: rise-time ceiling; also the pre-roll restored before measuring |
-| `min_impulsive_flatness` | 0.20 | Branch A: broadband floor (anti-speech) |
-| `max_tonal_flatness` | 0.30 | Branch B: tonality ceiling |
-| `min_tonal_ms` | 300 | Branch B: sustained duration (speech syllables 100–250 ms) |
-| `min_harmonicity` | 0.5 | Branch B: mean voiced harmonicity |
-| `min_voiced_fraction` | 0.5 | Branch B: fraction of voiced frames |
-| `min_tonal_f0_hz` | 250 Hz | Branch B: median-F0 acceptance floor (adult speech F0 is 85–255 Hz) |
-| `max_tonal_f0_hz` | 2,000 Hz | Branch B: F0 search ceiling (whines reach 2 kHz) |
-| `f0_search_floor_hz` | 70 Hz | Branch B: F0 search floor — far below the acceptance floor so low-pitched voices measure their true F0 (§1.3.6) |
-| `voiced_peak_threshold` | 0.4 | Branch B: normalized autocorrelation peak above which a frame counts as voiced |
+| `max_attack_ms` | 40 | Sharp bark: rise-time ceiling; also the pre-roll restored before measuring |
+| `max_sharp_flatness` | 0.15 | Sharp bark: tonality ceiling (real barks are voiced, ≈ 0.04–0.13; impacts ≈ 0.20–0.36) |
+| `max_sharp_voiced_fraction` | 0.6 | Sharp bark: voiced-fraction cap (a bark is a transient, not a held vowel) |
+| `min_sharp_f0_hz` | 300 Hz | Sharp bark: median-F0 floor (above speech-onset pitch) |
+| `max_tonal_flatness` | 0.30 | Bark bout / howl: tonality ceiling |
+| `min_tonal_ms` | 300 | Bark bout / howl: sustained duration (speech syllables 100–250 ms) |
+| `min_harmonicity` | 0.5 | Bark bout / howl: mean voiced harmonicity |
+| `min_voiced_fraction` | 0.5 | Bark bout / howl: fraction of voiced frames |
+| `min_tonal_f0_hz` | 340 Hz | Bark bout / howl: median-F0 floor (above praise-voice ≈ 276 Hz) |
+| `max_tonal_f0_hz` | 2,000 Hz | Bark bout / howl: F0 search ceiling (whines reach 2 kHz) |
+| `min_sustained_ms` | 600 | Sustained boof: minimum duration |
+| `min_sustained_voiced_fraction` | 0.6 | Sustained boof: fraction of voiced frames (voiced throughout) |
+| `max_sustained_harmonicity` | 0.68 | Sustained boof: harmonicity ceiling (less harmonic than speech, ≥ 0.7) |
+| `min_sustained_f0_hz` | 150 Hz | Sustained boof: median-F0 floor (woof range) |
+| `max_sustained_f0_hz` | 250 Hz | Sustained boof: median-F0 ceiling (woof range) |
+| `min_low_band_ratio` | 5.0 | Sustained boof: PSD energy 150–900 Hz over 900–3500 Hz |
+| `f0_search_floor_hz` | 70 Hz | Shared pitch: F0 search floor — far below every branch floor so low-pitched voices measure their true F0 (§1.3.6) |
+| `voiced_peak_threshold` | 0.4 | Shared pitch: normalized autocorrelation peak above which a frame counts as voiced |
 
 ---
 

@@ -58,19 +58,21 @@ def _band_limited_noise(
     return np.asarray(filtered / np.max(np.abs(filtered)), dtype=np.float32)
 
 
-def _make_bark_wav(
+def _make_thump_wav(
     duration_ms: int = 200,
     amplitude: float = 0.6,
     sample_rate: int = 44100,
     lead_in_ms: int = 20,
 ) -> AudioSegment:
-    """Bark surrogate: noise band-limited to 200-2500Hz (critical — unfiltered noise
-    fails the canine dominance gate by design), instant attack, exponential decay.
+    """Impact/thump surrogate — a REJECTION fixture: noise band-limited to 200-2500Hz,
+    instant attack, exponential decay.
 
-    A quiet lead-in precedes the burst so the envelope spans ~38dB: without it the
-    segment never dips 20dB below its peak and the rise-time measurement can only
-    exercise its fail-closed fallback. 20ms keeps a 200ms gap between barks below
-    min_silence_ms so a volley still merges into one candidate.
+    A knock or thump is broadband (spectral flatness ~0.4) and unvoiced, so it fails
+    the sharp branch on flatness and the bout/sustained branches on voicing. Real sharp
+    barks, by contrast, are VOICED — this fixture models the non-vocal impacts the
+    redesigned classifier must reject. A quiet lead-in precedes the burst so the envelope
+    spans enough range for a rise-time measurement; 20ms keeps a 200ms inter-thump gap
+    below min_silence_ms so a train still merges into one candidate.
     """
     num_samples = int(sample_rate * duration_ms / 1000)
     t = np.arange(num_samples) / sample_rate
@@ -82,6 +84,100 @@ def _make_bark_wav(
     lead_samples = int(sample_rate * lead_in_ms / 1000)
     lead_in = 0.02 * amplitude * _band_limited_noise(lead_samples, sample_rate, seed=11)
     return _to_audio_segment(np.concatenate([lead_in, burst]), sample_rate)
+
+
+def _make_bark_wav(
+    duration_ms: int = 200,
+    amplitude: float = 0.6,
+    sample_rate: int = 44100,
+    lead_in_ms: int = 20,
+) -> AudioSegment:
+    """Sharp-bark surrogate — PASSES the sharp branch: a voiced harmonic burst (F0~380Hz)
+    that decays fast into a low-band noise tail.
+
+    A real bark is voiced (low flatness, pitched above speech) but only weakly voiced
+    overall — the pitched onset is brief and gives way to an aperiodic tail. Here the
+    380Hz harmonic stack decays with a 25ms time constant, so only the first few analysis
+    frames are voiced (whole-unit voiced_fraction ~0.4, under the 0.6 sharp ceiling), while
+    the 300-900Hz noise tail keeps flatness low (~0.01, tonal-looking) yet unvoiced. A
+    quiet lead-in precedes the burst so the envelope spans >20dB and the attack (~10ms)
+    is measurable; 20ms keeps a 200ms inter-bark gap below min_silence_ms so a volley
+    still merges into one candidate.
+    """
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    envelope = np.exp(-t / (duration_ms / 2000))  # overall decay keeps the tail above VAD
+    tone = np.zeros(num_samples)
+    for k in range(1, 5):
+        tone += (1.0 / k) * np.sin(2 * np.pi * k * 380.0 * t)
+    tone /= np.max(np.abs(tone))
+    tone_env = np.exp(-t / 0.025)  # pitched onset fades in 25ms, so most frames go unvoiced
+    noise = _band_limited_noise(num_samples, sample_rate, low_hz=300.0, high_hz=900.0, seed=4)
+    burst = amplitude * envelope * (tone * tone_env + 0.4 * noise)
+    if lead_in_ms == 0:
+        return _to_audio_segment(burst, sample_rate)
+    lead_samples = int(sample_rate * lead_in_ms / 1000)
+    lead_in = (
+        0.02
+        * amplitude
+        * _band_limited_noise(lead_samples, sample_rate, low_hz=300.0, high_hz=900.0, seed=11)
+    )
+    return _to_audio_segment(np.concatenate([lead_in, burst]), sample_rate)
+
+
+def _make_boof_wav(
+    duration_ms: int = 800,
+    amplitude: float = 0.6,
+    sample_rate: int = 44100,
+) -> AudioSegment:
+    """Sustained-boof surrogate — PASSES the sustained branch: a long, low, rough woof.
+
+    A boof is voiced but less harmonic than speech, pitched in the woof range (F0~200Hz),
+    with energy concentrated in the low band. The 200Hz stack (harmonics 1-4, none above
+    900Hz) is roughened by a slow random-walk pitch wobble and a heavy dose of 150-850Hz
+    noise, pulling mean voiced harmonicity to ~0.58 (under the 0.68 cap) while keeping
+    voiced_fraction high (~0.97) and the low-band PSD ratio far above 5. F0~200 falls in
+    the sustained window (150-250Hz) yet below the 340Hz bout floor, so only the sustained
+    branch accepts it.
+    """
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    rng = np.random.default_rng(3)
+    wobble = np.cumsum(rng.standard_normal(num_samples)) / sample_rate
+    wobble = 10.0 * wobble / (np.max(np.abs(wobble)) + 1e-9)  # +/-10Hz random-walk jitter
+    phase = 2 * np.pi * np.cumsum(200.0 + wobble) / sample_rate
+    wave = np.zeros(num_samples)
+    for k, harm_amp in enumerate((1.0, 0.6, 0.35, 0.2), start=1):
+        wave += harm_amp * np.sin(k * phase)
+    wave /= np.max(np.abs(wave))
+    noise = _band_limited_noise(num_samples, sample_rate, low_hz=150.0, high_hz=850.0, seed=4)
+    wave = wave + 1.6 * noise
+    fade_in = np.minimum(1.0, t / 0.080)  # 80ms fade-in, too slow for the sharp branch
+    return _to_audio_segment(amplitude * fade_in * wave / np.max(np.abs(wave)), sample_rate)
+
+
+def _make_praise_wav(
+    duration_ms: int = 400,
+    f0_hz: float = 270.0,
+    amplitude: float = 0.6,
+    sample_rate: int = 44100,
+) -> AudioSegment:
+    """Human praise-voice surrogate — a REJECTION fixture pinning the false-accept that
+    motivated the redesign: a strongly voiced F0~270Hz harmonic stack under syllabic AM.
+
+    Praise voice measures median F0 ~270Hz and harmonicity ~0.9. That F0 lands in the dead
+    zone between the sustained cap (250Hz) and the bout floor (340Hz): too high for the
+    boof branch, too low for the bout branch, and the clean harmonicity also exceeds the
+    sustained 0.68 cap. Its full voicing fails the sharp branch. Every branch must reject.
+    """
+    num_samples = int(sample_rate * duration_ms / 1000)
+    t = np.arange(num_samples) / sample_rate
+    wave = np.zeros(num_samples)
+    for k in range(1, 7):
+        wave += (1.0 / k) * np.sin(2 * np.pi * k * f0_hz * t)
+    wave /= np.max(np.abs(wave))
+    syllables = 0.5 * (1.0 - np.cos(2 * np.pi * 3.0 * t))
+    return _to_audio_segment(amplitude * wave * syllables, sample_rate)
 
 
 def _make_howl_wav(
@@ -710,13 +806,21 @@ class TestCatRegression:
         assert config.reference_cutoff_hz is None
         assert config.canine.min_band_dominance_ratio == 2.0
         assert config.canine.max_attack_ms == 40
-        assert config.canine.min_impulsive_flatness == 0.20
+        assert config.canine.max_sharp_flatness == 0.15
+        assert config.canine.max_sharp_voiced_fraction == 0.6
+        assert config.canine.min_sharp_f0_hz == 300.0
         assert config.canine.max_tonal_flatness == 0.30
         assert config.canine.min_tonal_ms == 300
         assert config.canine.min_harmonicity == 0.5
         assert config.canine.min_voiced_fraction == 0.5
-        assert config.canine.min_tonal_f0_hz == 250.0
+        assert config.canine.min_tonal_f0_hz == 340.0
         assert config.canine.max_tonal_f0_hz == 2000.0
+        assert config.canine.min_sustained_ms == 600
+        assert config.canine.min_sustained_voiced_fraction == 0.6
+        assert config.canine.max_sustained_harmonicity == 0.68
+        assert config.canine.min_sustained_f0_hz == 150.0
+        assert config.canine.max_sustained_f0_hz == 250.0
+        assert config.canine.min_low_band_ratio == 5.0
         assert config.canine.f0_search_floor_hz == 70.0
         assert config.canine.voiced_peak_threshold == 0.4
         # Every field is pinned above — a new one must be added here deliberately
@@ -743,7 +847,7 @@ class TestCatRegression:
             "reference_mode",
             "reference_cutoff_hz",
         }
-        assert len(CanineConfig.model_fields) == 11
+        assert len(CanineConfig.model_fields) == 19
 
     @_ffmpeg_available
     def test_detect_only_region_boundaries_are_pinned(self, tmp_path: Path):
@@ -848,7 +952,7 @@ class TestHarmonicity:
         assert harmonicity < 0.3
 
     def test_low_tone_measures_below_f0_floor(self):
-        """A 150Hz tone measures its true F0 (below the 250Hz floor), not a harmonic."""
+        """A 150Hz tone measures its true F0 (below the 340Hz tonal floor), not a harmonic."""
         processor = _make_dog_processor()
         samples = processor._audio_to_numpy(_make_sine_wav(150, 500))
         voiced_fraction, _, f0_hz = processor._harmonicity(samples, 44100)
@@ -867,22 +971,52 @@ class TestHarmonicity:
 
 
 @pytest.mark.unit
-class TestCanineBarkBranch:
+class TestCanineSharpBranch:
     def test_bark_accepted(self):
-        """Fast attack + broadband spectrum: Branch A accepts the bark surrogate."""
+        """A voiced sharp bark (low flatness, F0~380, fast attack, weakly voiced) passes."""
         processor = _make_dog_processor()
         assert len(_classify_whole(processor, _make_bark_wav())) == 1
 
+    def test_thump_rejected(self):
+        """A broadband impact fails every branch: flatness ~0.4 kills the sharp branch,
+        and it is unvoiced so bout and sustained fail on voicing.
+
+        This is the regression the redesign turns on: real barks are voiced, so a
+        broadband thump — accepted by the old impulsive-noise branch — must now be
+        rejected.
+        """
+        processor = _make_dog_processor()
+        thump = _make_thump_wav()
+        samples = processor._audio_to_numpy(thump)
+        species_band, _ = processor._build_discriminator_signals(samples, 44100)
+        assert processor._spectral_flatness(species_band, 44100) > 0.15
+        assert len(_classify_whole(processor, thump)) == 0
+
+    def test_bark_rejected_when_flatness_ceiling_tightened(self):
+        """The sharp branch's flatness ceiling is load-bearing: tightening it below the
+        bark's measured flatness flips acceptance to rejection."""
+        processor = _make_dog_processor()
+        bark = _make_bark_wav()
+        samples = processor._audio_to_numpy(bark)
+        species_band, _ = processor._build_discriminator_signals(samples, 44100)
+        measured = processor._spectral_flatness(species_band, 44100)
+        assert len(_classify_whole(processor, bark)) == 1
+
+        processor.config.segmentation.canine.max_sharp_flatness = measured / 2
+        assert len(_classify_whole(processor, bark)) == 0
+
     def test_ramped_noise_rejected(self):
-        """Broadband but slow attack: fails Branch A on attack, Branch B on flatness."""
+        """Broadband with a slow attack: fails the sharp branch on flatness and attack,
+        and the bout/sustained branches on voicing."""
         processor = _make_dog_processor()
         assert len(_classify_whole(processor, _make_ramped_noise_wav())) == 0
 
     def test_speech_surrogate_rejected(self):
-        """Harmonic vowels: fails Branch A on flatness, Branch B on the measured F0.
+        """Harmonic vowels: strongly voiced (fails sharp) and pitched at 140Hz — below
+        both the 340Hz bout floor and the 150Hz sustained floor.
 
-        The surrogate's F0 is 140Hz and the estimator now reports it, so the rejection
-        is the 250Hz floor doing its job — not a degenerate "nothing was voiced" result.
+        The estimator reports the true 140Hz F0, so the rejection is the pitch floors
+        doing their job, not a degenerate "nothing was voiced" result.
         """
         processor = _make_dog_processor()
         speech = _make_speech_wav()
@@ -895,7 +1029,7 @@ class TestCanineBarkBranch:
         assert len(_classify_whole(processor, speech)) == 0
 
     def test_steady_noise_rejected_on_unmeasurable_attack(self):
-        """Stationary band-limited noise has no attack to measure, so Branch A fails.
+        """Stationary band-limited noise has no attack to measure, so the sharp branch fails.
 
         Its envelope never dips 20dB below its peak; the peak simply lands wherever the
         noise happens to be loudest. Reporting that offset as a rise time made ~15% of
@@ -909,7 +1043,8 @@ class TestCanineBarkBranch:
         assert len(_classify_whole(processor, steady)) == 0
 
     def test_shallow_dynamic_range_bark_rejected(self):
-        """Without its quiet lead-in the bark spans only ~16dB — no 20dB attack to find."""
+        """Without its quiet lead-in the burst peaks in its first frame, so no earlier
+        frame sits 20dB down and the attack is unmeasurable — the sharp branch fails."""
         processor = _make_dog_processor()
         flat_bark = _make_bark_wav(lead_in_ms=0)
         samples = processor._audio_to_numpy(flat_bark)
@@ -920,9 +1055,18 @@ class TestCanineBarkBranch:
 @pytest.mark.unit
 class TestCanineTonalBranch:
     def test_howl_chirp_accepted(self):
-        """Sustained tonal 400->550Hz chirp passes Branch B."""
+        """Sustained tonal 400->550Hz chirp passes the bout branch."""
         processor = _make_dog_processor()
         assert len(_classify_whole(processor, _make_howl_wav())) == 1
+
+    def test_howl_rejected_when_tonal_f0_floor_raised(self):
+        """The bout branch's pitch floor is load-bearing: raising min_tonal_f0_hz above
+        the howl's measured F0 flips acceptance to rejection."""
+        processor = _make_dog_processor()
+        assert len(_classify_whole(processor, _make_howl_wav())) == 1
+
+        processor.config.segmentation.canine.min_tonal_f0_hz = 600.0  # above the 550Hz sweep
+        assert len(_classify_whole(processor, _make_howl_wav())) == 0
 
     def test_sustained_tone_accepted(self):
         """A 1s 800Hz tone (whine-like) passes Branch B despite failing A on flatness."""
@@ -930,7 +1074,12 @@ class TestCanineTonalBranch:
         assert len(_classify_whole(processor, _make_sine_wav(800, 1000, amplitude=0.5))) == 1
 
     def test_low_pitch_harmonic_tone_rejected_on_f0_floor(self):
-        """A sustained 150Hz harmonic stack is tonal but pitched like speech — rejected."""
+        """A sustained 150Hz harmonic stack is tonal but pitched like speech — rejected.
+
+        Its F0 sits below the 340Hz bout floor, and though 150Hz enters the sustained
+        window its clean harmonicity (~0.87) exceeds the 0.68 sustained cap, so the
+        sustained branch rejects it too.
+        """
         processor = _make_dog_processor()
         sr = 44100
         t = np.arange(sr) / sr
@@ -945,8 +1094,9 @@ class TestCanineTonalBranch:
         """Harmonics 2-7 of a low voice with no fundamental still measure the true F0.
 
         Autocorrelation recovers the period from the harmonic spacing, so the segment
-        reports ~F0 and fails the 250Hz floor. With the search floor at 150Hz the
-        estimator locked the half-period instead and reported 2xF0 as a howl.
+        reports ~F0 and fails the 340Hz bout floor (and, being under 150Hz, the sustained
+        floor too). With the search floor at 150Hz the estimator locked the half-period
+        instead and reported 2xF0 as a howl.
         """
         processor = _make_dog_processor()
         sr = 44100
@@ -967,6 +1117,85 @@ class TestCanineTonalBranch:
         """A tonal 150ms blip is below min_tonal_ms=300 — too short for a howl/whine."""
         processor = _make_dog_processor()
         assert len(_classify_whole(processor, _make_sine_wav(800, 150, amplitude=0.5))) == 0
+
+
+@pytest.mark.unit
+class TestCanineSustainedBranch:
+    def test_boof_accepted(self):
+        """A long, low, rough boof passes the sustained branch."""
+        processor = _make_dog_processor()
+        assert len(_classify_whole(processor, _make_boof_wav())) == 1
+
+    def test_praise_voice_rejected(self):
+        """Human praise-voice at F0~270 is rejected by every branch.
+
+        This pins the false-accept that motivated the redesign: 270Hz lands in the dead
+        zone between the 250Hz sustained cap and the 340Hz bout floor, its harmonicity
+        (~0.9) also exceeds the sustained cap, and its full voicing fails the sharp branch.
+        """
+        processor = _make_dog_processor()
+        praise = _make_praise_wav()
+        samples = processor._audio_to_numpy(praise)
+        species_band, _ = processor._build_discriminator_signals(samples, 44100)
+        _, _, f0_hz = processor._harmonicity(species_band, 44100)
+        can = processor.config.segmentation.canine
+        assert can.max_sustained_f0_hz < f0_hz < can.min_tonal_f0_hz  # the dead zone
+        assert len(_classify_whole(processor, praise)) == 0
+
+    def test_boof_rejected_when_harmonicity_cap_lowered(self):
+        """The sustained branch's harmonicity cap is load-bearing: lowering it below the
+        boof's measured harmonicity flips acceptance to rejection."""
+        processor = _make_dog_processor()
+        boof = _make_boof_wav()
+        samples = processor._audio_to_numpy(boof)
+        species_band, _ = processor._build_discriminator_signals(samples, 44100)
+        _, measured_harmonicity, _ = processor._harmonicity(species_band, 44100)
+        assert len(_classify_whole(processor, boof)) == 1
+
+        processor.config.segmentation.canine.max_sustained_harmonicity = measured_harmonicity / 2
+        assert len(_classify_whole(processor, boof)) == 0
+
+    def test_boof_rejected_when_low_band_ratio_floor_raised(self):
+        """The sustained branch's low-band PSD floor is load-bearing: raising
+        min_low_band_ratio above the boof's measured ratio flips it to rejection."""
+        processor = _make_dog_processor()
+        boof = _make_boof_wav()
+        samples = processor._audio_to_numpy(boof)
+        species_band, _ = processor._build_discriminator_signals(samples, 44100)
+        measured = processor._low_band_ratio(species_band, 44100)
+        assert len(_classify_whole(processor, boof)) == 1
+
+        processor.config.segmentation.canine.min_low_band_ratio = measured * 2
+        assert len(_classify_whole(processor, boof)) == 0
+
+
+@pytest.mark.unit
+class TestCanineSubUnitSplitting:
+    def test_fused_speech_and_bark_returns_only_bark_unit(self):
+        """A bark the VAD fuses with adjacent speech is split off and judged on its own.
+
+        Speech + a 150ms gap (< min_silence_ms=250, so the VAD does not break here) + a
+        bark form one candidate whose aggregate features look like speech. Sub-unit
+        splitting cuts the interior quiet run, so only the bark's unit is accepted — and
+        the emitted boundaries are the bark's, not the fused candidate's.
+        """
+        processor = _make_dog_processor()
+        sr = 44100
+        speech = processor._audio_to_numpy(_make_speech_wav(duration_ms=400))
+        gap = np.zeros(int(sr * 0.150), dtype=np.float32)
+        bark = processor._audio_to_numpy(_make_bark_wav())
+        fused = np.concatenate([speech, gap, bark])
+
+        species_band, reference_band = processor._build_discriminator_signals(fused, sr)
+        candidates = processor._detect_segments(species_band, sr)
+        assert len(candidates) == 1  # the short gap did not break the candidate
+
+        classified = processor._classify_segments(candidates, species_band, reference_band, sr)
+        assert len(classified) == 1
+        unit_start, unit_end, _ = classified[0]
+        # The accepted unit is the bark, not the fused candidate: it starts past the speech
+        assert unit_start >= len(speech)
+        assert unit_start > candidates[0][0]
 
 
 @pytest.mark.unit
@@ -997,7 +1226,8 @@ class TestCanineDurations:
 
         Dropping the over-long candidate returned zero detections for the single most
         common dog recording. It is split into max-length pieces that still cover the
-        whole volley, and each piece classifies as a bark.
+        whole volley, and sub-unit splitting then recovers the individual barks — so the
+        90-bark volley yields ~90 accepted units, far more than the handful of candidates.
         """
         processor = _make_dog_processor()
         sr = 44100
@@ -1013,7 +1243,8 @@ class TestCanineDurations:
         assert all((e - s) <= max_samples for s, e in candidates)
         assert sum(e - s for s, e in candidates) == len(volley)
         classified = processor._classify_segments(candidates, species_band, reference_band, sr)
-        assert len(classified) == len(candidates)
+        # Sub-unit splitting recovers a bark per burst, not one result per candidate
+        assert len(classified) >= 85
 
     def test_long_howl_is_split_and_kept(self):
         """A 16s howl bout exceeds max_segment_ms=15000 and used to vanish entirely."""
