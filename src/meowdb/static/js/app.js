@@ -101,9 +101,16 @@ function app() {
       });
 
       window.addEventListener('auth-expired', () => {
+        const wasAuthenticated = this.authenticated;
         this.authenticated = false;
-        this.showLoginModal = true;
-        this.loginError = '';
+        // Only re-prompt a session that just expired mid-use. A 401 for an already
+        // logged-out user (e.g. a stray/background call on the public homepage or
+        // a long-lived PWA whose session cookie has lapsed) must not throw the
+        // admin login modal over a public page.
+        if (wasAuthenticated) {
+          this.showLoginModal = true;
+          this.loginError = '';
+        }
       });
 
       const boot = window.__BOOTSTRAP__ || {};
@@ -121,7 +128,9 @@ function app() {
       }
 
       if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
-        navigateTo('/');
+        // Keep the user on /upload (e.g. a deep link or PWA launch directly to the
+        // admin page) and prompt them to log in there rather than bouncing them away.
+        this.showLoginModal = true;
       }
     },
 
