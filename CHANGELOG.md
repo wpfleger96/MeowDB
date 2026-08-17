@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/wpfleger96/MeowDB/compare/v0.10.2...v0.11.0) (2026-08-17)
+
+
+### Features
+
+* **processor:** add canine segment classifier for dog detection ([#108](https://github.com/wpfleger96/MeowDB/issues/108)) ([705c7b5](https://github.com/wpfleger96/MeowDB/commit/705c7b5c9f549e43922a977021b416c689c9315c))
+
+
+### Bug Fixes
+
+* **auth:** stop login modal from auto-popping on the public homepage ([#109](https://github.com/wpfleger96/MeowDB/issues/109)) ([f5f68e0](https://github.com/wpfleger96/MeowDB/commit/f5f68e0cb52630eb9ee3bb7165ffac6612cf5d78))
+
 ## [0.10.2](https://github.com/wpfleger96/MeowDB/compare/v0.10.1...v0.10.2) (2026-08-14)
 
 
