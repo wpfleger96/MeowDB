@@ -9,10 +9,15 @@ An offline, throwaway prototype that compares three classifiers for detecting a 
 
 ## Workflow
 
-1. `just ml-prep dog --raw-recording "path/to/recording.m4a"` slices candidate units out of each recording and mines confirmed positives from the MeowDB library automatically. The `--raw-recording` flag is repeatable; pass `--no-mine-library` to skip library mining and `--permissive` to widen the candidate-unit detector.
-2. Hand-label: open `scripts/ml_prototype/data/labels.csv`, listen to the WAVs in `data/units/`, and fill the `label` column for raw-derived rows with one of `bark`, `meow`, `speech`, `noise`, or `other`. Library rows come prefilled. Re-running `ml-prep` preserves your hand labels and only appends newly discovered units.
-3. `just ml-embed` computes AST embeddings and zero-shot logits for every unit. Results are cached by audio content hash, so re-runs are instant and only new units are processed.
-4. `just ml-train dog` runs leave-one-recording-out cross-validation, a learning curve, and a threshold sweep, then writes results to `scripts/ml_prototype/data/results/`: `report.md`, `metrics.json`, `summary.csv`, `learning_curve.png`, and `threshold_sweep.png`.
+Both species share one `labels.csv` and one embedding cache; only the prep and train steps are per-species. A full dual-species pass looks like:
+
+1. `just ml-prep dog --raw-recording "path/to/dog-recording.m4a"` slices candidate units out of each recording with the dog detector and mines confirmed dog positives from the MeowDB library automatically. The `--raw-recording` flag is repeatable; pass `--no-mine-library` to skip library mining and `--permissive` to widen the candidate-unit detector.
+2. `just ml-prep cat --raw-recording "path/to/cat-recording.m4a"` does the same for cats. Rows from both runs coexist in `labels.csv` (each row carries a `species` column, and raw unit IDs are species-prefixed).
+3. Hand-label: open `scripts/ml_prototype/data/labels.csv`, listen to the WAVs in `data/units/`, and fill the `label` column for raw-derived rows with one of `bark`, `meow`, `speech`, `noise`, or `other`. Library rows come prefilled. Re-running `ml-prep` preserves your hand labels and only appends newly discovered units.
+4. `just ml-embed` computes AST embeddings and zero-shot logits for every labeled unit of every species in one pass. Results are cached by audio content hash, so re-runs are instant and only new units are processed.
+5. `just ml-train dog` and `just ml-train cat` each run leave-one-recording-out cross-validation, a learning curve, and a threshold sweep on that species' units only, writing to `scripts/ml_prototype/data/results/<species>/`: `report.md`, `metrics.json`, `summary.csv`, `learning_curve.png`, and `threshold_sweep.png`. The two result sets never overwrite each other.
+
+Each species trains its own binary head (`bark` vs. rest, `meow` vs. rest) rather than one combined multi-class model: production ingest always knows the animal's species at upload time, so the classifier never has to guess between cat and dog.
 
 ## How much data do I need?
 

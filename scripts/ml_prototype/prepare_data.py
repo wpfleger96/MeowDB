@@ -140,7 +140,10 @@ def _extract_recording(
     stem = _sanitize_stem(recording.stem)
     rows: list[dict[str, str]] = []
     for idx, (start, end) in enumerate(units):
-        unit_id = f"{stem}__{idx:03d}"
+        # Species-namespaced: the same recording sliced under both species (each
+        # species' detector yields different units) must not collide in units/ or
+        # in the labels merge, which dedupes by unit_id.
+        unit_id = f"{species}__{stem}__{idx:03d}"
         write_wav_16bit(UNITS_DIR / f"{unit_id}.wav", samples[start:end], TARGET_SR)
         rows.append(
             _row(

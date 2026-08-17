@@ -63,6 +63,13 @@ def ensure_dirs() -> None:
         directory.mkdir(parents=True, exist_ok=True)
 
 
+def species_results_dir(species: str) -> Path:
+    """Per-species results directory, so dog and cat runs never clobber each other."""
+    directory = RESULTS_DIR / species
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def read_wav(path: Path) -> tuple[np.ndarray, int]:
     """Read a WAV as mono float32 in [-1, 1], plus its sample rate.
 

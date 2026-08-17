@@ -795,9 +795,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             "cannot compute a precision-recall sweep"
         )
 
+    out_dir = common.species_results_dir(species)
+
     # Learning curve + threshold sweep (logreg head).
     curve = learning_curve(dataset, folds, args.seed)
-    plot_learning_curve(curve, common.RESULTS_DIR / "learning_curve.png")
+    plot_learning_curve(curve, out_dir / "learning_curve.png")
 
     y_eval = dataset.y_binary[eval_mask]
     head_point, head_curve = select_operating_points(
@@ -811,7 +813,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     plot_threshold_sweep(
         head_curve, zs_curve,
         (heuristic_metrics["precision"], heuristic_metrics["recall"]),
-        common.RESULTS_DIR / "threshold_sweep.png",
+        out_dir / "threshold_sweep.png",
     )
 
     # Per-head max-F1 thresholds (each head's own OOF PR curve).
@@ -849,9 +851,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     n_raw = dataset.n - n_library
     n_groups = len(np.unique(dataset.groups))
 
-    write_summary_csv(common.RESULTS_DIR / "summary.csv", summary_rows)
+    write_summary_csv(out_dir / "summary.csv", summary_rows)
     write_metrics_json(
-        common.RESULTS_DIR / "metrics.json",
+        out_dir / "metrics.json",
         species=species, seed=args.seed, head_flag=args.head, cv_scheme=cv_scheme,
         target_index=target_index, competitor_indices=competitor_indices,
         n_units=dataset.n, n_positive=n_pos, n_negative=n_neg,
@@ -888,8 +890,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         "failure_analysis": build_failure_analysis(dataset, eval_mask, system_preds),
     }
     report = render_report(common.PROTO_DIR / "report_template.md", context)
-    (common.RESULTS_DIR / "report.md").write_text(report, encoding="utf-8")
-    print(f"Wrote report, metrics.json, summary.csv, and 2 plots to {common.RESULTS_DIR}")
+    (out_dir / "report.md").write_text(report, encoding="utf-8")
+    print(f"Wrote report, metrics.json, summary.csv, and 2 plots to {out_dir}")
 
 
 def write_summary_csv(path: Path, rows: Sequence[dict[str, Any]]) -> None:
