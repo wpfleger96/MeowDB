@@ -2,11 +2,59 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CanineConfig(BaseModel):
+    """Canine classifier knobs: Gate G + three branches; inert under the feline profile.
+
+    Every candidate sub-unit is gated on in-band dominance (Gate G), then accepted if it
+    matches any one of three call shapes: a sharp bark (voiced but not broadband, weakly
+    voiced overall, pitched above speech, fast attack), a bark bout / howl (sustained,
+    strongly voiced, pitched above praise-voice), or a sustained boof (long, voiced but
+    less harmonic than speech, F0 in the woof range, energy concentrated in the low band).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Gate G: in-band dominance over the highpass reference
+    min_band_dominance_ratio: float = Field(default=2.0, gt=0)
+
+    # Sharp-bark branch
+    max_attack_ms: int = Field(default=40, gt=0)
+    max_sharp_flatness: float = Field(default=0.15, ge=0, le=1)
+    max_sharp_voiced_fraction: float = Field(default=0.6, ge=0, le=1)
+    min_sharp_f0_hz: float = Field(default=300.0, gt=0)
+
+    # Bark-bout / howl branch
+    max_tonal_flatness: float = Field(default=0.30, ge=0, le=1)
+    min_tonal_ms: int = Field(default=300, gt=0)
+    min_harmonicity: float = Field(default=0.5, ge=0, le=1)
+    min_voiced_fraction: float = Field(default=0.5, ge=0, le=1)
+    min_tonal_f0_hz: float = Field(default=340.0, gt=0)
+    max_tonal_f0_hz: float = Field(default=2000.0, gt=0)
+
+    # Sustained-boof branch
+    min_sustained_ms: int = Field(default=600, gt=0)
+    min_sustained_voiced_fraction: float = Field(default=0.6, ge=0, le=1)
+    max_sustained_harmonicity: float = Field(default=0.68, ge=0, le=1)
+    min_sustained_f0_hz: float = Field(default=150.0, gt=0)
+    max_sustained_f0_hz: float = Field(default=250.0, gt=0)
+    min_low_band_ratio: float = Field(default=5.0, gt=0)
+
+    # Shared pitch-analysis knobs
+    # f0_search_floor_hz sits below the branch pitch floors on purpose: a low-pitched
+    # voice must measure its true (too-low) F0 rather than octave-alias to a harmonic
+    # above the floor.
+    f0_search_floor_hz: float = Field(default=70.0, gt=0)
+    voiced_peak_threshold: float = Field(default=0.4, ge=0, le=1)
 
 
 class SegmentationConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     band_low_hz: float = 250.0
     band_high_hz: float = 8000.0
     silence_threshold_dbfs: float = -40.0
@@ -23,8 +71,12 @@ class SegmentationConfig(BaseModel):
     adaptive_ceiling_dbfs: float = -40.0
     min_peak_ratio: float = 3.5
     peak_ratio_window_ms: int = 50
-    use_spectral_classifier: bool = True
+    use_spectral_classifier: bool = True  # feline classifier only (test 3)
     max_spectral_flatness: float = 0.45
+    classifier: Literal["feline", "canine"] = "feline"
+    reference_mode: Literal["lowpass", "highpass"] = "lowpass"
+    reference_cutoff_hz: float | None = None  # None -> band_low_hz / band_high_hz
+    canine: CanineConfig = CanineConfig()
 
 
 class ProcessingConfig(BaseModel):

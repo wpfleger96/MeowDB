@@ -113,8 +113,8 @@ test.describe('MeowDB views', () => {
     // Markdown rendered (headings from the doc) and math typeset by MathJax (SVG).
     await page.waitForSelector('.markdown-body h1', { state: 'visible' });
     await page.waitForSelector('.markdown-body mjx-container svg', { state: 'visible' });
-    // The Parameters markdown table rendered.
-    await expect(page.locator('.markdown-body table')).toHaveCount(1);
+    // The parameter markdown tables rendered (Part 1 shared + canine, Part 2).
+    await expect(page.locator('.markdown-body table')).toHaveCount(3);
     await screenshot(page, testInfo, '06-algorithm.png');
   });
 
