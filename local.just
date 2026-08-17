@@ -40,13 +40,19 @@ ml-sync:
     uv sync --group ml
 
 # Extract candidate units + mine library positives (hand-edit scripts/ml_prototype/data/labels.csv after)
+[positional-arguments]
 ml-prep species="dog" *args:
-    uv run --group ml python scripts/ml_prototype/prepare_data.py --species {{species}} {{args}}
+    #!/usr/bin/env bash
+    exec uv run --group ml python scripts/ml_prototype/prepare_data.py --species "$1" "${@:2}"
 
 # Compute AST embeddings + zero-shot logits (content-addressed cache)
+[positional-arguments]
 ml-embed *args:
-    uv run --group ml python scripts/ml_prototype/extract_embeddings.py {{args}}
+    #!/usr/bin/env bash
+    exec uv run --group ml python scripts/ml_prototype/extract_embeddings.py "$@"
 
 # Train head, run LORO CV + learning curve + threshold sweep, write report
+[positional-arguments]
 ml-train species="dog" *args:
-    uv run --group ml python scripts/ml_prototype/train_eval.py --species {{species}} {{args}}
+    #!/usr/bin/env bash
+    exec uv run --group ml python scripts/ml_prototype/train_eval.py --species "$1" "${@:2}"
