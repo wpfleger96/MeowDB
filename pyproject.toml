@@ -40,6 +40,13 @@ dev = [
     "boto3-stubs[s3]>=1.35",
     "moto[s3]>=5.0",
 ]
+ml = [
+    "torch>=2.6",
+    "transformers>=4.44",
+    "scikit-learn>=1.5",
+    "soundfile>=0.12",
+    "matplotlib>=3.9",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -49,6 +56,7 @@ meowdb = ["static/**/*"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["scripts/ml_prototype"]
 
 [tool.ruff.lint]
 select = ["I", "F", "UP", "B"]
@@ -61,6 +69,7 @@ strict = true
 mypy_path = "src"
 namespace_packages = true
 explicit_package_bases = true
+exclude = ["^scripts/ml_prototype/"]
 
 [[tool.mypy.overrides]]
 module = ["pydub", "pydub.*", "noisereduce", "noisereduce.*"]

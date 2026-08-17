@@ -34,3 +34,19 @@ screenshots:
 # Post screenshots from a PR run to GitHub
 screenshots-post pr:
     bash scripts/post-screenshots.sh "{{pr}}" ui/screenshots
+
+# Sync the opt-in ML prototype dependency group
+ml-sync:
+    uv sync --group ml
+
+# Extract candidate units + mine library positives (hand-edit scripts/ml_prototype/data/labels.csv after)
+ml-prep species="dog" *args:
+    uv run --group ml python scripts/ml_prototype/prepare_data.py --species {{species}} {{args}}
+
+# Compute AST embeddings + zero-shot logits (content-addressed cache)
+ml-embed *args:
+    uv run --group ml python scripts/ml_prototype/extract_embeddings.py {{args}}
+
+# Train head, run LORO CV + learning curve + threshold sweep, write report
+ml-train species="dog" *args:
+    uv run --group ml python scripts/ml_prototype/train_eval.py --species {{species}} {{args}}
