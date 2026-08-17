@@ -82,10 +82,28 @@ function app() {
 
     requireAuth() {
       if (!this.canWrite) {
-        this.showLoginModal = true;
+        this.openLoginModal();
         return false;
       }
       return true;
+    },
+
+    openLoginModal() {
+      this.loginError = '';
+      this.showLoginModal = true;
+    },
+
+    dismissLoginModal() {
+      this.showLoginModal = false;
+      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
+        navigateTo('/');
+      }
+    },
+
+    promptIfAdminViewLocked() {
+      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
+        this.openLoginModal();
+      }
     },
 
     async init() {
@@ -98,12 +116,19 @@ function app() {
       // Handle programmatic navigation
       window.addEventListener('route-change', (e) => {
         this.currentView = pathToView(e.detail.path);
+        this.promptIfAdminViewLocked();
       });
 
       window.addEventListener('auth-expired', () => {
+        const wasAuthenticated = this.authenticated;
         this.authenticated = false;
-        this.showLoginModal = true;
-        this.loginError = '';
+        // Only re-prompt a session that just expired mid-use. A 401 for an already
+        // logged-out user (e.g. a stray/background call on the public homepage or
+        // a long-lived PWA whose session cookie has lapsed) must not throw the
+        // admin login modal over a public page.
+        if (wasAuthenticated) {
+          this.openLoginModal();
+        }
       });
 
       const boot = window.__BOOTSTRAP__ || {};
@@ -120,9 +145,7 @@ function app() {
         }
       }
 
-      if (this.authRequired && !this.authenticated && this.currentView === 'ingest') {
-        navigateTo('/');
-      }
+      this.promptIfAdminViewLocked();
     },
 
     isView(name) {

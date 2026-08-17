@@ -52,7 +52,7 @@
   <template id="nav-auth-mobile">
     <div class="nav-auth-mobile" x-cloak>
       <button x-show="authRequired && authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
-      <button x-show="authRequired && !authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+      <button x-show="authRequired && !authenticated" @click="openLoginModal()" class="btn btn-ghost btn-sm">Login</button>
       <button class="btn-icon" @click="openAbout()" aria-label="About MeowDB">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="12" cy="12" r="10"/>
@@ -81,7 +81,7 @@
         <!-- Auth + About controls (top-right; Play has no header) -->
         <div class="play-auth-mobile" x-cloak>
           <button x-show="authRequired && authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
-          <button x-show="authRequired && !authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+          <button x-show="authRequired && !authenticated" @click="openLoginModal()" class="btn btn-ghost btn-sm">Login</button>
           <button class="btn-icon" @click="openAbout()" aria-label="About MeowDB">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="12" cy="12" r="10"/>
@@ -1364,7 +1364,7 @@
       <!-- Auth controls -->
       <div class="nav-auth" x-show="authRequired" x-cloak>
         <button x-show="authenticated" @click="doLogout()" class="btn btn-ghost btn-sm">Logout</button>
-        <button x-show="!authenticated" @click="showLoginModal = true" class="btn btn-ghost btn-sm">Login</button>
+        <button x-show="!authenticated" @click="openLoginModal()" class="btn btn-ghost btn-sm">Login</button>
       </div>
 
       <!-- Play tab -->
@@ -1464,8 +1464,8 @@
     x-show="showLoginModal"
     x-cloak
     class="modal-backdrop modal-confirm"
-    @click.self="showLoginModal = false"
-    @keydown.escape.window="showLoginModal = false"
+    @click.self="dismissLoginModal()"
+    @keydown.escape.window="dismissLoginModal()"
     role="dialog"
     aria-modal="true"
     aria-label="Login"
@@ -1486,7 +1486,7 @@
           >
           <p x-show="loginError" x-text="loginError" class="error-text"></p>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showLoginModal = false" :disabled="loginLoading">Cancel</button>
+            <button type="button" class="btn btn-secondary" @click="dismissLoginModal()" :disabled="loginLoading">Cancel</button>
             <button type="submit" class="btn btn-primary" :disabled="loginLoading || !loginPassword">
               <span x-show="!loginLoading">Login</span>
               <span x-show="loginLoading">…</span>
