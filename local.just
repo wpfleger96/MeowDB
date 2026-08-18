@@ -45,6 +45,12 @@ ml-prep species="dog" *args:
     #!/usr/bin/env bash
     exec uv run --group ml python scripts/ml_prototype/prepare_data.py --species "$1" "${@:2}"
 
+# Rapid keyboard labeling UI with model suggestions (writes labels.csv as you go)
+[positional-arguments]
+ml-label *args:
+    #!/usr/bin/env bash
+    exec uv run --group ml python scripts/ml_prototype/label_units.py "$@"
+
 # Compute AST embeddings + zero-shot logits (content-addressed cache)
 [positional-arguments]
 ml-embed *args:
