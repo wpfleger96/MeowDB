@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.1](https://github.com/wpfleger96/MeowDB/compare/v0.11.0...v0.11.1) (2026-09-03)
+
+
+### Chores
+
+* **deps:** Lock file maintenance ([#114](https://github.com/wpfleger96/MeowDB/issues/114)) ([ab3e9ca](https://github.com/wpfleger96/MeowDB/commit/ab3e9ca6401043da08c4cab45f6938b18ec6bcfe))
+* **deps:** Lock file maintenance ([#116](https://github.com/wpfleger96/MeowDB/issues/116)) ([52c7049](https://github.com/wpfleger96/MeowDB/commit/52c704976822e2585052af34e0a24e45c69f4073))
+* **deps:** Lock file maintenance ([#117](https://github.com/wpfleger96/MeowDB/issues/117)) ([8572f15](https://github.com/wpfleger96/MeowDB/commit/8572f158abf016d079c636cd099146100dfe5b50))
+* **deps:** Lock file maintenance ([#118](https://github.com/wpfleger96/MeowDB/issues/118)) ([60232ed](https://github.com/wpfleger96/MeowDB/commit/60232ed01b883f92b4336160617c712a7970f8a0))
+* **deps:** Lock file maintenance ([#119](https://github.com/wpfleger96/MeowDB/issues/119)) ([c9277e8](https://github.com/wpfleger96/MeowDB/commit/c9277e842e80700dc18a4ca9f4525b5136e4b652))
+* **deps:** Lock file maintenance ([#120](https://github.com/wpfleger96/MeowDB/issues/120)) ([65602cc](https://github.com/wpfleger96/MeowDB/commit/65602cc4af445add7b338fc6f2f37c19cb88f95a))
+* **deps:** Update python Docker tag to v3.14 ([#112](https://github.com/wpfleger96/MeowDB/issues/112)) ([73769f9](https://github.com/wpfleger96/MeowDB/commit/73769f92624c7ea9fc5573d8f36b6b48abe6e5bf))
+
+
+### Continuous Integration
+
+* sync CI workflow ([96cfb1a](https://github.com/wpfleger96/MeowDB/commit/96cfb1a9a7d55482ead69088e0232a3f253a73c7))
+* sync release workflow ([762bb2a](https://github.com/wpfleger96/MeowDB/commit/762bb2a06b49f358365d9461224a3f13512cb6c8))
+
 ## [0.11.0](https://github.com/wpfleger96/MeowDB/compare/v0.10.2...v0.11.0) (2026-08-17)
 
 
