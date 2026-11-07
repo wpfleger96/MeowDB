@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.11.2](https://github.com/wpfleger96/MeowDB/compare/v0.11.1...v0.11.2) (2026-11-07)
+
+
+### Chores
+
+* **deps:** Lock file maintenance ([#130](https://github.com/wpfleger96/MeowDB/issues/130)) ([50f6ad7](https://github.com/wpfleger96/MeowDB/commit/50f6ad7911b0bb7ad22f85072e197de49fcd6cc3))
+* **deps:** Lock file maintenance ([#131](https://github.com/wpfleger96/MeowDB/issues/131)) ([d620476](https://github.com/wpfleger96/MeowDB/commit/d62047652fca8b00914f704a07882a30dee42eaf))
+* **deps:** Lock file maintenance ([#132](https://github.com/wpfleger96/MeowDB/issues/132)) ([9ffd8d0](https://github.com/wpfleger96/MeowDB/commit/9ffd8d0bb6e9ce484945f71b7d13f6bb1b501e6e))
+* **deps:** Lock file maintenance ([#133](https://github.com/wpfleger96/MeowDB/issues/133)) ([b958e67](https://github.com/wpfleger96/MeowDB/commit/b958e67cb71927d3fa290f6f7f61acf9419dc48a))
+* **deps:** Lock file maintenance ([#134](https://github.com/wpfleger96/MeowDB/issues/134)) ([7a47279](https://github.com/wpfleger96/MeowDB/commit/7a47279704c46760f7d3d52ab342d431a57e1a1e))
+* sync issue templates ([f02cf85](https://github.com/wpfleger96/MeowDB/commit/f02cf85a8967b867ada7c0a34760398d47af7cc9))
+
+
+### Continuous Integration
+
+* sync CI workflow ([ab100a5](https://github.com/wpfleger96/MeowDB/commit/ab100a552f4e3a85a043ce6883f97b669f332bef))
+* sync CI workflow ([cd47b91](https://github.com/wpfleger96/MeowDB/commit/cd47b91e999a06bb1173df98ea9a9db0018a10c3))
+* sync CI workflow ([99de45e](https://github.com/wpfleger96/MeowDB/commit/99de45ed9a376c7a6d104e53a2c97d447cc129f8))
+* sync release workflow ([f9b2982](https://github.com/wpfleger96/MeowDB/commit/f9b29820215a99c88da6ed13191823839395b777))
+* sync release workflow ([aa3215d](https://github.com/wpfleger96/MeowDB/commit/aa3215d2662b87091a1800962f3da125b487f58b))
+* sync shared files ([652bc0a](https://github.com/wpfleger96/MeowDB/commit/652bc0af1dca3434c0a8a879c0e2139c68e8a74b))
+
 ## [0.11.1](https://github.com/wpfleger96/MeowDB/compare/v0.11.0...v0.11.1) (2026-10-26)
 
 
